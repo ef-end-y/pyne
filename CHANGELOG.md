@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **AXIS docs pack pointed at the wrong repository**: the export pipeline hardcoded the PYNE repo URL for every product, so ``/axis/docs/llm.txt`` announced ``Repository: https://github.com/hoox-sh/pyne``. Each product now carries its own ``repoUrl``.
 - **VPS Pro API memory growth**: gunicorn workers now recycle (``--max-requests``) on both the Hetzner systemd unit and the Docker entrypoint (``GUNICORN_MAX_REQUESTS``). Without recycling, workers grew past 1.6 GB each on the 3.8 GB VPS until swap filled 100% and even ``GET /health`` took 6–14 s, so AXIS reported the engine as down. The unit is now versioned at ``deploy/pynescript-api.service`` (+ ``cors.conf`` drop-in) and ``scripts/deploy_vps.sh`` installs it before restart.
 
+### Security
+
+- **undici TLS certificate validation bypass (CVE-2026-84961 / GHSA-w293-vg96-wgc3, high)** and five further undici advisories are closed in ``cf/`` by an ``overrides`` entry pinning ``undici`` to ``^7.29.1`` (resolves 7.30.0). ``BalancedPool`` used to deep-clone its constructor options through ``JSON.parse(JSON.stringify(...))``, which cannot represent functions — a ``connect``/``tls`` option carrying a ``checkServerIdentity`` callback was silently dropped before reaching the TLS layer, so a certificate the caller's validator was written to reject was accepted.
+  ``undici`` reached ``cf/`` only as a transitive dev dependency (``wrangler`` → ``miniflare``); the sole runtime dependency is ``@cloudflare/containers``, so the vulnerable path never shipped. Fixed regardless — a silently-dropped certificate validator is the wrong thing to leave lying in a tree that runs in CI.
+  Verified with a clean ``npm ci``: resolves 7.30.0, ``npm audit`` reports zero undici advisories, and ``wrangler`` still runs.
+
 ### Docs
 
 - README version strings refreshed to 0.6.8 (PyPI + all three GHCR tags verified present).
