@@ -56,11 +56,14 @@ from flask import jsonify
 from flask import request
 from flask_cors import CORS
 
+from backend.api import data_series as data_api
 from backend.api.git_oauth import bp as git_oauth_bp
 from backend.api.lsp_http import bp as lsp_bp
 from backend.api.preview import backtest_bp
 from backend.api.preview import preview_bp
 from backend.api.runner import bp as runner_bp
+from backend.datastore import live as data_live
+from backend.datastore import series as series_store
 
 
 try:
@@ -71,6 +74,8 @@ from backend.middleware.auth import get_key_store
 from backend.middleware.auth import require_admin_token
 from backend.middleware.auth import require_api_key
 from backend.middleware.schemas import CREATE_KEY_SCHEMA
+from backend.middleware.schemas import DATA_SESSION_CREATE_SCHEMA
+from backend.middleware.schemas import DATA_SESSION_TICK_SCHEMA
 from backend.middleware.schemas import OPTIMIZE_SCHEMA
 from backend.middleware.schemas import RUN_SCHEMA
 from backend.middleware.schemas import SESSION_APPEND_SCHEMA
@@ -685,6 +690,13 @@ def _health_payload() -> dict[str, Any]:
         "POST /session/<session_id>/tick": "Re-tick the forming bar — O(1)",
         "POST /session/<session_id>/append": "Append closed bars — O(delta)",
         "DELETE /session/<session_id>": "Release a session (else idle TTL)",
+        # Engine-owned data plane: bars live in the PYNE store, not the request.
+        "GET /data/series": "Stored OHLCV series bounds (engine-owned data)",
+        "GET /data/series/bars": "Newest stored bars for a series (chart paint)",
+        "POST /data/series/provide": "Upload closed bars into the series store (max 5000)",
+        "POST /data/series/fetch": "Fetch history via CCXT into the series store",
+        "POST /data/session": "Create a live session bound to a stored series (DATA_MISS 409)",
+        "POST /data/session/<session_id>/tick": "Advance a bound session from the engine feed",
         "POST /lsp/completion": "Pine completion (free, AXIS editor)",
         "POST /lsp/hover": "Pine hover docs (free, AXIS editor)",
         "POST /lsp/diagnostics": "Pine parse+lint pre-eval (free, AXIS editor)",
@@ -731,6 +743,9 @@ def _health_payload() -> dict[str, Any]:
             "free_tier_limits": _free_tier_limits_flag(),
             "script_runner": runner_enabled(),
             "script_runner_scheduler": scheduler_enabled(),
+            # Engine-owned data plane (AXIS D3): capabilities are read from here.
+            "live_modes": ["every-tick", "bar-close"],
+            "data_session": True,
         },
         "compile": _compile_health_section(),
         "endpoints": endpoints,
@@ -1191,6 +1206,149 @@ def session_delete_route(session_id: str):
             }
         ), 404
     return jsonify({"status": "success", "session_id": session_id, "released": True}), 200
+
+
+# ── Engine-owned data sessions ───────────────────────────────────────────────
+#
+# A data session is a /session whose bars come from the engine's series store
+# (backend/datastore) instead of the request body. AXIS sends identity only.
+#   POST   /data/session                create (200 hit, 409 DATA_MISS)
+#   POST   /data/session/<id>/tick      fetch since stored newest, advance
+
+
+def _data_session_refusal(validated: dict[str, Any]) -> tuple[dict[str, Any], int] | None:
+    """Reject a data-session body that cannot run (no script, or a compile request)."""
+    if not validated.get("script"):
+        return {"status": "error", "code": "NO_SCRIPT", "message": "No 'script' provided."}, 400
+    mode = str(validated.get("mode") or "interpret").strip().lower()
+    if mode not in ("interpret", ""):
+        return {
+            "status": "error",
+            "code": "MODE_UNSUPPORTED",
+            "message": "Sessions support interpret only; compile has no resumable state.",
+        }, 400
+    return None
+
+
+@app.route("/data/session", methods=["POST"])
+def create_data_session_route():
+    """Create a live session over the stored series window for ``history_bars``.
+
+    A miss (fewer stored bars than ``history_bars``) returns 409 ``DATA_MISS``
+    with ``have``/``need`` so the client can provide or fetch, then retry.
+    """
+    payload: dict[str, Any] = dict(request.get_json(silent=True) or {})
+    validated, err = validate(payload, DATA_SESSION_CREATE_SCHEMA)
+    if err is not None:
+        return _err_to_dict(err)
+
+    key = series_store.make_key(
+        validated["exchange"],
+        validated["symbol"],
+        validated["interval"],
+        validated["market"],
+    )
+    history = series_store.check_history_bars(validated["history_bars"])
+    refused = _data_session_refusal(validated)
+    if refused is not None:
+        return jsonify(refused[0]), refused[1]
+
+    store = series_store.get_store()
+    status = store.status(key)
+    have = int(status["count"])
+    if have < history:
+        return jsonify({"status": "miss", "code": "DATA_MISS", "key": key.text, "have": have, "need": history}), 409
+    bars = store.window(key, history)
+
+    try:
+        runtime = Runtime(symbol=str(validated["symbol"]))
+        session = runtime.create_session(
+            validated["script"],
+            bars,
+            inputs=validated.get("inputs") or None,
+            libraries=_parse_run_libraries(validated.get("libraries")) or None,
+            profiler=bool(validated.get("profiler")),
+            mode="interpret",
+        )
+    except Exception as exc:
+        logger.warning("data session create failed: %s", exc)
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSION_CREATE_FAILED",
+                "message": _sanitize_error_for_response(str(exc)),
+            }
+        ), 400
+
+    try:
+        session_id = SESSIONS.put(session)
+    except RuntimeError as exc:
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSIONS_FULL",
+                "message": _sanitize_error_for_response(str(exc)),
+            }
+        ), 503
+
+    data_live.bind_session(session, key, bars[-1])
+    extra: dict[str, Any] = {
+        "sessions": SESSIONS.stats(),
+        "cache": "hit",
+        "data": {"key": key.text, "count": have, "newest": status["newest"]},
+    }
+    return jsonify(_session_envelope(session.result(), session_id, extra)), 200
+
+
+@app.route("/data/session/<session_id>/tick", methods=["POST"])
+def data_session_tick_route(session_id: str):
+    """Fetch candles since the stored newest and advance the bound session.
+
+    Closed bars are persisted and appended; the forming bar is re-ticked in
+    place. Body is ``{exchange, symbol}`` only and must name the bound series.
+    """
+    session, missing = _load_session(session_id)
+    if missing is not None:
+        return jsonify(missing[0]), missing[1]
+
+    payload: dict[str, Any] = dict(request.get_json(silent=True) or {})
+    validated, err = validate(payload, DATA_SESSION_TICK_SCHEMA)
+    if err is not None:
+        return _err_to_dict(err)
+
+    binding = data_live.binding_of(session)
+    if binding is None or not binding.key.identity_matches(validated["exchange"], validated["symbol"]):
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSION_KEY_MISMATCH",
+                "message": "Session is bound to a different series key.",
+                "session_id": session_id,
+            }
+        ), 409
+
+    try:
+        outcome = data_api.sync_data_session(session, binding)
+    except series_store.DataError as exc:
+        return jsonify({**exc.body(), "session_id": session_id}), exc.status
+    except Exception as exc:
+        logger.warning("data session tick failed: %s", exc)
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSION_TICK_FAILED",
+                "message": _sanitize_error_for_response(str(exc)),
+                "session_id": session_id,
+            }
+        ), 400
+
+    extra: dict[str, Any] = {
+        "session_id": session_id,
+        "appended": outcome.appended,
+        "forming": outcome.forming,
+        "unchanged": outcome.unchanged,
+    }
+    return jsonify(_session_envelope(outcome.result, session_id, extra)), 200
 
 
 @app.route("/optimize", methods=["POST"])
@@ -1703,6 +1861,8 @@ app.register_blueprint(lsp_bp)
 app.register_blueprint(git_oauth_bp)
 if datafeed_bp is not None:
     app.register_blueprint(datafeed_bp)
+app.register_blueprint(data_api.bp)
+app.register_error_handler(series_store.DataError, data_api.data_error_response)
 app.register_blueprint(runner_bp)
 try:
     from backend.runner.scheduler import maybe_start_background

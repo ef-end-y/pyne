@@ -115,6 +115,45 @@ SESSION_APPEND_SCHEMA: dict[str, tuple[type, bool, Any]] = {
     "to_bar": (int, False, None),
 }
 
+# ── Engine-owned OHLCV data plane (/data/*) ─────────────────────────────────
+# Series identity is canonicalized in backend/datastore/series.py; ``symbol`` is
+# also the display name for a data session.
+
+DATA_SERIES_KEY_FIELDS: dict[str, tuple[type, bool, Any]] = {
+    "exchange": (str, True, ""),
+    "market": (str, False, "spot"),  # spot | swap | future
+    "symbol": (str, True, ""),
+    "interval": (str, True, ""),
+}
+
+DATA_SERIES_PROVIDE_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    **DATA_SERIES_KEY_FIELDS,
+    "bars": (list, True, []),
+    "source": (str, False, "axis-local"),
+}
+
+DATA_SERIES_FETCH_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    **DATA_SERIES_KEY_FIELDS,
+    "history_bars": (int, False, 5000),
+}
+
+DATA_SESSION_CREATE_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    **DATA_SERIES_KEY_FIELDS,
+    "history_bars": (int, False, 5000),
+    "script": (str, True, ""),
+    "inputs": (dict, False, {}),
+    "libraries": (list, False, []),
+    "profiler": (bool, False, False),
+    # Interpret only, as for POST /session.
+    "mode": (str, False, "interpret"),
+}
+
+# Identity only: the engine owns the bars, so AXIS never sends them on a tick.
+DATA_SESSION_TICK_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    "exchange": (str, True, ""),
+    "symbol": (str, True, ""),
+}
+
 # Shared OHLCV + many scripts (AXIS multi-indicator). Nested script objects
 # are validated in the route (schema helper is flat only).
 RUN_BATCH_SCHEMA: dict[str, tuple[type, bool, Any]] = {

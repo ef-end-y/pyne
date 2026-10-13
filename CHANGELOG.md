@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Engine-owned OHLCV store** — PYNE Pro can now own market bars for every-tick live mode. Bars persist in SQLite under `PYNE_DATA_DIR` (default `data/`), keyed by the canonical series key `exchange|market|SYMBOL|interval` (for example `binance|spot|BTC/USDT|1h`). Upserts are keyed by unix-second `time`, and the later write wins. A forming bar is re-written in place. Implemented in `backend/datastore/series.py`, without Flask or CCXT. The wire contract is `docs/devops/engine-owned-data-plane.mdx` in the AXIS repo.
+- **`/data/series*` routes** (`backend/api/data_series.py`) — `GET /data/series` (bounds; count 0 when unknown), `POST /data/series/provide` (upload closed bars, max 5,000 per request, otherwise `413 BATCH_TOO_LARGE`), `POST /data/series/fetch` (walks CCXT `fetch_ohlcv` pages forward from `now - history_bars` and persists; `history_bars` defaults to 5,000 and caps at 100,000; upstream failure is `502 UPSTREAM`, CCXT missing is `503 CCXT_UNAVAILABLE`), and `GET /data/series/bars` (newest window, ascending, `limit` defaults to 10,000 and caps at 100,000). The CCXT provider and candle mapping are shared with `/datafeed/ohlcv`.
+- **`/data/session*` routes** (`backend/app.py`) — `POST /data/session` builds a live interpret session over the stored window and binds it to the series key. It returns the `/session` envelope plus `session_id`, `cache: "hit"`, and `data: {key, count, newest}`. When the store holds fewer than `history_bars` bars it returns `409 DATA_MISS` with `have` and `need`. `POST /data/session/<id>/tick` takes `{exchange, symbol}` only. It returns `409 SESSION_KEY_MISMATCH` for another series, fetches candles from two bars before the stored newest, persists closed bars, re-ticks the forming bar with `update_last_bar`, and appends newer bars with `append_bars`. The response adds `appended`, `forming`, and `unchanged`. Upstream failure is `502 UPSTREAM` and keeps the session. `DELETE /session/<id>` releases it as before.
+- **Health `features`** — `live_modes: ["every-tick", "bar-close"]` and `data_session: true`, which AXIS uses for capability detection (D3). The `/data/*` routes are listed under `endpoints`.
+
 ## [0.6.9] — 2026-10-13
 
 ### Added
