@@ -522,6 +522,21 @@ def _execute_run_payload_inner(
         **timeout_kw,
     )
 
+    # Response windowing — serialize only the requested bar range. Must run
+    # AFTER the full result is built (the bar loop is untouched) and is a no-op
+    # when the client sends no window, so the default path is byte-identical.
+    if validated.get("from_bar") is not None or validated.get("to_bar") is not None:
+        try:
+            from backend.middleware.window import apply_window
+
+            result = apply_window(
+                result,
+                validated.get("from_bar"),
+                validated.get("to_bar"),
+            )
+        except Exception:  # noqa: BLE001 — never fail a run over a trim
+            logger.warning("window trim failed; returning full envelope", exc_info=True)
+
     if "error" in result:
         err_body: dict[str, Any] = {
             "status": "error",
@@ -573,6 +588,11 @@ def _execute_run_payload_inner(
         resp["alert_conditions"] = result["alert_conditions"]
     if result.get("timed_out"):
         resp["timed_out"] = True
+    # `count` stays the number of bars EVALUATED, so a client that sees
+    # count=20000 with a 500-long series needs this to know it got a window
+    # rather than a short history.
+    if result.get("window") is not None:
+        resp["window"] = result["window"]
 
     # Warm-compile / auto-route diagnostics (H2 product path)
     for key in (

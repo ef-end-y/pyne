@@ -77,6 +77,11 @@ RUN_SCHEMA: dict[str, tuple[type, bool, Any]] = {
     "libraries": (list, False, []),
     # Optional interpret wall-clock budget; omit / null → None (no timeout).
     "timeout_seconds": (float, False, None),
+    # Response windowing (inclusive bar indices into `data`, negative = from
+    # end). Trims the *envelope* only — the bar loop still sees every bar, so
+    # evaluation and Pine parity are unchanged. Omit both for today's behaviour.
+    "from_bar": (int, False, None),
+    "to_bar": (int, False, None),
 }
 
 # Shared OHLCV + many scripts (AXIS multi-indicator). Nested script objects

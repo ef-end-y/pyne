@@ -7,7 +7,7 @@ tags: [backend, code, middleware]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:40:25Z
+  at: 2026-10-13T04:48:25Z
 sources:
   - id: tree
     resource: "backend/middleware"
@@ -24,3 +24,4 @@ okf_lock: generated
 * `key_store_redis.py` — RedisKeyStore
 * `key_store_sqlite.py` — SQLiteKeyStore
 * `schemas.py` — validate
+* `window.py` — apply_window, normalize_window
