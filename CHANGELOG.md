@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.9] — 2026-10-13
+
 ### Added
 
 - **Response windowing on `POST /run`** — optional `from_bar` / `to_bar` request fields (inclusive bar indices into `data`, negative counts from the end, either side may be omitted). Trims the **serialized envelope only**: the bar loop still runs over every bar, so indicator values, strategy state, NaN warm-up, and Pine parity are untouched. Measured on 20k bars against a local Pro API: **1,068.8 KB → 28.0 KB (38x smaller)** for a 500-bar window, with the windowed series verified byte-equal to the full run's tail.
@@ -31,12 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The tolerance is deliberately narrow: `_is_nonnumeric_only_difference` returns False the moment any disagreeing cell is numeric on **both** sides, so a genuine numeric difference on a fill key is still a hard mismatch. Only colour/NA cells on fill-shaped keys are absorbed, and they stay visible in the result rather than being dropped.
 - **`array.copy(na)` emitted a dead `list(None)` into generated code.** `array.copy` inlined `list(x) if isinstance(x, (list, tuple, np.ndarray)) else []`, which for a literal `None` argument renders as `pt2 = (list(None) if isinstance(None, ...) else [])`. It never executed — the `isinstance` guard is False — but the text reads like a crash and is what `test_chart_point_copy_not_list_none` guards against. Now routed through an `array_copy_value` builtin, matching how `array_sort` is already handled.
 
-### Known limitation
-
-Sessions are **interpret-only** (``compile`` has no resumable evaluator state; ``create_session`` rejects it), and **strategy fills are not rolled back across ticks** — fills accumulate and strategy series history is overwritten rather than appended, the same caveat as the realtime tick loop in ``Runtime.run``. Indicators and ``alert()`` conditions are unaffected. A live *strategy* driven through ``/session/<id>/tick`` needs that fixed first.
-
-### Fixed
-
 - **Generated docs packs no longer shred digits**: the emoji strip in ``scripts/docs/generate-exports.mjs`` used bare ``\p{Emoji}``, which also matches ASCII digits participating in keycap sequences. Every ``llm.txt`` / ``llms.txt`` therefore shipped mangled text — ``AGPL-3.0-only`` became ``AGPL-.-only``, ``ADR-001`` became ``ADR-``, ``/v/chat`` became ``/v/chat`` with digits eaten. Now strips ``\p{Extended_Pictographic}`` plus the skin-tone / variation / combining-keycap codepoints, so real emoji go and version numbers, ADR ids, and license identifiers survive.
 - **AXIS docs pack pointed at the wrong repository**: the export pipeline hardcoded the PYNE repo URL for every product, so ``/axis/docs/llm.txt`` announced ``Repository: https://github.com/hoox-sh/pyne``. Each product now carries its own ``repoUrl``.
 - **VPS Pro API memory growth**: gunicorn workers now recycle (``--max-requests``) on both the Hetzner systemd unit and the Docker entrypoint (``GUNICORN_MAX_REQUESTS``). Without recycling, workers grew past 1.6 GB each on the 3.8 GB VPS until swap filled 100% and even ``GET /health`` took 6–14 s, so AXIS reported the engine as down. The unit is now versioned at ``deploy/pynescript-api.service`` (+ ``cors.conf`` drop-in) and ``scripts/deploy_vps.sh`` installs it before restart.
@@ -54,6 +50,10 @@ Sessions are **interpret-only** (``compile`` has no resumable evaluator state; `
 ### Docs
 
 - README version strings refreshed to 0.6.8 (PyPI + all three GHCR tags verified present).
+
+### Known limitation
+
+Sessions are **interpret-only** (``compile`` has no resumable evaluator state; ``create_session`` rejects it), and **strategy fills are not rolled back across ticks** — fills accumulate and strategy series history is overwritten rather than appended, the same caveat as the realtime tick loop in ``Runtime.run``. Indicators and ``alert()`` conditions are unaffected. A live *strategy* driven through ``/session/<id>/tick`` needs that fixed first.
 
 ## [0.6.8] - 2026-09-26
 
