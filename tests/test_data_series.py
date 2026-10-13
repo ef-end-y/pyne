@@ -34,6 +34,7 @@ from backend.datastore import series as series_store
 from backend.datastore.series import DataError
 from backend.datastore.series import SeriesStore
 from backend.datastore.series import make_key
+from backend.middleware.auth import reset_key_store
 from backend.middleware.sessions import SESSIONS
 
 
@@ -94,10 +95,23 @@ def exchange(monkeypatch) -> FakeExchange:
 
 
 @pytest.fixture
-def client():
+def client(tmp_path, monkeypatch):
+    """Authenticated test client: every /data request carries a valid API key."""
+    monkeypatch.setenv("ADMIN_TOKEN", "test-admin-token-for-data-series")
+    monkeypatch.setenv("STORE_BACKEND", "json")
+    monkeypatch.setenv("API_KEY_STORE", str(tmp_path / "api_keys.json"))
+    reset_key_store()
     app.config.update(TESTING=True)
     with app.test_client() as c:
+        minted = c.post(
+            "/auth/create_key",
+            json={"tier": "hobby"},
+            headers={"X-Admin-Token": "test-admin-token-for-data-series"},
+        )
+        assert minted.status_code == 200, minted.json
+        c.environ_base["HTTP_AUTHORIZATION"] = f"Bearer {minted.json['api_key']}"
         yield c
+    reset_key_store()
 
 
 # ── canonical key ────────────────────────────────────────────────────────────
@@ -451,3 +465,17 @@ def test_health_advertises_the_data_plane_features(client):
     assert body["features"]["data_session"] is True
     assert "GET /data/series" in body["endpoints"]
     assert "POST /data/session/<session_id>/tick" in body["endpoints"]
+
+
+class TestAuth:
+    """Every /data route is API-key gated, matching the rest of the paid surface."""
+
+    def test_routes_reject_missing_key(self, client):
+        c = client
+        c.environ_base.pop("HTTP_AUTHORIZATION", None)
+        assert c.get("/data/series", query_string=KEY_BODY).status_code == 401
+        assert c.get("/data/series/bars", query_string=KEY_BODY).status_code == 401
+        assert c.post("/data/series/provide", json={**KEY_BODY, "bars": []}).status_code == 401
+        assert c.post("/data/series/fetch", json=KEY_BODY).status_code == 401
+        assert c.post("/data/session", json={**KEY_BODY, "script": "x"}).status_code == 401
+        assert c.post("/data/session/ses/tick", json={}).status_code == 401

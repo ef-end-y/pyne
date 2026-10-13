@@ -40,6 +40,7 @@ from backend.datastore import live
 from backend.datastore import series as series_store
 from backend.datastore.series import DataError
 from backend.datastore.series import SeriesKey
+from backend.middleware.auth import require_api_key
 from backend.middleware.schemas import DATA_SERIES_FETCH_SCHEMA
 from backend.middleware.schemas import DATA_SERIES_PROVIDE_SCHEMA
 from backend.middleware.schemas import validate
@@ -195,6 +196,7 @@ bp.register_error_handler(DataError, data_error_response)
 
 
 @bp.route("/series", methods=["GET"])
+@require_api_key
 def series_status():
     """Stored bounds for one series. Unknown series report count 0."""
     key = _key_from_args(request.args)
@@ -202,6 +204,7 @@ def series_status():
 
 
 @bp.route("/series/bars", methods=["GET"])
+@require_api_key
 def series_bars():
     """Newest stored bars for a series, ascending."""
     key = _key_from_args(request.args)
@@ -217,6 +220,7 @@ def series_bars():
 
 
 @bp.route("/series/provide", methods=["POST"])
+@require_api_key
 def series_provide():
     """Upsert closed bars uploaded by the client (at most 5,000 per request)."""
     validated, err = validate(request.get_json(silent=True) or {}, DATA_SERIES_PROVIDE_SCHEMA)
@@ -246,6 +250,7 @@ def series_provide():
 
 
 @bp.route("/series/fetch", methods=["POST"])
+@require_api_key
 def series_fetch():
     """Fetch the newest ``history_bars`` bars from the exchange via CCXT and persist them."""
     validated, err = validate(request.get_json(silent=True) or {}, DATA_SERIES_FETCH_SCHEMA)

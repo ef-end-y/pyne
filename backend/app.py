@@ -1231,6 +1231,7 @@ def _data_session_refusal(validated: dict[str, Any]) -> tuple[dict[str, Any], in
 
 
 @app.route("/data/session", methods=["POST"])
+@require_api_key
 def create_data_session_route():
     """Create a live session over the stored series window for ``history_bars``.
 
@@ -1301,6 +1302,7 @@ def create_data_session_route():
 
 
 @app.route("/data/session/<session_id>/tick", methods=["POST"])
+@require_api_key
 def data_session_tick_route(session_id: str):
     """Fetch candles since the stored newest and advance the bound session.
 
