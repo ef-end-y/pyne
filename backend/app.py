@@ -677,6 +677,14 @@ def _health_payload() -> dict[str, Any]:
         "POST /run/batch": "Run multiple Pine scripts on shared OHLCV (free)",
         "POST /optimize": "Strategy hyperparameter search (free; interpret + inputs)",
         "POST /compile/prewarm": "Warm Numba builtins / optional scripts (free)",
+        # Live sessions. Process-local, so these only resolve on the single
+        # gunicorn worker — advertised here because /health is the discovery
+        # surface agents and AXIS read to learn what this API can do.
+        "POST /session": "Create a live session (interpret only; O(1) re-tick)",
+        "GET /session/<session_id>": "Live session status (bars, idle, TTL)",
+        "POST /session/<session_id>/tick": "Re-tick the forming bar — O(1)",
+        "POST /session/<session_id>/append": "Append closed bars — O(delta)",
+        "DELETE /session/<session_id>": "Release a session (else idle TTL)",
         "POST /lsp/completion": "Pine completion (free, AXIS editor)",
         "POST /lsp/hover": "Pine hover docs (free, AXIS editor)",
         "POST /lsp/diagnostics": "Pine parse+lint pre-eval (free, AXIS editor)",
@@ -924,9 +932,7 @@ def execute_optimize_payload(data: dict[str, Any]) -> tuple[dict[str, Any], int]
 #   DELETE /session/<id>         release
 
 
-def _session_envelope(
-    result: Any, session_id: str, extra: dict[str, Any] | None = None
-) -> dict[str, Any]:
+def _session_envelope(result: Any, session_id: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """Shape a session result like ``/run`` so one client normalizer handles both."""
     if not isinstance(result, dict):
         return {
@@ -988,18 +994,14 @@ def _load_session(
     return session, None
 
 
-def _session_window(
-    result: Any, validated: dict[str, Any]
-) -> tuple[Any, dict[str, Any] | None]:
+def _session_window(result: Any, validated: dict[str, Any]) -> tuple[Any, dict[str, Any] | None]:
     """Apply the optional envelope trim, matching POST /run semantics."""
     if validated.get("from_bar") is None and validated.get("to_bar") is None:
         return result, None
     try:
         from backend.middleware.window import apply_window
 
-        trimmed = apply_window(
-            result, validated.get("from_bar"), validated.get("to_bar")
-        )
+        trimmed = apply_window(result, validated.get("from_bar"), validated.get("to_bar"))
         return trimmed, trimmed.get("window")
     except Exception as exc:  # noqa: BLE001 — never fail a tick over a trim
         logger.warning("session window trim failed: %s", exc)
@@ -1022,13 +1024,9 @@ def create_session_route():
     script = validated.get("script")
     ohlcv = validated.get("data") or []
     if not script:
-        return jsonify(
-            {"status": "error", "code": "NO_SCRIPT", "message": "No 'script' provided."}
-        ), 400
+        return jsonify({"status": "error", "code": "NO_SCRIPT", "message": "No 'script' provided."}), 400
     if not ohlcv:
-        return jsonify(
-            {"status": "error", "code": "NO_DATA", "message": "No 'data' provided."}
-        ), 400
+        return jsonify({"status": "error", "code": "NO_DATA", "message": "No 'data' provided."}), 400
 
     mode = str(validated.get("mode") or "interpret").strip().lower()
     if mode not in ("interpret", ""):
@@ -1071,9 +1069,7 @@ def create_session_route():
             }
         ), 503
 
-    return jsonify(
-        _session_envelope(session.result(), session_id, {"sessions": SESSIONS.stats()})
-    ), 200
+    return jsonify(_session_envelope(session.result(), session_id, {"sessions": SESSIONS.stats()})), 200
 
 
 @app.route("/session/<session_id>", methods=["GET"])
@@ -1164,9 +1160,7 @@ def session_append_route(session_id: str):
         return _err_to_dict(err)
 
     try:
-        result = session.append_bars(
-            bars_in, realtime_ticks=int(validated.get("realtime_ticks") or 1)
-        )
+        result = session.append_bars(bars_in, realtime_ticks=int(validated.get("realtime_ticks") or 1))
     except Exception as exc:  # noqa: BLE001 — a bad append must not 500
         logger.warning("session append failed: %s", exc)
         return jsonify(
@@ -1196,9 +1190,7 @@ def session_delete_route(session_id: str):
                 "message": f"Unknown session {session_id!r}.",
             }
         ), 404
-    return jsonify(
-        {"status": "success", "session_id": session_id, "released": True}
-    ), 200
+    return jsonify({"status": "success", "session_id": session_id, "released": True}), 200
 
 
 @app.route("/optimize", methods=["POST"])

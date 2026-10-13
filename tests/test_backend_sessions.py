@@ -283,3 +283,50 @@ class TestSessionRoutes:
         res = client.post(f"/session/{sid}/tick", json={"bar": _bars(1, start=59)[0]})
         assert res.status_code in (200, 400)
         assert res.get_json()["status"] in ("success", "error")
+
+
+# ── discovery parity ────────────────────────────────────────────────────────
+#
+# Scoped to the session routes on purpose. /health advertises some routes only
+# when a subsystem is enabled (runner_enabled() / scheduler_enabled()), so a
+# whole-map "everything routable is advertised" invariant does not hold — that
+# conditional advertisement is intentional, not drift.
+
+
+def _advertised(client) -> set[str]:
+    return set(client.get("/health").get_json().get("endpoints") or {})
+
+
+def test_health_advertises_every_session_route(client):
+    """/health is the discovery surface; a route it omits does not exist to a reader.
+
+    The session endpoints shipped without being added to the health ``endpoints``
+    map, so /health reported 28 endpoints and never mentioned /session — AXIS
+    and any agent reading it would conclude the feature was unavailable.
+    """
+    advertised = _advertised(client)
+    for route in (
+        "POST /session",
+        "GET /session/<session_id>",
+        "POST /session/<session_id>/tick",
+        "POST /session/<session_id>/append",
+        "DELETE /session/<session_id>",
+    ):
+        assert route in advertised, f"{route} missing from /health endpoints"
+
+
+def test_advertised_session_routes_are_actually_routable(client):
+    """Every session route /health advertises must resolve, and vice versa.
+
+    Keeps the advertised keys byte-identical to Flask's rule strings so a
+    rename in the decorator cannot silently desynchronise discovery from
+    routing.
+    """
+    advertised = {k for k in _advertised(client) if k.split(" ", 1)[1].startswith("/session")}
+    registered = {
+        f"{m} {r.rule}"
+        for r in app.url_map.iter_rules()
+        if r.rule.startswith("/session")
+        for m in sorted(r.methods - {"HEAD", "OPTIONS"})
+    }
+    assert advertised == registered, f"advertised={sorted(advertised)} registered={sorted(registered)}"
