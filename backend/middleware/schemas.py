@@ -84,6 +84,37 @@ RUN_SCHEMA: dict[str, tuple[type, bool, Any]] = {
     "to_bar": (int, False, None),
 }
 
+# ── Live evaluation sessions ────────────────────────────────────────────────
+# Kept in-process by design (see backend/middleware/sessions.py); the Pro API
+# therefore runs a single gunicorn worker.
+
+SESSION_CREATE_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    "script": (str, True, ""),
+    "data": (list, True, []),
+    "symbol": (str, False, "CHART"),
+    "inputs": (dict, False, {}),
+    "profiler": (bool, False, False),
+    "libraries": (list, False, []),
+    # Interpret only — compile has no resumable evaluator state. Accepted so
+    # the rejection is an explicit 400 rather than a schema error.
+    "mode": (str, False, "interpret"),
+}
+
+SESSION_TICK_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    # 'bar' is validated structurally by the route (OHLCV object).
+    "bar": (dict, True, {}),
+    # Optional envelope trim, same semantics as POST /run.
+    "from_bar": (int, False, None),
+    "to_bar": (int, False, None),
+}
+
+SESSION_APPEND_SCHEMA: dict[str, tuple[type, bool, Any]] = {
+    "bars": (list, True, []),
+    "realtime_ticks": (int, False, 1),
+    "from_bar": (int, False, None),
+    "to_bar": (int, False, None),
+}
+
 # Shared OHLCV + many scripts (AXIS multi-indicator). Nested script objects
 # are validated in the route (schema helper is flat only).
 RUN_BATCH_SCHEMA: dict[str, tuple[type, bool, Any]] = {

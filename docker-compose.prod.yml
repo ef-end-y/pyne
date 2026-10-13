@@ -31,7 +31,7 @@ services:
       ADMIN_TOKEN: ${ADMIN_TOKEN:?ADMIN_TOKEN must be set for production compose}
       # Only set when STORE_BACKEND=redis (and redis profile / Memorystore is up)
       REDIS_URL: ${REDIS_URL:-}
-      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-2}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-1} # 1 = live sessions stay correct (see entrypoint-api.sh)
       GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
       # Public hosts: opt in to unauthenticated /run caps. Override with 0 to disable.

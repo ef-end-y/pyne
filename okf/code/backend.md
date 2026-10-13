@@ -7,7 +7,7 @@ tags: [backend, code]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:40:25Z
+  at: 2026-10-13T05:13:18Z
 sources:
   - id: tree
     resource: "backend"
@@ -20,7 +20,7 @@ okf_lock: generated
 
 * `__init__.py`
 * `alert_forwarder.py` — build_alert_payload, default_webhook_url, filter_alerts_for_bar, forward_alerts, http_post_json, is_webhook_url_safe, maybe_forward_run_alerts, normalize_webhook_url
-* `app.py` — compile_prewarm, create_api_key, execute_optimize_payload, execute_run_payload, get_usage, health_check, not_found, optimize_strategy, payload_too_large, run_pine_script, run_pine_script_batch, server_error
+* `app.py` — compile_prewarm, create_api_key, create_session_route, execute_optimize_payload, execute_run_payload, get_usage, health_check, not_found, optimize_strategy, payload_too_large, run_pine_script, run_pine_script_batch
 * `evaluator.py`
 * `runtime.py`
 * `series.py`

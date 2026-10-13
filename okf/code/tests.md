@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-13T04:48:25Z
+  at: 2026-10-13T05:13:18Z
 sources:
   - id: tree
     resource: "tests"
@@ -24,6 +24,7 @@ okf_lock: generated
 * `test_alerts.py` — TestAlerts
 * `test_backend.py` — TestAuth, TestBacktest, TestBacktestService, TestChartRenderer, TestGitOAuth, TestHealth, TestOptimizeEndpoint, TestPreview, TestRun, api_key, client
 * `test_backend_runner.py` — TestRunnerCron, TestRunnerDisabled, TestRunnerRegistry, client, off_client
+* `test_backend_sessions.py` — TestSessionRoutes, TestSessionStore, client
 * `test_backend_window.py` — TestApplyWindow, TestNormalizeWindow, TestSizeReduction
 * `test_bgcolor_plotshape_export.py` — test_bgcolor_export_kind_and_color_series, test_drawing_registry_merge_visual_series_wrapper, test_materialize_bgcolor_default_titles_from_drawings, test_materialize_plotshape_from_compile_drawings, test_plot_meta_kind_plot_compat, test_plotchar_export, test_plotshape_export_bool_series_and_style, test_titled_bgcolor_compile_matches_interpret, test_uniquify_series_title_matches_runtime
 * `test_builtins.py` — TestChartPointFunctions, TestIntegratedPhase5Features, TestLoggingFunctions, TestPhase5EdgeCases, TestPolylineFunctions, TestTickerFunctions

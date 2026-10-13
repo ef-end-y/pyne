@@ -73,7 +73,11 @@ from backend.middleware.auth import require_api_key
 from backend.middleware.schemas import CREATE_KEY_SCHEMA
 from backend.middleware.schemas import OPTIMIZE_SCHEMA
 from backend.middleware.schemas import RUN_SCHEMA
+from backend.middleware.schemas import SESSION_APPEND_SCHEMA
+from backend.middleware.schemas import SESSION_CREATE_SCHEMA
+from backend.middleware.schemas import SESSION_TICK_SCHEMA
 from backend.middleware.schemas import VALIDATE_KEY_SCHEMA
+from backend.middleware.sessions import SESSIONS
 from backend.middleware.schemas import validate
 from backend.runtime import Runtime
 
@@ -903,6 +907,298 @@ def execute_optimize_payload(data: dict[str, Any]) -> tuple[dict[str, Any], int]
         return body, 200
     finally:
         release_free_slot()
+
+
+# ── Live evaluation sessions ──────────────────────────────────────────────────
+#
+# A session keeps a parsed script, its series, and its TA state alive so that
+# re-ticking the forming bar is O(1) instead of re-evaluating every bar
+# (1,087 ms → 0.13 ms on 20k bars). That state is per-process, which is why the
+# Pro API runs a single gunicorn worker — see backend/middleware/sessions.py.
+#
+# Endpoints are intentionally a small, explicit surface:
+#   POST   /session              create (runs the initial bars once)
+#   GET    /session/<id>         status
+#   POST   /session/<id>/append  add closed bars   — O(delta)
+#   POST   /session/<id>/tick    re-tick last bar  — O(1)
+#   DELETE /session/<id>         release
+
+
+def _session_envelope(
+    result: Any, session_id: str, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Shape a session result like ``/run`` so one client normalizer handles both."""
+    if not isinstance(result, dict):
+        return {
+            "status": "error",
+            "code": "SESSION_RESULT_INVALID",
+            "session_id": session_id,
+        }
+    if "error" in result:
+        return {
+            "status": "error",
+            "code": "SESSION_EXECUTION_ERROR",
+            "message": _sanitize_error_for_response(str(result["error"])),
+            "session_id": session_id,
+        }
+    out: dict[str, Any] = {
+        "status": "success",
+        "session_id": session_id,
+        "plots": result.get("plots", []),
+        "series": result.get("series", {}),
+        "plot_meta": result.get("plot_meta", {}),
+        "events": result.get("events", []),
+        "drawings": result.get("drawings", []),
+        "alerts": result.get("alerts", []),
+        "inputs": result.get("inputs", []),
+        "count": result.get("count", 0),
+        "mode": result.get("mode", "interpret"),
+        "overlay": result.get("overlay", True),
+        "script_name": result.get("script_name", "plot"),
+        "logs": result.get("logs", []),
+        "meta": {
+            **(result.get("meta") or {}),
+            "inputs": result.get("inputs", []),
+            "plot_meta": result.get("plot_meta", {}),
+        },
+    }
+    if result.get("alert_conditions") is not None:
+        out["alert_conditions"] = result["alert_conditions"]
+    if extra:
+        out.update(extra)
+    return out
+
+
+def _load_session(
+    session_id: str,
+) -> tuple[Any | None, tuple[dict[str, Any], int] | None]:
+    session = SESSIONS.get(session_id)
+    if session is None:
+        return None, (
+            {
+                "status": "error",
+                "code": "NO_SESSION",
+                "message": (
+                    "Unknown or expired session id. Sessions are process-local and "
+                    "evicted after the idle TTL; create a new one with POST /session."
+                ),
+            },
+            404,
+        )
+    return session, None
+
+
+def _session_window(
+    result: Any, validated: dict[str, Any]
+) -> tuple[Any, dict[str, Any] | None]:
+    """Apply the optional envelope trim, matching POST /run semantics."""
+    if validated.get("from_bar") is None and validated.get("to_bar") is None:
+        return result, None
+    try:
+        from backend.middleware.window import apply_window
+
+        trimmed = apply_window(
+            result, validated.get("from_bar"), validated.get("to_bar")
+        )
+        return trimmed, trimmed.get("window")
+    except Exception as exc:  # noqa: BLE001 — never fail a tick over a trim
+        logger.warning("session window trim failed: %s", exc)
+        return result, None
+
+
+@app.route("/session", methods=["POST"])
+def create_session_route():
+    """Create a live evaluation session over the supplied bars.
+
+    Interpret only — ``compile`` has no resumable evaluator state. Callers then
+    use ``/session/<id>/tick`` for the forming bar and ``/session/<id>/append``
+    for new closed bars.
+    """
+    payload: dict[str, Any] = dict(request.get_json(silent=True) or {})
+    validated, err = validate(payload, SESSION_CREATE_SCHEMA)
+    if err is not None:
+        return _err_to_dict(err)
+
+    script = validated.get("script")
+    ohlcv = validated.get("data") or []
+    if not script:
+        return jsonify(
+            {"status": "error", "code": "NO_SCRIPT", "message": "No 'script' provided."}
+        ), 400
+    if not ohlcv:
+        return jsonify(
+            {"status": "error", "code": "NO_DATA", "message": "No 'data' provided."}
+        ), 400
+
+    mode = str(validated.get("mode") or "interpret").strip().lower()
+    if mode not in ("interpret", ""):
+        return jsonify(
+            {
+                "status": "error",
+                "code": "MODE_UNSUPPORTED",
+                "message": "Sessions support interpret only; compile has no resumable state.",
+            }
+        ), 400
+
+    try:
+        runtime = Runtime(symbol=str(validated.get("symbol") or "CHART"))
+        session = runtime.create_session(
+            script,
+            ohlcv,
+            inputs=validated.get("inputs") or None,
+            libraries=_parse_run_libraries(validated.get("libraries")) or None,
+            profiler=bool(validated.get("profiler")),
+            mode="interpret",
+        )
+    except Exception as exc:  # noqa: BLE001 — surface engine failures cleanly
+        logger.warning("session create failed: %s", exc)
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSION_CREATE_FAILED",
+                "message": _sanitize_error_for_response(str(exc)),
+            }
+        ), 400
+
+    try:
+        session_id = SESSIONS.put(session)
+    except RuntimeError as exc:
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSIONS_FULL",
+                "message": _sanitize_error_for_response(str(exc)),
+            }
+        ), 503
+
+    return jsonify(
+        _session_envelope(session.result(), session_id, {"sessions": SESSIONS.stats()})
+    ), 200
+
+
+@app.route("/session/<session_id>", methods=["GET"])
+def session_status_route(session_id: str):
+    """Status for a live session (bar count, idle time, TTL)."""
+    described = SESSIONS.describe(session_id)
+    if described is None:
+        return jsonify(
+            {
+                "status": "error",
+                "code": "NO_SESSION",
+                "message": f"Unknown session {session_id!r}.",
+            }
+        ), 404
+    return jsonify({"status": "success", **described}), 200
+
+
+@app.route("/session/<session_id>/tick", methods=["POST"])
+def session_tick_route(session_id: str):
+    """Re-tick the forming bar with revised OHLCV — O(1) bars.
+
+    Overwrites the last committed cell in place; the bar count does not advance.
+    ``var`` scope and TA windows roll back to bar-open on each call, so repeated
+    ticks behave like intermediate realtime ticks.
+    """
+    session, missing = _load_session(session_id)
+    if missing is not None:
+        return jsonify(missing[0]), missing[1]
+
+    payload: dict[str, Any] = dict(request.get_json(silent=True) or {})
+    bar = payload.get("bar")
+    if not isinstance(bar, dict):
+        return jsonify(
+            {
+                "status": "error",
+                "code": "NO_BAR",
+                "message": "'bar' must be an OHLCV object.",
+            }
+        ), 400
+
+    validated, err = validate(payload, SESSION_TICK_SCHEMA)
+    if err is not None:
+        return _err_to_dict(err)
+
+    try:
+        result = session.update_last_bar(bar)
+    except Exception as exc:  # noqa: BLE001 — a bad tick must not 500
+        logger.warning("session tick failed: %s", exc)
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSION_TICK_FAILED",
+                "message": _sanitize_error_for_response(str(exc)),
+                "session_id": session_id,
+            }
+        ), 400
+
+    result, window = _session_window(result, validated)
+    extra: dict[str, Any] = {"session_id": session_id}
+    if window is not None:
+        extra["window"] = window
+    return jsonify(_session_envelope(result, session_id, extra)), 200
+
+
+@app.route("/session/<session_id>/append", methods=["POST"])
+def session_append_route(session_id: str):
+    """Append newly closed bars — O(delta), not O(history).
+
+    ``bars`` is a list of OHLCV objects for bars that have just closed.
+    """
+    session, missing = _load_session(session_id)
+    if missing is not None:
+        return jsonify(missing[0]), missing[1]
+
+    payload: dict[str, Any] = dict(request.get_json(silent=True) or {})
+    bars_in = payload.get("bars")
+    if not isinstance(bars_in, list):
+        return jsonify(
+            {
+                "status": "error",
+                "code": "NO_BARS",
+                "message": "'bars' must be a list of OHLCV objects.",
+            }
+        ), 400
+
+    validated, err = validate(payload, SESSION_APPEND_SCHEMA)
+    if err is not None:
+        return _err_to_dict(err)
+
+    try:
+        result = session.append_bars(
+            bars_in, realtime_ticks=int(validated.get("realtime_ticks") or 1)
+        )
+    except Exception as exc:  # noqa: BLE001 — a bad append must not 500
+        logger.warning("session append failed: %s", exc)
+        return jsonify(
+            {
+                "status": "error",
+                "code": "SESSION_APPEND_FAILED",
+                "message": _sanitize_error_for_response(str(exc)),
+                "session_id": session_id,
+            }
+        ), 400
+
+    result, window = _session_window(result, validated)
+    extra: dict[str, Any] = {"session_id": session_id, "appended": len(bars_in)}
+    if window is not None:
+        extra["window"] = window
+    return jsonify(_session_envelope(result, session_id, extra)), 200
+
+
+@app.route("/session/<session_id>", methods=["DELETE"])
+def session_delete_route(session_id: str):
+    """Release a session immediately instead of waiting for the idle TTL."""
+    if not SESSIONS.drop(session_id):
+        return jsonify(
+            {
+                "status": "error",
+                "code": "NO_SESSION",
+                "message": f"Unknown session {session_id!r}.",
+            }
+        ), 404
+    return jsonify(
+        {"status": "success", "session_id": session_id, "released": True}
+    ), 200
 
 
 @app.route("/optimize", methods=["POST"])

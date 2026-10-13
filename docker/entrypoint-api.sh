@@ -19,7 +19,12 @@
 set -eu
 
 PORT="${PORT:-8080}"
-WORKERS="${GUNICORN_WORKERS:-2}"
+# Default 1, deliberately. The live-session routes (/session, …/append, …/tick)
+# keep parsed script + series + TA state in process so a re-tick is O(1); that
+# state is per-process, so a second worker would 404 on ~half of all follow-up
+# calls. gevent still handles thousands of concurrent connections per worker.
+# Override only if session state has moved to an external store.
+WORKERS="${GUNICORN_WORKERS:-1}"
 THREADS="${GUNICORN_THREADS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-120}"
 BIND="${GUNICORN_BIND:-0.0.0.0:${PORT}}"
