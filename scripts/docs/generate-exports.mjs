@@ -53,6 +53,7 @@ const OUT_DIR = path.join(DOCS, "exports")
 const CACHE = path.join(ROOT, ".cache", "docs-exports")
 const BRAND = path.join(DOCS, "assets", "brand")
 const SITE = "https://hoox.sh"
+/** This repo (PYNE) — the default when a product does not override `repoUrl`. */
 const REPO = "https://github.com/hoox-sh/pyne"
 
 const args = process.argv.slice(2)
@@ -115,6 +116,7 @@ const PRODUCTS = {
     publicBase: "/pyne/docs",
     publicUrl: `${SITE}/pyne/docs`,
     repoPath: "docs/pyne",
+    repoUrl: REPO,
     accent: "#A3E635",
     accentDark: "#65A30D",
     brandPack: "volt",
@@ -196,6 +198,9 @@ const PRODUCTS = {
     publicBase: "/axis/docs",
     publicUrl: `${SITE}/axis/docs`,
     repoPath: path.relative(ROOT, AXIS_DOCS_ROOT).replace(/\\/g, "/") || "docs/axis",
+    // AXIS docs live in the axis repo — emitting the pyne URL here sent readers
+    // and agents to the wrong repository.
+    repoUrl: "https://github.com/hoox-sh/axis",
     accent: "#A78BFA",
     accentDark: "#7C3AED",
     brandPack: "void",
@@ -488,7 +493,13 @@ function minifyLlmText(content) {
   text = text.replace(/^\s*>\s+/gm, "")
   text = text.replace(/```[a-zA-Z0-9]*\n([\s\S]*?)```/g, "$1")
   try {
-    text = text.replace(/\p{Emoji}/gu, "")
+    // `RGI_EMOJI`-only, never bare `\p{Emoji}`. Bare `\p{Emoji}` also matches the
+    // ASCII digits that take part in keycap sequences, so text like
+    // `AGPL-3.0-only` and `ADR-003` was silently shredded into
+    // `AGPL-.-only` / `ADR-` in every generated pack. Strip only codepoints that
+    // are actually pictographic.
+    text = text.replace(/\p{Extended_Pictographic}/gu, "")
+    text = text.replace(/[\u{1F3FB}-\u{1F3FF}\u{FE0E}\u{FE0F}\u{20E3}]/gu, "")
   } catch {
     /* ignore if unicode props unavailable */
   }
@@ -1024,8 +1035,8 @@ async function buildAgentFiles(product, docsJson) {
     ``,
     `- [Marketing](${product.marketing}): Product landing`,
     `- [Docs](${product.publicUrl}): Full documentation hub`,
-    `- [Repository](${REPO}): Source monorepo`,
-    `- [Docs tree](${REPO}/tree/main/${product.repoPath}): MDX source of truth`,
+    `- [Repository](${product.repoUrl ?? REPO}): Source monorepo`,
+    `- [Docs tree](${product.repoUrl ?? REPO}/tree/main/${product.repoPath}): MDX source of truth`,
     `- [llm.txt](${product.publicUrl}/llm.txt): Full-corpus minified context`,
     `- [llms.txt](${product.publicUrl}/llms.txt): This file`,
     product.id === "pyne"
@@ -1090,7 +1101,7 @@ async function buildAgentFiles(product, docsJson) {
     `Generated: ${dateIso}`,
     `Source: ${product.repoPath}`,
     `Public: ${product.publicUrl}`,
-    `Repository: ${REPO}`,
+    `Repository: ${product.repoUrl ?? REPO}`,
     ``,
   ]
 

@@ -15,7 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Generated docs packs no longer shred digits**: the emoji strip in ``scripts/docs/generate-exports.mjs`` used bare ``\p{Emoji}``, which also matches ASCII digits participating in keycap sequences. Every ``llm.txt`` / ``llms.txt`` therefore shipped mangled text — ``AGPL-3.0-only`` became ``AGPL-.-only``, ``ADR-001`` became ``ADR-``, ``/v/chat`` became ``/v/chat`` with digits eaten. Now strips ``\p{Extended_Pictographic}`` plus the skin-tone / variation / combining-keycap codepoints, so real emoji go and version numbers, ADR ids, and license identifiers survive.
+- **AXIS docs pack pointed at the wrong repository**: the export pipeline hardcoded the PYNE repo URL for every product, so ``/axis/docs/llm.txt`` announced ``Repository: https://github.com/hoox-sh/pyne``. Each product now carries its own ``repoUrl``.
 - **VPS Pro API memory growth**: gunicorn workers now recycle (``--max-requests``) on both the Hetzner systemd unit and the Docker entrypoint (``GUNICORN_MAX_REQUESTS``). Without recycling, workers grew past 1.6 GB each on the 3.8 GB VPS until swap filled 100% and even ``GET /health`` took 6–14 s, so AXIS reported the engine as down. The unit is now versioned at ``deploy/pynescript-api.service`` (+ ``cors.conf`` drop-in) and ``scripts/deploy_vps.sh`` installs it before restart.
+
+### Docs
+
+- README version strings refreshed to 0.6.8 (PyPI + all three GHCR tags verified present).
 
 ## [0.6.8] - 2026-09-26
 
