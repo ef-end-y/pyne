@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **undici TLS certificate validation bypass (CVE-2026-84961 / GHSA-w293-vg96-wgc3, high)** and five further undici advisories are closed in ``cf/`` by an ``overrides`` entry pinning ``undici`` to ``^7.29.1`` (resolves 7.30.0). ``BalancedPool`` used to deep-clone its constructor options through ``JSON.parse(JSON.stringify(...))``, which cannot represent functions — a ``connect``/``tls`` option carrying a ``checkServerIdentity`` callback was silently dropped before reaching the TLS layer, so a certificate the caller's validator was written to reject was accepted.
   ``undici`` reached ``cf/`` only as a transitive dev dependency (``wrangler`` → ``miniflare``); the sole runtime dependency is ``@cloudflare/containers``, so the vulnerable path never shipped. Fixed regardless — a silently-dropped certificate validator is the wrong thing to leave lying in a tree that runs in CI.
   Verified with a clean ``npm ci``: resolves 7.30.0, ``npm audit`` reports zero undici advisories, and ``wrangler`` still runs.
+- **sharp librsvg CVE-2026-96889 (GHSA-wq5f-xc86-pv6w, high)** closed by pinning ``sharp`` to ``^0.35.5`` (resolves 0.35.5) in ``cf/``. Same ``wrangler`` → ``miniflare`` dev chain; the bump pulls matching ``@img/sharp-libvips-*`` 1.3.4 platform binaries and nothing else.
+- **brace-expansion DoS (2 high, 1 medium)** closed in ``vscode-extension/`` by pinning ``brace-expansion`` to ``^5.0.12`` (resolves 5.0.12) under ``vscode-languageclient`` → ``minimatch``. The three advisories were stack exhaustion via uncontrolled recursion in ``expand_()`` (GHSA-qhr7-859c-m2p7) and ``parseCommaParts()`` (GHSA-6j4f-fj2g-mc7p), and quadratic-time expansion of ``{a},b}`` input (GHSA-q2hr-2g5m-vwhr). 5.0.12 is the strictest floor across all three.
+
+  Both trees verified with a clean ``npm ci`` (not an incremental install): ``npm audit`` reports **0 vulnerabilities** in ``cf/`` and ``vscode-extension/``, ``wrangler`` still runs, and the extension still compiles. Dependabot is now at **zero open alerts** for this repository.
 
 ### Docs
 
