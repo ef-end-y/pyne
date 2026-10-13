@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compile drawing extras**: ``export_compile_events_for_api`` now emits the box text/border extras, label tooltip/text extras, and polyline curve/overlay/fill fields the interpret host already emitted. Also adds the missing ``text.align_*`` enum constants (halign + valign) and stores ``box.new`` text kwargs — both hosts produce identical dicts for AXIS paint.
 - **OKF bundle**: `okf/` is an Open Knowledge Format v0.2 cache of the package, the Pro API, and the docs. The pre-commit hook drafts, links, and lints it. Generated parsers and the Pine corpora are left out of the map.
 
+### Fixed
+
+- **Interpreter/compile parity harness could not classify bgcolor differences** (7 of 13 outstanding failures). `fill_background_only` was computed solely from keys present on *one* side, so a `Background` series present in **both** runs — with colour strings (`'rgba(...)'`) from interpret and `None` from compile — fell through to a hard `MISMATCH` and was unrepresentable as the known compile-path fill gap. `compare_series_maps` now routes such keys to a separate, reported `fill_value_diffs` bucket and lets them satisfy `fill_background_only`.
+  The tolerance is deliberately narrow: `_is_nonnumeric_only_difference` returns False the moment any disagreeing cell is numeric on **both** sides, so a genuine numeric difference on a fill key is still a hard mismatch. Only colour/NA cells on fill-shaped keys are absorbed, and they stay visible in the result rather than being dropped.
+- **`array.copy(na)` emitted a dead `list(None)` into generated code.** `array.copy` inlined `list(x) if isinstance(x, (list, tuple, np.ndarray)) else []`, which for a literal `None` argument renders as `pt2 = (list(None) if isinstance(None, ...) else [])`. It never executed — the `isinstance` guard is False — but the text reads like a crash and is what `test_chart_point_copy_not_list_none` guards against. Now routed through an `array_copy_value` builtin, matching how `array_sort` is already handled.
+
 ### Known limitation
 
 Sessions are **interpret-only** (``compile`` has no resumable evaluator state; ``create_session`` rejects it), and **strategy fills are not rolled back across ticks** — fills accumulate and strategy series history is overwritten rather than appended, the same caveat as the realtime tick loop in ``Runtime.run``. Indicators and ``alert()`` conditions are unaffected. A live *strategy* driven through ``/session/<id>/tick`` needs that fixed first.

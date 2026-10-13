@@ -387,6 +387,29 @@ def series_allclose(
     return True, ""
 
 
+def _is_nonnumeric_only_difference(a: list[Any], b: list[Any]) -> bool:
+    """True when every disagreeing cell is non-numeric on at least one side.
+
+    Used to classify bgcolor colour strings (``'rgba(...)'`` vs ``None``) as
+    the known compile-path fill gap rather than a numeric parity failure — a
+    colour has no number to be "close" to. A cell that is numeric on *both*
+    sides returns False immediately, so a real numeric difference on a fill key
+    is never tolerated.
+    """
+    if len(a) != len(b):
+        return False
+    saw_difference = False
+    for x, y in zip(a, b):
+        if _is_na(x) and _is_na(y):
+            continue
+        fx, fy = _to_float_or_none(x), _to_float_or_none(y)
+        if fx is not None and fy is not None:
+            return False
+        if x != y:
+            saw_difference = True
+    return saw_difference
+
+
 def compare_series_maps(
     interp: dict[str, list[Any]],
     compile_: dict[str, list[Any]],
@@ -438,19 +461,34 @@ def compare_series_maps(
         only_compile = kept_oc
 
     mismatches: list[dict[str, Any]] = []
+    fill_value_diffs: list[dict[str, Any]] = []
     for k in common:
         ok, detail = series_allclose(interp[k], compile_[k], rtol=rtol, atol=atol)
-        if not ok:
-            mismatches.append({"key": k, "detail": detail})
+        if ok:
+            continue
+        # A bgcolor / fill key whose cells are colour strings ('rgba(...)') on
+        # interpret and None on compile is the known compile-path gap, not a
+        # numeric parity failure: there is no number to be close to. Numeric
+        # parity is still enforced — a fill key with a *numeric* difference
+        # stays a hard mismatch.
+        if is_fill_background_key(k) and _is_nonnumeric_only_difference(
+            interp[k], compile_[k]
+        ):
+            fill_value_diffs.append({"key": k, "detail": detail})
+            continue
+        mismatches.append({"key": k, "detail": detail})
 
     only_keys = only_interp + only_compile
-    fill_background_only = bool(only_keys) and all(is_fill_background_key(k) for k in only_keys)
+    fill_background_only = (
+        bool(only_keys) or bool(fill_value_diffs)
+    ) and all(is_fill_background_key(k) for k in only_keys) and not mismatches
 
     return {
         "only_interp": only_interp,
         "only_compile": only_compile,
         "common_keys": common,
         "mismatches": mismatches,
+        "fill_value_diffs": fill_value_diffs,
         "ignored_hline_keys": ignored_hline,
         "ignored_fill_keys": ignored_fill,
         "fill_background_only": fill_background_only,
@@ -598,8 +636,12 @@ def run_one_script(
     result.update(cmp_)
     if cmp_["mismatches"]:
         result["status"] = "MISMATCH"
-    elif cmp_.get("fill_background_only") and (cmp_["only_interp"] or cmp_["only_compile"]):
-        # Structural residual: only Background / fill keys on one side.
+    elif cmp_.get("fill_background_only") and (
+        cmp_["only_interp"] or cmp_["only_compile"] or cmp_.get("fill_value_diffs")
+    ):
+        # Structural residual: only Background / fill keys differ, either
+        # because the key is on one side only, or because its colour-string
+        # cells are absent on compile. Numeric parity is already enforced.
         result["status"] = "fill_background_only"
     else:
         result["status"] = "OK"

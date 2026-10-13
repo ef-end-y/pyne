@@ -4006,7 +4006,12 @@ class CompilerVisitor(NodeVisitor):
             a = ra(args, kwargs, ("id",))
             if not a:
                 return "[]"
-            return f"(list({a[0]}) if isinstance({a[0]}, (list, tuple, np.ndarray)) else [])"
+            # Route through a builtin rather than inlining `list(x) if
+            # isinstance(x, ...)`. The inline form emits `list(None)` for
+            # array.copy(na): dead code behind the guard, but misleading text
+            # that a reader (and tests/test_set06_udt_switch_drawing.py) treat
+            # as a crash.
+            return f"array_copy_value({a[0]})"
         if func_name == "array_concat":
             # array.concat(id1, id2) — append id2 onto id1 (mutate) and return id1
             a = ra(

@@ -2042,6 +2042,17 @@ def safe_sum(x):
     return total
 
 
+def array_copy_value(x):
+    """``array.copy`` — shallow copy of a list/tuple/ndarray, else ``[]``.
+
+    Keeps the None/na case total: Pine's ``array.copy(na)`` yields an empty
+    array rather than raising, matching the runtime's NA-as-empty semantics.
+    """
+    if isinstance(x, (list, tuple, np.ndarray)):
+        return list(x)
+    return []
+
+
 def safe_max(x):
     """Max of numeric elements; empty / non-numeric → NaN."""
     if x is None:
