@@ -364,6 +364,20 @@ _METHOD_TA = frozenset(
     }
 )
 
+def _is_chart_point_namespace(recv: object) -> bool:
+    """Whether ``recv`` is the ``chart.point`` namespace (not a value).
+
+    ``chart.point.from_index`` / ``.copy`` / ``.now`` are namespace constructors.
+    Lowering them as collection methods silently drops the point argument.
+    """
+    return (
+        isinstance(recv, ast.Attribute)
+        and recv.attr == "point"
+        and isinstance(recv.value, ast.Name)
+        and recv.value.id == "chart"
+    )
+
+
 # Method form: arr.push(x) / m.put(k,v) / t.cell(...) → array_push / map_put / table_cell
 _ARRAY_METHODS: dict[str, str] = {
     "push": "array_push",
@@ -2904,7 +2918,13 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.discard(f"{py}_arr")
             return f"{py} = {expr}"
 
-        def _elem_expr(i: int) -> str:
+        def _elem_expr(i: int, *, plain: bool = False) -> str:
+            if plain:
+                # Proven numeric-tuple UDF: arity is static, so index directly.
+                # The isinstance()/len() guard is what pushes Numba off nopython
+                # (it cannot narrow an arbitrary tuple/list test), so it is only
+                # emitted when the arity is *not* statically known.
+                return f"__tup[{i}]"
             return (
                 f"(__tup[{i}] if isinstance(__tup, (tuple, list)) "
                 f"and len(__tup) > {i} else "
@@ -2912,11 +2932,11 @@ class CompilerVisitor(NodeVisitor):
                 f"else np.nan))"
             )
 
-        def _unpack_call(call_code: str, *, as_sequence: bool) -> str:
+        def _unpack_call(call_code: str, *, as_sequence: bool, plain: bool = False) -> str:
             lines = [f"__tup = {call_code}"]
             store = _store_sequence if as_sequence else _store_numeric
             for i, name in enumerate(names):
-                lines.append(store(name, _elem_expr(i)))
+                lines.append(store(name, _elem_expr(i, plain=plain)))
             return "\n".join(lines)
 
         # Prefer structured multi-return for known multi-value TA
@@ -3082,8 +3102,20 @@ class CompilerVisitor(NodeVisitor):
                             f.value.id in getattr(self, "import_aliases", set()) or f.value.id in _NS
                         ):
                             is_import_method = True
+                # A numeric/mixed tuple return (``f() => [a + 1.0, b + 2.0]``)
+                # is also marked ``func_returns_sequence`` so a *single-target*
+                # ``a = f()`` keeps the tuple as a handle. That marker must not
+                # also demote the multi-unpack ``[u, w] = f()`` to object mode:
+                # those values are plain floats and belong on float series.
+                numeric_tuple_udf = bool(
+                    uf_name
+                    and uf_name in getattr(self, "func_returns_tuple", set())
+                    and uf_name not in self.func_returns_string
+                    and uf_name not in getattr(self, "func_returns_udt", set())
+                    and not is_import_method
+                )
                 numeric_udf = bool(uf_name and uf_name in getattr(self, "func_returns_numeric", set()))
-                if not numeric_udf:
+                if not numeric_udf and not numeric_tuple_udf:
                     self.object_mode = True
                 seq_udf = bool(uf_name and uf_name in self.func_returns_sequence) or (
                     self._call_returns_sequence(node.value)
@@ -3092,8 +3124,8 @@ class CompilerVisitor(NodeVisitor):
                 # multi-unpack must stay on float series (``[p, q] = f()``).
                 if uf_name and uf_name in getattr(self, "func_returns_tuple", set()):
                     seq_udf = False
-                as_sequence = seq_udf or is_import_method or none_stub
-                return _unpack_call(call_code, as_sequence=as_sequence)
+                as_sequence = (seq_udf or is_import_method or none_stub) and not numeric_tuple_udf
+                return _unpack_call(call_code, as_sequence=as_sequence, plain=numeric_tuple_udf)
 
             # Single-target call
             if names:
@@ -6632,6 +6664,12 @@ class CompilerVisitor(NodeVisitor):
         if isinstance(recv, ast.Name):
             ty = self.udt_var_types.get(recv.id) or ""
             return ty == "array" or ty.startswith("array<") or ty.startswith("array ")
+        if _is_chart_point_namespace(recv):
+            # ``chart.point.copy(pt)`` / ``chart.point.from_index(...)``. The
+            # receiver is a *namespace*, not a collection: claiming it here
+            # lowered ``copy`` to ``array_copy`` before the chart.point branch
+            # could run, emitting ``array_copy_value(None)`` and NaN prices.
+            return False
         return isinstance(recv, (ast.Attribute, ast.Call))
 
     def _drawing_builtin_ns(self, func: ast.Attribute) -> str | None:

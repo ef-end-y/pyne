@@ -7,7 +7,7 @@ tags: [code, scripts]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-13T07:21:34Z
+  at: 2026-10-14T09:59:45Z
 sources:
   - id: tree
     resource: "scripts"
@@ -19,7 +19,7 @@ okf_lock: generated
 # Files
 
 * `bench_pipeline.py` — bench_compile_execute, bench_interpret, bench_parse_unparse, fmt_table, main, pipeline_cost_breakdown, profile_interpret
-* `compare_interp_compile.py` — compare_series_maps, default_workers, format_mismatch_detail, format_summary, is_constant_hline, is_expected_error_message, is_fill_background_key, main, make_bars, normalize_error, run_one_script, select_scripts
+* `compare_interp_compile.py` — compare_series_maps, default_workers, format_mismatch_detail, format_summary, is_constant_hline, is_expected_error_message, is_fill_background_key, is_fill_colour_series, main, make_bars, normalize_error, run_one_script
 * `convert_pine_version.py` — main
 * `generate_builtin_metadata.py` — generate_metadata, main
 * `regenerate_inventory_summary.py` — main

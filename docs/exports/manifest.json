@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-14T09:02:27.547Z",
+  "generatedAt": "2026-10-14T09:45:57.298Z",
   "site": "https://hoox.sh",
   "repository": "https://github.com/hoox-sh/pyne",
   "products": {
@@ -15,7 +15,7 @@
       "agents": {
         "llms": "docs/pyne/llms.txt",
         "llm": "docs/pyne/llm.txt",
-        "bytes": 668566
+        "bytes": 673041
       }
     }
   }

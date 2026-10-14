@@ -282,12 +282,19 @@ class TestLineGetPriceSoftNaAndSeries:
         assert m["line.get_y2"]([ln]) == pytest.approx(10.0)
 
     def test_get_price_pine_series_endpoints(self) -> None:
+        # ``line.new`` snapshots PineSeries endpoints to plain numbers
+        # (``_snapshot_scalar``, commit 0ad37af0) so ``export_for_api`` cannot
+        # re-read ``.current`` on the last bar and diverge from the compile
+        # host. This test therefore asserts the *resolved* values rather than
+        # the stored type — a live ``high`` handed to ``line.new`` still
+        # reports this bar's value, which is the residual being guarded.
         e = NodeLiteralEvaluator()
         m = e._build_builtin_map()
         y1 = PineSeries(0.0)
         y2 = PineSeries(10.0)
         ln = m["line.new"]([0, y1, 10, y2])
-        assert isinstance(ln.y1, PineSeries)
+        assert ln.y1 == pytest.approx(0.0)
+        assert ln.y2 == pytest.approx(10.0)
         price = m["line.get_price"]([ln, 5])
         assert price == pytest.approx(5.0)
         assert m["line.get_y1"]([ln]) == pytest.approx(0.0)

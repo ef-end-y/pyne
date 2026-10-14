@@ -633,8 +633,13 @@ class CustomEvaluator(NodeLiteralEvaluator):
     def _builtin_fill(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
         """Capture ``fill(plot1, plot2, color=…)`` for AXIS band overlay.
 
-        Meta stores ``plot1`` / ``plot2`` as series titles (from ``plot()`` handles).
-        Series column holds per-bar color (string) or null when inactive.
+        The band is described entirely by ``plot_meta`` (``kind="fill"``,
+        ``plot1``/``plot2`` titles, ``color``). The **series column stays
+        null**: the compile host packs series into float64 arrays and
+        therefore *cannot* emit a colour string, so a colour-valued column
+        would make interpret and compile disagree for every titled
+        ``fill()``. Per-bar colour still reaches the frontend through
+        ``plot_meta[title].color``.
         """
         if self._pine_light_plots:
             return None
@@ -652,10 +657,9 @@ class CustomEvaluator(NodeLiteralEvaluator):
             t1 = t1 or self._plot_ref_title(getattr(reg, "plot1", None))
             t2 = t2 or self._plot_ref_title(getattr(reg, "plot2", None))
         color_s = _serialize_color(_unwrap_scalar(color)) if color is not None else None
-        # Per-bar color in the fill series (na/None = inactive). Meta.color is fallback.
 
         if self._plot_capture_i < len(self._plot_value_cols):
-            i = self._append_plot_value(color_s)
+            i = self._append_plot_value(None)
             m = self._plot_meta_list[i]
             if t1 and not m.get("plot1"):
                 m["plot1"] = t1
@@ -667,7 +671,7 @@ class CustomEvaluator(NodeLiteralEvaluator):
 
         self._capture_plot(
             "fill",
-            color_s,
+            None,
             str(title or "") or "fill",
             color_s,
             style="fill",

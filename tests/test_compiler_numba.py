@@ -2157,7 +2157,11 @@ plot(myState.count, title="c")
 """
         code = transpile(src)
         assert "dtype=object" in code or "myState_arr" in code
-        assert "isinstance(__u, dict)" in code
+        # Field access on a `na` UDT must be guarded, never a raw subscript.
+        # The guard moved into the `udt_get_field` builtin in 8bc8f41d (the
+        # inlined `isinstance(__u, dict)` walrus is a SyntaxError inside list
+        # comprehensions), so accept either spelling of the same invariant.
+        assert "udt_get_field(" in code or "isinstance(__u, dict)" in code
         compiled = compile_script(src)
         o, h, l, c, v = _ohlcv(12)
         out = compiled.run(o, h, l, c, v)

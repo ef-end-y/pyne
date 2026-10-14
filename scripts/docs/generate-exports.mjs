@@ -486,8 +486,15 @@ function minifyLlmText(content) {
   text = text.replace(/^#+\s+/gm, "")
   text = text.replace(/\*\*([^*]+)\*\*/g, "$1")
   text = text.replace(/\*([^*]+)\*/g, "$1")
-  text = text.replace(/__([^_]+)__/g, "$1")
-  text = text.replace(/_([^_]+)_/g, "$1")
+  // Emphasis must be word-boundary anchored. A bare `_([^_]+)_` pairs the
+  // underscores of *different* identifiers whenever two appear in one
+  // sentence: "PYNE_DEBUG=1 and PYNE_DEBUG_SCOPE=x" matched `_DEBUG=1 and
+  // PYNE_` and shipped `PYNEDEBUG=1 and PYNESCOPE=x`. Same for `ADMIN_TOKEN`,
+  // `session_id`, `from_bar`, `__bar_idx`. Requiring a non-word (or backslash)
+  // before the opening `_` and a non-word after the closing `_` keeps real
+  // _emphasis_ / __strong__ while leaving snake_case identifiers intact.
+  text = text.replace(/(?<![\\\w])__([^_\n]+)__(?!\w)/g, "$1")
+  text = text.replace(/(?<![\\\w])_([^_\n]+)_(?!\w)/g, "$1")
   text = text.replace(/`([^`]+)`/g, "$1")
   text = text.replace(/^\s*[-*+]\s+/gm, "")
   text = text.replace(/^\s*>\s+/gm, "")

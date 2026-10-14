@@ -191,6 +191,28 @@ _FILL_BG_KEY_RE = re.compile(
 )
 
 
+_COLOUR_STR_RE = re.compile(r"^rgba?\(", re.IGNORECASE)
+
+
+def is_fill_colour_series(values: list[Any]) -> bool:
+    """True when a series column is entirely colour strings.
+
+    ``fill(p1, p2, title="BE Zone")`` writes the band colour into a *titled*
+    series on the interpret host and leaves it null on compile. The title is
+    arbitrary, so ``is_fill_background_key`` (name heuristic) cannot see it.
+    A column whose every non-NA cell is an ``rgb()``/``rgba()`` string is a
+    fill/bgcolor series by value regardless of what it is called.
+    """
+    seen = False
+    for v in values:
+        if _is_na(v):
+            continue
+        if not isinstance(v, str) or not _COLOUR_STR_RE.match(v.strip()):
+            return False
+        seen = True
+    return seen
+
+
 def is_fill_background_key(key: str) -> bool:
     """True for Background / bgcolor / fill-style series titles."""
     k = (key or "").strip()
@@ -471,8 +493,14 @@ def compare_series_maps(
         # numeric parity failure: there is no number to be close to. Numeric
         # parity is still enforced — a fill key with a *numeric* difference
         # stays a hard mismatch.
-        if is_fill_background_key(k) and _is_nonnumeric_only_difference(
-            interp[k], compile_[k]
+        #
+        # Recognise the key two ways: by name (Background / bgcolor / …) or by
+        # value (a column that is entirely colour strings). The name heuristic
+        # alone missed `fill(p1, p2, title="BE Zone")`, where the title is
+        # arbitrary, and reported a hard MISMATCH for what is the same
+        # colour-vs-null gap.
+        if (is_fill_background_key(k) or is_fill_colour_series(interp[k])) and (
+            _is_nonnumeric_only_difference(interp[k], compile_[k])
         ):
             fill_value_diffs.append({"key": k, "detail": detail})
             continue
