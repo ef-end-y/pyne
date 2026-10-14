@@ -61,7 +61,18 @@ TypeScript consumers import **[PyneTS](/pyne/docs/pynets)** (`@hoox-sh/pynets`) 
 
 ## What's new
 
-**`hoox-pyne` 0.6.7** (2026-09-23) — faster interpret dispatch (reused TA keys, steady `ta.sma`/`bb`/`atr` path) and compile `ta.uo` via `numba_uo`.
+**`hoox-pyne` 0.6.9** (2026-10-13) — three additions aimed at live and large workloads:
+
+- **Response windowing** on `POST /run`, `/run/batch`, and every session route: optional `from_bar` / `to_bar` trim the **serialized envelope only**, leaving the bar loop and all Pine semantics untouched. On 20k bars a 500-bar window is **1,068.8 KB → 28.0 KB (38× smaller)**.
+- **Live evaluation sessions** over HTTP — `POST /session`, `POST /session/<id>/tick`, `POST /session/<id>/append`. Re-ticking the forming bar is **O(1)**: 1,087.8 ms → **0.130 ms (8,343×)**; appending closed bars is **O(delta)** at **0.127 ms**.
+- **Engine-owned OHLCV store** — `/data/series*` persists bars in SQLite keyed by `exchange|market|SYMBOL|interval`, and `/data/session` binds a live session to a stored series so bars stop travelling in the request body. These routes require an API key.
+
+**Post-0.6.9 on `main`** — operational surface:
+
+- **`GET /stats`** — public process-wide counters: requests, runs by mode, compile cache hit/miss, prewarm, delta sizes, sessions, datafeed. In-process, so treat it as a snapshot rather than a time series. See [stats](/pyne/docs/api/endpoints/stats).
+- **`PYNE_DEBUG=1`** — development-only logging that traces the interpreter bar loop, the compile pipeline, prewarm, delta calculation, and the datafeed. Optional `PYNE_DEBUG_SCOPE` narrows it to a logger allowlist. See [observability](/pyne/docs/devops/observability).
+
+**0.6.7** (2026-09-23) — faster interpret dispatch (reused TA keys, steady `ta.sma`/`bb`/`atr` path) and compile `ta.uo` via `numba_uo`.
 
 **0.6.6** (2026-09-22) — last-sample TA (`ao`/`dmi`/`bb`/`cog`/`mode`), convert-to-v6 keeps UDF/`for n` names, webhook SSRF, LSP nested `strategy.risk` completion.
 

@@ -1,5 +1,5 @@
 PYNE CONSOLIDATED DOCUMENTATION — LLM CONTEXT PACK
-Generated: 2026-10-13
+Generated: 2026-10-14
 Source: docs/pyne
 Public: https://hoox.sh/pyne/docs
 Repository: https://github.com/hoox-sh/pyne
@@ -750,6 +750,121 @@ Runtime bridge — faithful strategy events via /run`
 Chart renderer
 Strategy builtins
 ---
+FILE: docs/pyne/api/endpoints/data-plane.mdx
+Copyright (C) 2024-2026 jangoblockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "Data plane"
+description: "Engine-owned OHLCV series store and data-bound live sessions — /data/series and /data/session."
+---
+Data plane
+Abstract
+POST /run takes its bars in the request. That is fine for a one-shot evaluate, but a live chart re-sends the entire history on every tick and asks the exchange for bars the server already has.
+The data plane moves bars out of the request body and into an engine-owned store:
+*/data/series — a SQLite-backed OHLCV store keyed by a canonical series key. Upload closed bars, fetch history from CCXT, read bounds, read the newest window.
+/data/session — a live session bound to a stored series, advanced from the engine feed instead of the client payload.
+Bars are keyed by exchange|market|SYMBOL|interval — for example binance|spot|BTC/USDT|1h. Upserts are keyed by unix-second time and the later write wins, so a forming bar is re-written in place rather than duplicated.
+Implemented in backend/datastore/series.py and backend/api/dataseries.py, without Flask or CCXT in the store itself.
+Conceptual model
+Series key
+Every route takes the same four fields. market is optional and defaults to spot.
+| Field | Rule | Example |
+| --- | --- | --- |
+| exchange | CCXT id, letters/digits/-/`, lowercased | binance |
+| market | one of the supported markets, default spot | spot |
+| symbol | a pair, uppercased | BTC/USDT |
+| interval | canonicalized | 1h |
+Responses echo the normalized key text, e.g. binance|spot|BTC/USDT|1h.
+Interface surface
+All /data/ routes require an API key (Authorization: Bearer …, X-API-Key, or ?apikey=). They move and persist user market data, so they are not on the free path. Unauthenticated calls return 401 UNAUTHORIZED.
+GET /data/series
+Stored bounds for one series. Unknown series report count 0 rather than 404.
+`json
+{ "status": "success", "key": "binance|spot|BTC/USDT|1h",
+"count": 30, "oldest": 1700000000, "newest": 1700104400, "updatedat": 1791968289 }
+`
+GET /data/series/bars
+Newest stored bars, ascending. limit defaults to the store window default and is capped at the store maximum.
+`json
+{ "status": "success", "key": "binance|spot|BTC/USDT|1h", "count": 2,
+"bars": [ { "time": 1700100800, "open": 128.0, "high": 129.0,
+"low": 127.0, "close": 128.5, "volume": 10.0 }, … ] }
+`
+POST /data/series/provide
+Upload closed bars. At most 5,000 per request; over that is 413 BATCHTOOLARGE — split the upload into chunks.
+`json
+{ "status": "success", "key": "binance|spot|BTC/USDT|1h",
+"added": 30, "updated": 0, "count": 30, "newest": 1700104400 }
+`
+POST /data/series/fetch
+Walk CCXT fetchohlcv pages forward from now - historybars and persist. historybars defaults to 5,000 and caps at 100,000. Upstream failure is 502 UPSTREAM; missing ccxt is 503 CCXTUNAVAILABLE.
+`json
+{ "status": "success", "key": "binance|spot|BTC/USDT|1h",
+"fetched": 5000, "count": 5000, "oldest": …, "newest": … }
+`
+POST /data/session
+Build a live interpret session over the stored window and bind it to the series key. Accepts the same script/inputs/realtime fields as live sessions plus exchange, symbol, interval, market, and historybars.
+Returns the /session envelope plus sessionid, cache, and data:
+`json
+{ "status": "success", "sessionid": "49564cd995514ef48254eb9dd5322e90",
+"count": 20, "cache": "hit",
+"data": { "key": "binance|spot|BTC/USDT|1h", "count": 30, "newest": 1700104400 } }
+`
+When the store holds fewer than historybars bars it returns 409 DATAMISS with have and need rather than silently evaluating a short history:
+`json
+{ "status": "miss", "code": "DATAMISS", "have": 0, "need": 50 }
+`
+POST /data/session//tick
+Takes { exchange, symbol } only — the series binding is already established. It fetches candles from two bars before the stored newest (so a corrected or still-forming bar is picked up), persists closed bars, re-ticks the forming bar with updatelastbar, and appends newer bars with appendbars.
+The response adds appended, forming, and unchanged:
+`json
+{ "status": "success", "sessionid": "…", "count": 31,
+"appended": 1, "forming": true, "unchanged": false }
+`
+409 SESSIONKEYMISMATCH guards a session bound to another series. Upstream failure is 502 UPSTREAM and keeps the session.
+Storage
+| Property | Value |
+| --- | --- |
+| Backend | SQLite (ohlcv.sqlite3), single connection |
+| Directory | PYNEDATADIR, default data/ |
+| Identity | exchange\|market\|SYMBOL\|interval |
+| Upsert key | unix-second time; later write wins |
+The store writes through a single connection, so the data plane has the same single-worker constraint as live sessions (GUNICORNWORKERS=1). Serving it from more than one worker without a shared volume will silently split history.
+Failure modes
+| Symptom | Code / status | Cause | Fix |
+| --- | --- | --- | --- |
+| 401 | UNAUTHORIZED | No API key | Send Authorization: Bearer |
+| 400 | INVALIDKEY | Missing/malformed exchange / symbol | Use a CCXT id and a pair |
+| 400 | INVALIDMARKET | Unsupported market | Use spot (default) |
+| 413 | BATCHTOOLARGE | >5,000 bars in one upload | Chunk the upload |
+| 409 | DATAMISS | Store shorter than historybars | /data/series/fetch or provide first |
+| 409 | SESSIONKEYMISMATCH | Wrong series for this session | Release and rebind |
+| 502 | UPSTREAM | CCXT fetch failed | Check creds / connectivity; session kept |
+| 503 | CCXTUNAVAILABLE | ccxt not installed | pip install 'pyne[datafeed]' |
+Internals (map)
+| Path | Role |
+| --- | --- |
+| backend/datastore/series.py | SQLite OHLCV store, SeriesKey, upsert/window/status |
+| backend/datastore/live.py | Session series binding + syncsession |
+| backend/api/data_series.py | /data/series* routes, CCXT page walk |
+| backend/app.py | /data/session, /data/session//tick |
+| backend/api/datafeed.py` | Shared CCXT provider + candle mapping |
+See also
+Live sessions
+Auth and keys
+Observability
+---
 FILE: docs/pyne/api/endpoints/optimize.mdx
 Copyright (C) 2024-2026 jangoblockchained
 This file is part of pynescript.
@@ -1252,6 +1367,206 @@ pyne-worker cron — edge equivalent
 Docker
 App lifecycle
 ---
+FILE: docs/pyne/api/endpoints/sessions.mdx
+Copyright (C) 2024-2026 jangoblockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "Live sessions"
+description: "POST /session and friends — O(1) forming-bar ticks, O(delta) appends, and response windowing on /run."
+---
+Live sessions and response windowing
+Abstract
+A POST /run call is stateless: it parses the script and walks every bar on every request. That is the right shape for batch and history work, and the wrong shape for a live chart, where the same script is re-evaluated dozens of times a second against a growing bar list.
+A session keeps the parsed tree, its series, and its TA state alive between requests. Advancing it costs work proportional to what actually changed:
+| Operation | Complexity | Measured (20k bars) |
+| --- | --- | --- |
+| POST /run (full re-walk) | O(n) | 1,087.8 ms |
+| POST /session//tick | O(1) | 0.130 ms (8,343×) |
+| POST /session//append | O(delta) | 0.127 ms (8,572×) |
+Session init costs roughly 443 ms (parse + first walk), so a session breaks even after its first tick.
+Sessions are interpret only. The compile path has no resumable evaluator state — the generated bar loop is a single njit function over the whole array, with nothing to roll back. mode: "compile" on POST /session is rejected with MODEUNSUPPORTED.
+Conceptual model
+Interface surface
+POST /session
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| script | string | yes | Pine source |
+| data | list | yes | Initial OHLCV bar objects |
+| symbol | string | no | Syminfo / request wiring, default "CHART" |
+| inputs | object | no | input. overrides (interpret only) |
+| realtimeticks | int | no | Re-visits per bar in the realtime window |
+| realtimebars / realtimefrombar | int | no | Realtime window extent |
+| mode | string | no | Must be omitted or "interpret" |
+Returns the standard /run envelope plus sessionid, count, and mode.
+POST /session//tick
+Body { bar } — a single OHLCV bar replacing the last bar. Bar count and bar index do not advance.
+POST /session//append
+Body { bars } — newly closed bars. Previously committed bars stay confirmed; realtime windows do not span append boundaries.
+GET /session/
+Small status blob — never the full state:
+``json
+{
+"status": "success",
+"sessionid": "f8e72bcf652c4cafbc4ac79b057784ce",
+"bars": 10,
+"idleseconds": 0.002,
+"ttlseconds": 900.0
+}
+`
+DELETE /session/
+{"status": "success", "sessionid": "…", "released": true}. Sessions otherwise go idle and are swept after the TTL.
+Tick semantics
+tick is not an append of one bar. The host:
+1. Restores var scope and TA windows to the snapshot taken at bar-open — varip deliberately persists*, matching Pine's intrabar varip semantics.
+2. Drops this bar's events, alerts and alert conditions so the re-visit re-emits them.
+3. Overwrites the packed column cells in place — no append, so bar count is unchanged.
+4. Re-visits the tree once and finishes bar plots at the same slot.
+Strategy fills are not rolled back across ticks. That is the same limitation as the realtime tick loop in Runtime.run; strategy series history is overwritten, not appended.
+Response windowing
+POST /run, /run/batch, /session//tick and /session//append all accept optional frombar / tobar fields (inclusive bar indices into data; negative counts from the end; either side may be omitted).
+Windowing trims the serialized envelope only. The bar loop still runs over every bar, so indicator values, strategy state, NaN warm-up, and Pine parity are untouched. Measured on 20k bars against a local Pro API: 1,068.8 KB → 28.0 KB (38× smaller) for a 500-bar window, with the windowed series verified byte-equal to the full run's tail.
+`bash
+curl -s -X POST http://127.0.0.1:5002/run \
+-H 'Content-Type: application/json' \
+-d '{"script":"//@version=6\nindicator(\"x\")\nplot(close)","data":[...],"frombar":10,"tobar":14}'
+`
+`json
+{ "count": 20, "window": { "bars": 5, "frombar": 10, "tobar": 14, "totalbars": 20 } }
+`
+count still reports bars evaluated, not bars serialized. A client seeing count=20000 with a 500-long series needs the window block to tell a window from a short history. The window block is only present when a window was actually applied — the unwindowed envelope is unchanged and gains no window key.
+Events and drawings are filtered to the window when they carry barindex. Objects with only bartime (strategy fills) have no index to match on and are kept, so trimming can never silently drop a fill.
+Capacity, TTL, and the single-worker constraint
+| Property | Value |
+| --- | --- |
+| Idle TTL | 900 s (15 min), swept at most every 30 s |
+| Capacity | 64 concurrent sessions |
+| Full | 503 SESSIONSFULL — back off rather than retrying into a growing pile |
+Sessions live in a process-local SessionStore. They only resolve on the single gunicorn worker, which is why GUNICORNWORKERS defaults to 1. /health still advertises the routes (they are part of the capability surface), and features.livemodes reports ["every-tick", "bar-close"] for AXIS capability detection.
+For live data sourced from an exchange rather than the request body, see Data plane — POST /data/session binds a session to a stored series and advances it from the engine feed.
+Failure modes
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| MODEUNSUPPORTED | mode: "compile" on /session | Drop mode; sessions are interpret only |
+| SESSIONSFULL | 64 live sessions held | DELETE finished ones, or wait for TTL |
+| 404 on tick/append | Session swept (idle TTL) | Create a new session |
+| 409 on /data/session//tick | Session bound to a different series | Release and rebind |
+| 503 CCXTUNAVAILABLE | ccxt not installed on the host | pip install 'pyne[datafeed]' |
+Internals (map)
+| Path | Role |
+| --- | --- |
+| backend/app.py | /session routes, window application |
+| backend/middleware/sessions.py | TTL + capacity SessionStore (process-local) |
+| backend/middleware/window.py | applywindow — serialization-boundary trim |
+| backend/datastore/live.py | Session stored-series binding + sync |
+| src/pynescript/runtime/host.py | InterpretSession, appendbars, updatelastbar` |
+See also
+POST /run
+Data plane
+Runtime bridge
+App lifecycle
+---
+FILE: docs/pyne/api/endpoints/stats.mdx
+Copyright (C) 2024-2026 jangoblockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "GET /stats"
+description: "Public process-wide runtime statistics — engine, compile, prewarm, deltas, sessions, datafeed and HTTP counters."
+---
+GET /stats
+Abstract
+GET /stats is a public (no API key) snapshot of what this worker has been doing since it started: request counts and latency, execution-engine runs, compile cache outcomes, prewarm results, live-session delta sizes, and datafeed traffic.
+It is process-local. Counters reset when the worker restarts — which is honest for the single-worker gunicorn setup live sessions require, but means the numbers describe this process, since it booted, not a durable time series. Export them if you need dashboards.
+Interface surface
+``http
+GET /stats
+`
+`json
+{
+"status": "ok",
+"service": "pynescript-pro-api",
+"version": "1.0.0",
+"timestamp": 1791968289,
+"debug": { "env": "PYNEDEBUG", "enabled": true, "scopes": [], "level": "DEBUG" },
+"counters": { "run.total": { "total": 4 }, "run.bymode": { "total": 2, "by": { "auto": 2 } } },
+"latencies": { "run.total": { "count": 4, "totalms": 9251.2, "avgms": 2312.8,
+"minms": 0.36, "maxms": 9250.3,
+"p50ms": 1.2, "p95ms": 8974.6 } },
+"gauges": { "sessions.active": 1, "sessions.capacity": 64, "http.inflight": 0 },
+"compilecache": { "sourceentries": 2, "irentries": 1, "hasnumba": true, … },
+"sessions": { "sessions": 1, "maxsessions": 64, "ttlseconds": 900.0 },
+"notes": "in-process counters; reset on worker restart"
+}
+`
+Three metric kinds
+| Kind | Shape | Notes |
+| --- | --- | --- |
+| counters | {total, by?} | Monotonic. by is a dimension breakdown (mode, endpoint, status class, fallback reason). |
+| latencies | {count, totalms, avgms, minms, maxms, p50ms, p95ms} | Percentiles come from a bounded reservoir of the last 512 samples per metric, so they describe recent behaviour, not the whole run. |
+| gauges | number | Last value — in-flight requests, active sessions, cache entries. |
+Metric names are dotted (run.total, delta.barsappended, http.request) so the payload groups naturally.
+What is tracked
+| Namespace | Examples |
+| --- | --- |
+| http | requests, byendpoint, bystatusclass, clienterrors, servererrors, slowrequests; inflight gauge |
+| run | total, bars, bymode, moderesolved, autobackend, errors, errorkind, timedout, compilecached, compilefallbackreasons |
+| interpret | bars, barloop latency, errors by kind, timeouts |
+| compile | attempts, eligibility, hostcache (hit/miss), errors, run / total latency |
+| compilescript | cache split by memoryraw / memorysanitized / disk / irshare / miss |
+| prewarm | calls, builtinwarm, scriptsok, scriptsfailed, total latency |
+| delta | appendcalls, barsappended, updatelastbarcalls; barsperappendmax gauge |
+| session / sessions | engine created and parse; store created, dropped, evicted, active, capacity, activemax |
+| datafeed | streams, exchangesconnected, reconnects, errors, sessionbinds, watchconnections, watchbars, gateway ohlcv / markets counters and latency |
+| provider | created, fetches, barsfetched, fetcherrors |
+Relationship to other surfaces
+GET /stats complements, and does not replace:
+the per-run profile in the /run envelope (totalms, parsems, evalms, per-line rows) — that is client-visible, per-run detail;
+the compile block on GET /health — that is capability plus cache configuration;
+GET /auth/usage — that is business metering for rate limits.
+/health deliberately stays a cheap liveness probe. It does not absorb these counters.
+Cardinality
+Dimension values come from closed sets — route rules, interpret/compile/auto, 2xx–5xx, a small set of exchange ids. compilefallbackreasons is truncated to 120 characters for the same reason. The registry is not a Prometheus-style label store; do not point a high-cardinality metric at it.
+Failure modes
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| All counters reset | Worker restarted / redeployed | Expected — counters are in-process |
+| Counters look low behind a load balancer | Multiple workers, each counting its own slice | Aggregate per worker, or run with GUNICORNWORKERS=1 |
+| p95ms disagrees with maxms | Percentiles use a 512-sample reservoir | Treat p95 as recent-window; maxms is all-time |
+| compilecache or sessions shows error | Engine import failed | The rest of the payload still serves — /stats never fails the request |
+Internals (map)
+| Path | Role |
+| --- | --- |
+| src/pynescript/stats.py | Thread-safe counter / latency / gauge registry |
+| src/pynescript/debug.py | PYNEDEBUG toggle (reported under debug) |
+| backend/loggingsetup.py | debugreport() |
+| backend/app.py | /stats route, request hooks |
+| backend/api/datafeed.py, backend/middleware/sessions.py | Datafeed + session counters |
+See also
+Observability — PYNEDEBUG` logging
+App lifecycle
+POST /run
+---
 FILE: docs/pyne/api/index.mdx
 Copyright (C) 2024-2026 jangoblockchained
 This file is part of pynescript.
@@ -1288,8 +1603,13 @@ Interface surface
 | Method | Path | Auth | Role |
 | --- | --- | --- | --- |
 | GET | / · /health | none | Health + endpoint map + compile cache section |
-| POST | /run | none (free) | Single-script evaluate (mode default auto; libraries[]; alerts + optional webhooks) |
+| GET | /stats | none | Process runtime counters, latencies, gauges (docs) |
+| POST | /run | none (free) | Single-script evaluate (mode default auto; libraries[]; frombar/tobar; alerts + optional webhooks) |
 | POST | /run/batch | none (free) | ≤8 scripts, shared OHLCV |
+| POST | /session | none (free) | Live session — O(1) ticks, O(delta) appends (docs) |
+| GET/POST/DELETE | /session/ · …/tick · …/append | none (free) | Advance / inspect / release a live session |
+| GET/POST | /data/series · /data/series/bars · /data/series/provide · /data/series/fetch | API key | Engine-owned OHLCV store (docs) |
+| POST | /data/session · /data/session//tick | API key | Live session bound to a stored series |
 | POST | /scripts · /cron/ | optional runner | Hosted scripts + bar-close — off unless PYNERUNNER=1 (runner) |
 | POST | /optimize | none (free) | Strategy input. search — N interpret Runtime runs (docs) |
 | WS | /ws/run | none (free) | Same evaluate contract over JSON frames (flask-sock optional) |
@@ -1317,23 +1637,31 @@ Local runner: make run → python -m backend.app (default 127.0.0.1:5002).
 Tracks in this tab
 1. App lifecycle — Flask app, CORS, limits, blueprints
 2. Auth and keys — tiers, stores, decorators
-3. Run · Optimize · Preview · Backtest
-4. Chart renderer
-5. Runtime bridge — Runtime / series / evaluator glue
-6. Contract — shared evaluate schema across Flask and workers
+3. Run · Live sessions · Data plane · Stats
+4. Optimize · Preview · Backtest · Runner
+5. Chart renderer
+6. Runtime bridge — Runtime / series / evaluator glue
+7. Contract — shared evaluate schema across Flask and workers
 Internals (map)
 | Path | Role |
 | --- | --- |
-| backend/app.py | App object, /run, /health, /compile/prewarm, /auth, CORS |
+| backend/app.py | App object, /run, /session, /data/session, /health, /stats, /compile/prewarm, /auth, CORS |
 | backend/api/preview.py | Preview + backtest blueprints |
+| backend/api/dataseries.py | Engine-owned OHLCV store routes |
+| backend/api/datafeed.py | CCXT gateway + WS /datafeed/watch |
+| backend/datastore/ | SQLite OHLCV store, session series binding |
+| backend/middleware/sessions.py | Process-local live-session store (TTL + capacity) |
+| backend/middleware/window.py | applywindow — response windowing |
+| backend/loggingsetup.py | PYNEDEBUG level policy |
 | backend/api/gitoauth.py | Optional device OAuth for SPA git |
 | backend/api/lsphttp.py | Free AXIS editor LSP-HTTP |
-| backend/middleware/ | Auth, schemas, freelimits, optional Redis/SQLite stores |
-| src/pynescript/runtime/host.py | Package SoT bar-loop (mode=auto, alerts pack) |
+| backend/middleware/ | Auth, schemas, freelimits, optional Redis/SQLite key stores |
+| src/pynescript/runtime/host.py | Package SoT bar-loop (mode=auto, sessions, alerts pack) |
+| src/pynescript/stats.py | Runtime counter / latency / gauge registry |
 | backend/runtime.py | Compat re-export of the package host |
 | backend/alertforwarder.py | L2 HTTP webhook delivery |
 | backend/evaluator.py / backend/series.py | Compat shims |
-| backend/services/` | Charts + backtest simulation |
+| backend/services/*` | Charts + backtest simulation |
 See also
 Evaluate scripts (end user)
 Pro API usage guide
@@ -3989,11 +4317,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Observability"
-description: "Health endpoints, gunicorn process model, Cloud Logging, coverage artifacts, and operational signals for PYNE."
+description: "PYNEDEBUG logging, GET /stats runtime counters, health endpoints, gunicorn process model, Cloud Logging, and operational signals."
 ---
 Observability
 Abstract
-PYNE’s production surface today optimizes for simple, hostable signals rather than a full OpenTelemetry mesh: HTTP health checks, process managers (gunicorn), cloud platform logs, CI artifacts (coverage, Playwright reports), and application-level API key usage counters. Treat this page as the map of what exists in-repo, not a claim of enterprise APM parity.
+PYNE’s production surface today optimizes for simple, hostable signals rather than a full OpenTelemetry mesh: HTTP health checks, development debug logging (PYNEDEBUG), process-wide runtime counters (GET /stats), process managers (gunicorn), cloud platform logs, CI artifacts (coverage, Playwright reports), and application-level API key usage counters. Treat this page as the map of what exists in-repo, not a claim of enterprise APM parity.
 Conceptual model
 Interface surface
 Health
@@ -4006,6 +4334,61 @@ Used by:
 Dockerfile target api HEALTHCHECK (curl -fsS http://127.0.0.1:8080/)
 docker-compose.yml api healthcheck
 Load balancers / Cloud Run startup-ish probes (platform-dependent)
+Runtime statistics
+`http
+GET /stats # public, no API key
+→ { counters, latencies, gauges, compilecache, sessions, debug }
+`
+Counters, latency percentiles (avg/min/max/p50/p95), and gauges for requests, runs, interpreter, compile, prewarm, live-session deltas, sessions, and datafeed. Process-local — resets on worker restart. Full reference: GET /stats.
+`bash
+curl -s http://127.0.0.1:5002/stats | python -m json.tool
+`
+Debug logging (PYNEDEBUG)
+A single development-only flag turns on detailed logging across the execution engine and the datafeed:
+`bash
+PYNEDEBUG=1 python -m backend.app
+PYNEDEBUG=1 PYNEDEBUGSCOPE=pynescript.runtime,pynescript.compiler python -m backend.app
+`
+| Variable | Default | Effect |
+| --- | --- | --- |
+| PYNEDEBUG | off | DEBUG on pynescript / backend loggers + all engine/datafeed instrumentation |
+| PYNEDEBUGSCOPE | (empty) | Comma-separated logger allowlist; empty means no filter. Only consulted while PYNEDEBUG is on. |
+What it traces:
+| Area | Logged |
+| --- | --- |
+| Interpreter | Bar-loop start/end with bars + ms + bars/ms; order-fill and runtime aborts with bar index/time; timeout breaks |
+| Compile | Eligibility and the reason; host cache HIT/MISS; transpile (IR key, plots, object mode); JIT warm; nopython fallback |
+| Prewarm | Builtins warm duration, per-script results, totals, failures |
+| Delta calculation | appendbars delta size + start index; updatelastbar tick duration |
+| Datafeed | CCXT Pro connect/subscribe/first updates/reconnects; REST fetchohlcv symbol normalization and bar counts; the /datafeed/ gateway; WS /datafeed/watch connect/close |
+| HTTP | Every request: method, path, status, duration; slow requests flagged |
+PYNEDEBUG=1 POST /run on a fresh process, for example:
+`text
+DEBUG pynescript.runtime.host: auto: eligibility src=2de7f37e3736 eligible=True reason= (cachedfailure=False)
+DEBUG pynescript.compiler.engine: prewarm: warming shared Numba builtins (first touch, JIT)
+DEBUG pynescript.compiler.engine: prewarm: builtins warm in 7497.6ms
+DEBUG pynescript.runtime.host: compile: MISS src=2de7f37e3736 … in 8973.67ms hostcacheentries=1
+DEBUG pynescript.runtime.host: run finished mode=compile bars=40 total=8974.63ms parse=8973.67ms eval=0.06ms
+`
+A warm second run shows the cache doing its job:
+`text
+DEBUG pynescript.runtime.host: compile: HIT src=2de7f37e3736 … in 0.00ms hostcacheentries=1
+DEBUG pynescript.runtime.host: run finished mode=compile bars=40 total=0.36ms parse=0.00ms eval=0.04ms
+`
+And a live session shows the O(delta) property directly:
+`text
+DEBUG pynescript.runtime.host: appendbars runid=250985e340… delta=2 start=20 newtotal=22
+DEBUG pynescript.runtime.host: bar-loop start runid=250985e340… start=20 end=22 bars=2 totalbars=22
+DEBUG pynescript.runtime.host: updatelastbar runid=250985e340… idx=21 bartime=… nbars=22
+`
+PYNEDEBUG is development only and verbose by design — it is meant to flood. Third-party loggers (urllib3, numba, matplotlib, asyncio, werkzeug) are held at WARNING while it is on. Keep it off in production: the numbers you want there come from GET /stats.
+Implementation is three small pieces:
+| Path | Role |
+| --- | --- |
+| src/pynescript/debug.py | Env toggle, memoized on the raw env string so a live flip takes effect without a restart |
+| src/pynescript/stats.py | Dependency-free metric registry |
+| backend/loggingsetup.py | Level policy, handler install, debugreport() |
+The toggle is read at run / batch / request boundaries, never inside a per-bar loop, and log payloads are only built when the flag is on.
 Process model (production)
 `text
 gunicorn --bind :8080 --workers 2 --threads 4 --timeout 120 backend.app:app
@@ -4041,24 +4424,49 @@ These are business metrics for rate limits, not Prometheus time series — expor
 Internals
 | Path | Role |
 | --- | --- |
-| backend/app.py | Health route, CORS, MAXCONTENTLENGTH |
+| backend/app.py | Health route, /stats, request hooks, CORS, MAXCONTENTLENGTH |
+| backend/loggingsetup.py | PYNEDEBUG level policy, handler install, debugreport() |
+| src/pynescript/debug.py | Debug toggle + PYNEDEBUGSCOPE filter |
+| src/pynescript/stats.py | Counter / latency / gauge registry behind /stats |
+| src/pynescript/runtime/host.py | Interpreter, compile, delta debug + stats call sites |
+| src/pynescript/compiler/engine.py | Compile / prewarm debug + stats call sites |
+| src/pynescript/util/datafeed.py · util/data.py | Datafeed / provider debug + stats call sites |
 | backend/middleware/auth.py | Key store, rate limit counters |
+| backend/middleware/sessions.py | Live-session store + lifecycle counters |
 | backend/services/backtest.py | Backtest metrics objects for API responses |
 | Dockerfile (api target) | HEALTHCHECK + gunicorn entrypoint |
 | cloudbuild.yaml | Cloud Logging-only build logs |
 | logs/ (repo) | Local combined/error log files if generated by tools — not the production contract |
 Invariants & edge cases
-1. Health ≠ readiness of evaluator warm caches. A 200 on / does not mean the first /run will be fast (cold import / JIT / numba).
-2. Timeouts double-bind. Cloud Run 60s vs gunicorn default 120s — the platform limit wins on Cloud Run unless you set GUNICORNTIMEOUT=60.
-3. Scale-to-zero hides idle metrics. No traffic ⇒ no samples; use synthetic uptime checks if SLOs matter.
-4. Coverage artifacts expire (7–14 days retention on Actions uploads).
-5. Do not scrape secrets from logs. API keys and admin tokens must never be logged at info level.
+1. Health ≠ readiness of evaluator warm caches. A 200 on / does not mean the first /run will be fast (cold import / JIT / numba). Check compile.hostprewarmed / call POST /compile/prewarm.
+2. /stats is per-process, not fleet-wide. Behind a load balancer each worker counts only its own slice. Aggregate per worker, or run single-worker (which live sessions require anyway).
+3. Timeouts double-bind. Cloud Run 60s vs gunicorn default 120s — the platform limit wins on Cloud Run unless you set GUNICORNTIMEOUT=60.
+4. Scale-to-zero hides idle metrics. No traffic ⇒ no samples; use synthetic uptime checks if SLOs matter.
+5. Coverage artifacts expire (7–14 days retention on Actions uploads).
+6. Do not scrape secrets from logs. API keys and admin tokens must never be logged at info level. PYNEDEBUG logs whether* credentials were supplied, never their values.
+7. Latency percentiles are recent-window. p50ms / p95ms come from the last 512 samples; maxms is all-time.
 Worked examples
-Local health loop
+Local health + stats loop
 `bash
 make run
 curl -s http://127.0.0.1:5002/ | python -m json.tool
+curl -s http://127.0.0.1:5002/stats | python -m json.tool
 `
+Explain a slow run
+`bash
+PYNEDEBUG=1 PYNEDEBUGSCOPE=pynescript.runtime,pynescript.compiler make run
+in another shell:
+curl -s -X POST http://127.0.0.1:5002/run -H 'Content-Type: application/json' \
+-d '{"script":"//@version=6\nindicator(\"x\")\nplot(ta.sma(close,20))","data":[...]}'
+`
+Read the trace bottom-up: eligibility → cache HIT/MISS → JIT warm duration → run finished total=…. A first run paying ~9 s in prewarm: builtins warm and compile: MISS is expected; the second identical request should be a compile: HIT in ~0 ms.
+Check why live updates cost what they cost
+`bash
+curl -s http://127.0.0.1:5002/stats \
+| jq '{delta: .counters["delta.barsappended"], appends: .counters["delta.appendcalls"],
+max: .gauges["delta.barsperappendmax"], loop: .latencies["interpret.barloop"]}'
+`
+A large delta.barsperappendmax with a small interpret.barloop.p95ms means the delta path is behaving as intended.
 Docker health
 `bash
 docker inspect --format='{{json .State.Health}}' CONTAINER
@@ -4071,6 +4479,11 @@ Failure modes
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Health green, /run 500 | Exception in evaluator path | Inspect request logs; reproduce with payload |
+| First /run takes seconds | Cold Numba JIT | POST /compile/prewarm at deploy; confirm on /health compile.hostprewarmed |
+| /stats counters reset | Worker restarted | Expected — in-process by design |
+| /stats counts look low | Multiple workers, per-process counters | Aggregate per worker or set GUNICORNWORKERS=1 |
+| No engine debug output | PYNEDEBUG not set in the worker process | Set it in the environment, not only in your shell — gunicorn inherits from its parent |
+| Too much debug output | No scope filter | Set PYNEDEBUGSCOPE to the modules you are debugging |
 | Worker kills | Soft timeout | Optimize script / raise timeout consistently |
 | Missing CI artifact | Path wrong / tests passed | if-no-files-found: ignore` hides absence |
 | Rate limit false positives | Shared key / limit too low | Adjust tier limits; multi-key |
@@ -7278,14 +7691,21 @@ aliases: pynescript / pynescript-lsp
 The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyodide (via AXIS), and Cloudflare workers. Round-trip fidelity (parse → unparse) and interpretcompile plot parity are first-class invariants — see compatibility and implementation status. Local open-corpus set01–04 (2026-08-09): parse 99.96%, Runtime interpret 100% excl. intentional demos (set01 249/249). The repository does not ship third-party script corpora.
 TypeScript consumers import PyneTS (@hoox-sh/pynets) — same public names; Python remains the oracle.
 What's new
-hoox-pyne 0.6.7 (2026-09-23) — faster interpret dispatch (reused TA keys, steady ta.sma/bb/atr path) and compile ta.uo via numbauo.
+hoox-pyne 0.6.9 (2026-10-13) — three additions aimed at live and large workloads:
+Response windowing on POST /run, /run/batch, and every session route: optional frombar / tobar trim the serialized envelope only, leaving the bar loop and all Pine semantics untouched. On 20k bars a 500-bar window is 1,068.8 KB → 28.0 KB (38× smaller).
+Live evaluation sessions over HTTP — POST /session, POST /session//tick, POST /session//append. Re-ticking the forming bar is O(1): 1,087.8 ms → 0.130 ms (8,343×); appending closed bars is O(delta) at 0.127 ms.
+Engine-owned OHLCV store — /data/series persists bars in SQLite keyed by exchange|market|SYMBOL|interval, and /data/session binds a live session to a stored series so bars stop travelling in the request body. These routes require an API key.
+Post-0.6.9 on main — operational surface:
+GET /stats — public process-wide counters: requests, runs by mode, compile cache hit/miss, prewarm, delta sizes, sessions, datafeed. In-process, so treat it as a snapshot rather than a time series. See stats.
+PYNEDEBUG=1 — development-only logging that traces the interpreter bar loop, the compile pipeline, prewarm, delta calculation, and the datafeed. Optional PYNEDEBUGSCOPE narrows it to a logger allowlist. See observability.
+0.6.7 (2026-09-23) — faster interpret dispatch (reused TA keys, steady ta.sma/bb/atr path) and compile ta.uo via numbauo.
 0.6.6 (2026-09-22) — last-sample TA (ao/dmi/bb/cog/mode), convert-to-v6 keeps UDF/for n names, webhook SSRF, LSP nested strategy.risk completion.
 0.6.5 — convert-to-v6 leaves UDF definitions, parameters, and unpack names alone (set01–04 older scripts parse 323/323 after convert).
 0.6.4 — convert any older Pine version to v6 from the editor, LSP code action, pyne convert --to 6, and POST /lsp/convert.
 0.6.3 — optional Flask/VPS/container hosted runner (PYNERUNNER) plus CLI pyne runner (deploy / tick / list). Scripts keep evaluating after upload without AXIS holding the connection.
 0.6.2 — interpret wraps subscripted UDF parameters (s[1]) per call site so src = close; updown(src) matches compile. Official TradingView builtin scripts are 0 MISMATCH vs compile.
 0.6.1 — persistent InterpretSession (Runtime.createsession, delta appendbars, forming-bar updatelastbar). Dual-host strategy.cash qty-type, fill-time risk gates, session confirm-on-append, finalized-bucket HTF lookaheadon.
-0.6.0 — type-aware intraday risk on both brokers, intrabar var rollback on realtime ticks, exchange-calendar timeframe.change D/W/M, request.security gapson / lookaheadon on HTF resample paths.
+0.6.0 — type-aware intraday risk on both brokers, intrabar var rollback on realtime ticks, exchange-calendar timeframe.change D/W/M, request.security gapson / lookahead_on on HTF resample paths.
 Full notes: GitHub releases · compatibility · evaluate scripts.
 How to use
 | Surface | Role | Start here |
@@ -7324,7 +7744,7 @@ Auto-generated like HOOX manuals (bun run docs:exports):
 | --- | --- |
 | Full-corpus LLM pack | llm.txt |
 | LLM site map (llmstxt.org) | llms.txt |
-| Track PDFs (A4) | /exports/pyne-*-manual.pdf` |
+| Track PDFs (A4) | /exports/pyne--manual.pdf` |
 See also
 Installation
 Quick start

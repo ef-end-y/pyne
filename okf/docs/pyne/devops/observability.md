@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Observability"
-description: "Health endpoints, gunicorn process model, Cloud Logging, coverage artifacts, and operational signals for PYNE."
+description: "PYNEDEBUG logging, GET /stats runtime counters, health endpoints, gunicorn process model, Cloud Logging, and operational signals."
 resource: "docs/pyne/devops/observability.mdx"
 tags: [devops, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-14T09:03:07Z
 sources:
   - id: tree
     resource: "docs/pyne/devops/observability.mdx"
@@ -26,6 +26,8 @@ Repo path `docs/pyne/devops/observability.mdx`.
 * Conceptual model
 * Interface surface
   * Health
+  * Runtime statistics
+  * Debug logging (PYNEDEBUG)
   * Process model (production)
   * Logs
   * CI / quality signals
@@ -33,8 +35,17 @@ Repo path `docs/pyne/devops/observability.mdx`.
 * Internals
 * Invariants & edge cases
 * Worked examples
-  * Local health loop
+  * Local health + stats loop
+  * Explain a slow run
+  * Check why live updates cost what they cost
   * Docker health
   * Tail Cloud Run (gcloud)
 * Failure modes
 * See also
+
+# Mentions
+
+* [src/pynescript](/code/src/pynescript.md)
+* [src/pynescript/compiler](/code/src/pynescript/compiler.md)
+* [src/pynescript/runtime](/code/src/pynescript/runtime.md)
+* [src/pynescript/util](/code/src/pynescript/util.md)

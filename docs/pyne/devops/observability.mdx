@@ -19,14 +19,14 @@
 
 ---
 title: "Observability"
-description: "Health endpoints, gunicorn process model, Cloud Logging, coverage artifacts, and operational signals for PYNE."
+description: "PYNE_DEBUG logging, GET /stats runtime counters, health endpoints, gunicorn process model, Cloud Logging, and operational signals."
 ---
 
 # Observability
 
 ## Abstract
 
-PYNE’s production surface today optimizes for **simple, hostable signals** rather than a full OpenTelemetry mesh: HTTP health checks, process managers (gunicorn), cloud platform logs, CI artifacts (coverage, Playwright reports), and application-level API key usage counters. Treat this page as the map of *what exists in-repo*, not a claim of enterprise APM parity.
+PYNE’s production surface today optimizes for **simple, hostable signals** rather than a full OpenTelemetry mesh: HTTP health checks, **development debug logging** (`PYNE_DEBUG`), **process-wide runtime counters** (`GET /stats`), process managers (gunicorn), cloud platform logs, CI artifacts (coverage, Playwright reports), and application-level API key usage counters. Treat this page as the map of *what exists in-repo*, not a claim of enterprise APM parity.
 
 ## Conceptual model
 
@@ -36,8 +36,13 @@ flowchart TB
   LB --> GUNI[gunicorn workers]
   GUNI --> APP[Flask backend.app]
   APP --> HEALTH["GET /"]
+  APP --> STATS["GET /stats"]
   APP --> RUN["POST /run …"]
+  APP --> SESS["POST /session … O(delta)"]
   APP --> KEYS[APIKeyStore counters]
+  APP --> REG["pynescript.stats registry"]
+  REG --> STATS
+  APP -.->|PYNE_DEBUG=1| DBG[engine + datafeed logs]
   GUNI --> LOGS[stdout / Cloud Logging]
   CI[GitHub Actions] --> ART[coverage xml / VSIX / docker smoke]
 ```
@@ -58,6 +63,83 @@ Used by:
 - `Dockerfile` target `api` `HEALTHCHECK` (`curl -fsS http://127.0.0.1:8080/`)
 - `docker-compose.yml` api healthcheck
 - Load balancers / Cloud Run startup-ish probes (platform-dependent)
+
+### Runtime statistics
+
+```http
+GET /stats        # public, no API key
+→ { counters, latencies, gauges, compile_cache, sessions, debug }
+```
+
+Counters, latency percentiles (avg/min/max/p50/p95), and gauges for requests, runs, interpreter, compile, prewarm, live-session deltas, sessions, and datafeed. **Process-local** — resets on worker restart. Full reference: [GET /stats](/pyne/docs/api/endpoints/stats).
+
+```bash
+curl -s http://127.0.0.1:5002/stats | python -m json.tool
+```
+
+### Debug logging (`PYNE_DEBUG`)
+
+A single development-only flag turns on detailed logging across the execution engine and the datafeed:
+
+```bash
+PYNE_DEBUG=1 python -m backend.app
+PYNE_DEBUG=1 PYNE_DEBUG_SCOPE=pynescript.runtime,pynescript.compiler python -m backend.app
+```
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `PYNE_DEBUG` | off | `DEBUG` on `pynescript` / `backend` loggers + all engine/datafeed instrumentation |
+| `PYNE_DEBUG_SCOPE` | *(empty)* | Comma-separated logger allowlist; empty means no filter. Only consulted while `PYNE_DEBUG` is on. |
+
+What it traces:
+
+| Area | Logged |
+| --- | --- |
+| **Interpreter** | Bar-loop start/end with bars + ms + bars/ms; order-fill and runtime aborts with bar index/time; timeout breaks |
+| **Compile** | Eligibility and the reason; host cache `HIT`/`MISS`; transpile (IR key, plots, object mode); JIT warm; nopython fallback |
+| **Prewarm** | Builtins warm duration, per-script results, totals, failures |
+| **Delta calculation** | `append_bars` delta size + start index; `update_last_bar` tick duration |
+| **Datafeed** | CCXT Pro connect/subscribe/first updates/reconnects; REST `fetch_ohlcv` symbol normalization and bar counts; the `/datafeed/*` gateway; `WS /datafeed/watch` connect/close |
+| **HTTP** | Every request: method, path, status, duration; slow requests flagged |
+
+`PYNE_DEBUG=1 POST /run` on a fresh process, for example:
+
+```text
+DEBUG pynescript.runtime.host:  auto: eligibility src=2de7f37e3736 eligible=True reason= (cached_failure=False)
+DEBUG pynescript.compiler.engine: prewarm: warming shared Numba builtins (first touch, JIT)
+DEBUG pynescript.compiler.engine: prewarm: builtins warm in 7497.6ms
+DEBUG pynescript.runtime.host:  compile: MISS src=2de7f37e3736 … in 8973.67ms host_cache_entries=1
+DEBUG pynescript.runtime.host:  run finished mode=compile bars=40 total=8974.63ms parse=8973.67ms eval=0.06ms
+```
+
+A warm second run shows the cache doing its job:
+
+```text
+DEBUG pynescript.runtime.host:  compile: HIT src=2de7f37e3736 … in 0.00ms host_cache_entries=1
+DEBUG pynescript.runtime.host:  run finished mode=compile bars=40 total=0.36ms parse=0.00ms eval=0.04ms
+```
+
+And a live session shows the O(delta) property directly:
+
+```text
+DEBUG pynescript.runtime.host:  append_bars run_id=250985e340… delta=2 start=20 new_total=22
+DEBUG pynescript.runtime.host:  bar-loop start run_id=250985e340… start=20 end=22 bars=2 total_bars=22
+DEBUG pynescript.runtime.host:  update_last_bar run_id=250985e340… idx=21 bar_time=… n_bars=22
+```
+
+<Warning>
+`PYNE_DEBUG` is **development only** and verbose by design — it is meant to flood. Third-party loggers (`urllib3`, `numba`, `matplotlib`, `asyncio`, `werkzeug`) are held at `WARNING` while it is on. Keep it off in production: the numbers you want there come from `GET /stats`.
+</Warning>
+
+Implementation is three small pieces:
+
+| Path | Role |
+| --- | --- |
+| `src/pynescript/debug.py` | Env toggle, memoized on the raw env string so a live flip takes effect without a restart |
+| `src/pynescript/stats.py` | Dependency-free metric registry |
+| `backend/logging_setup.py` | Level policy, handler install, `debug_report()` |
+
+The toggle is read at run / batch / request boundaries, never inside a per-bar loop, and log payloads are only built when the flag is on.
 
 ### Process model (production)
 
@@ -107,8 +189,15 @@ These are **business metrics** for rate limits, not Prometheus time series — e
 
 | Path | Role |
 | --- | --- |
-| `backend/app.py` | Health route, CORS, `MAX_CONTENT_LENGTH` |
+| `backend/app.py` | Health route, `/stats`, request hooks, CORS, `MAX_CONTENT_LENGTH` |
+| `backend/logging_setup.py` | `PYNE_DEBUG` level policy, handler install, `debug_report()` |
+| `src/pynescript/debug.py` | Debug toggle + `PYNE_DEBUG_SCOPE` filter |
+| `src/pynescript/stats.py` | Counter / latency / gauge registry behind `/stats` |
+| `src/pynescript/runtime/host.py` | Interpreter, compile, delta debug + stats call sites |
+| `src/pynescript/compiler/engine.py` | Compile / prewarm debug + stats call sites |
+| `src/pynescript/util/datafeed.py` · `util/data.py` | Datafeed / provider debug + stats call sites |
 | `backend/middleware/auth.py` | Key store, rate limit counters |
+| `backend/middleware/sessions.py` | Live-session store + lifecycle counters |
 | `backend/services/backtest.py` | Backtest metrics objects for API responses |
 | `Dockerfile` (`api` target) | HEALTHCHECK + gunicorn entrypoint |
 | `cloudbuild.yaml` | Cloud Logging-only build logs |
@@ -116,20 +205,44 @@ These are **business metrics** for rate limits, not Prometheus time series — e
 
 ## Invariants & edge cases
 
-1. **Health ≠ readiness of evaluator warm caches.** A 200 on `/` does not mean the first `/run` will be fast (cold import / JIT / numba).
-2. **Timeouts double-bind.** Cloud Run 60s vs gunicorn default 120s — the **platform** limit wins on Cloud Run unless you set `GUNICORN_TIMEOUT=60`.
-3. **Scale-to-zero hides idle metrics.** No traffic ⇒ no samples; use synthetic uptime checks if SLOs matter.
-4. **Coverage artifacts expire** (7–14 days retention on Actions uploads).
-5. **Do not scrape secrets from logs.** API keys and admin tokens must never be logged at info level.
+1. **Health ≠ readiness of evaluator warm caches.** A 200 on `/` does not mean the first `/run` will be fast (cold import / JIT / numba). Check `compile.host_prewarmed` / call `POST /compile/prewarm`.
+2. **`/stats` is per-process, not fleet-wide.** Behind a load balancer each worker counts only its own slice. Aggregate per worker, or run single-worker (which live sessions require anyway).
+3. **Timeouts double-bind.** Cloud Run 60s vs gunicorn default 120s — the **platform** limit wins on Cloud Run unless you set `GUNICORN_TIMEOUT=60`.
+4. **Scale-to-zero hides idle metrics.** No traffic ⇒ no samples; use synthetic uptime checks if SLOs matter.
+5. **Coverage artifacts expire** (7–14 days retention on Actions uploads).
+6. **Do not scrape secrets from logs.** API keys and admin tokens must never be logged at info level. `PYNE_DEBUG` logs *whether* credentials were supplied, never their values.
+7. **Latency percentiles are recent-window.** `p50_ms` / `p95_ms` come from the last 512 samples; `max_ms` is all-time.
 
 ## Worked examples
 
-### Local health loop
+### Local health + stats loop
 
 ```bash
 make run
-curl -s http://127.0.0.1:5002/ | python -m json.tool
+curl -s http://127.0.0.1:5002/    | python -m json.tool
+curl -s http://127.0.0.1:5002/stats | python -m json.tool
 ```
+
+### Explain a slow run
+
+```bash
+PYNE_DEBUG=1 PYNE_DEBUG_SCOPE=pynescript.runtime,pynescript.compiler make run
+# in another shell:
+curl -s -X POST http://127.0.0.1:5002/run -H 'Content-Type: application/json' \
+  -d '{"script":"//@version=6\nindicator(\"x\")\nplot(ta.sma(close,20))","data":[...]}'
+```
+
+Read the trace bottom-up: eligibility → cache HIT/MISS → JIT warm duration → `run finished total=…`. A first run paying ~9 s in `prewarm: builtins warm` and `compile: MISS` is expected; the second identical request should be a `compile: HIT` in ~0 ms.
+
+### Check why live updates cost what they cost
+
+```bash
+curl -s http://127.0.0.1:5002/stats \
+  | jq '{delta: .counters["delta.bars_appended"], appends: .counters["delta.append_calls"],
+         max: .gauges["delta.bars_per_append_max"], loop: .latencies["interpret.bar_loop"]}'
+```
+
+A large `delta.bars_per_append_max` with a small `interpret.bar_loop.p95_ms` means the delta path is behaving as intended.
 
 ### Docker health
 
@@ -148,6 +261,11 @@ gcloud run services logs read pynescript-pro-api --region us-central1 --limit 50
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Health green, `/run` 500 | Exception in evaluator path | Inspect request logs; reproduce with payload |
+| First `/run` takes seconds | Cold Numba JIT | `POST /compile/prewarm` at deploy; confirm on `/health` `compile.host_prewarmed` |
+| `/stats` counters reset | Worker restarted | Expected — in-process by design |
+| `/stats` counts look low | Multiple workers, per-process counters | Aggregate per worker or set `GUNICORN_WORKERS=1` |
+| No engine debug output | `PYNE_DEBUG` not set in the worker process | Set it in the environment, not only in your shell — gunicorn inherits from its parent |
+| Too much debug output | No scope filter | Set `PYNE_DEBUG_SCOPE` to the modules you are debugging |
 | Worker kills | Soft timeout | Optimize script / raise timeout consistently |
 | Missing CI artifact | Path wrong / tests passed | `if-no-files-found: ignore` hides absence |
 | Rate limit false positives | Shared key / limit too low | Adjust tier limits; multi-key |
