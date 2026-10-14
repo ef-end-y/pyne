@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-13T19:59:00Z
+  at: 2026-10-14T08:55:33Z
 sources:
   - id: tree
     resource: "tests"
@@ -45,6 +45,7 @@ okf_lock: generated
 * `test_datafeed.py` — DummyProExchange, test_ccxtpro_sync_wrappers, test_composite_fallback, test_datafeed_broker, test_evaluator_with_datafeed_request_security, test_get_datafeed_mock, test_get_datafeed_unknown, test_mock_datafeed_streams
 * `test_datafeed_gateway.py` — TestCandleHelpers, TestCcxtProviderPassThrough, TestHealth, TestMarkets, TestOhlcv, TestRunSecretRefusal, TestSession, TestWatchRestPoll, client
 * `test_datafeed_wiring.py` — test_chart_ohlcv_provider_fetch, test_composite_sync_fetch_delegates, test_evaluator_chart_provider_security_matches_bars, test_get_datafeed_mock_factory, test_resolve_request_sources_chart_default, test_resolve_request_sources_mock_feed, test_runtime_auto_wires_chart_provider_for_request_security, test_runtime_with_explicit_mock_feed
+* `test_debug_stats.py` — TestDebugToggle, TestEngineDebugLogging, TestLoggingPolicy, TestStatsEndpoint, TestStatsRegistry, client
 * `test_dividend_yield_parity.py` — test_dividend_yield_interp_compile_all_na, test_foreign_security_string_close_is_na_both_modes, test_foreign_security_udf_expression_is_na, test_time_assign_does_not_alias_host_series
 * `test_drawing_all_and_last_bar.py` — TestDrawingAllCollections, TestLastBarVars, TestRiskMaxPositionSize
 * `test_drawing_export_last_bar.py` — TestCompilePathDrawingDelete, TestExportForApiLastBarLine, TestExportLineFill, TestExportXToTime, TestFoldCompileDrawingMutations

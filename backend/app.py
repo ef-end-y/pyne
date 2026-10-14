@@ -38,6 +38,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def _dbg(msg: str, *args: Any) -> None:
+    """Emit one backend debug line when ``PYNE_DEBUG`` is enabled."""
+    if _debug_on():
+        logger.debug(msg, *args)
+
 _INTERNAL_PATH_RE = re.compile(r'(?:File ")?[\\/](?:[\w.-]+[\\/])*[\w.-]+\.py(?:", line \d+)?')
 _MAX_ERROR_MSG_LEN = 500
 
@@ -85,6 +91,8 @@ from backend.middleware.schemas import VALIDATE_KEY_SCHEMA
 from backend.middleware.sessions import SESSIONS
 from backend.middleware.schemas import validate
 from backend.runtime import Runtime
+from pynescript import stats as _stats
+from pynescript.debug import debug_enabled as _debug_on
 
 
 try:
@@ -237,6 +245,61 @@ def _cors_preflight():  # type: ignore[no-untyped-def]
     return _apply_cors_headers(resp)
 
 
+@app.before_request
+def _request_stats_start():  # type: ignore[no-untyped-def]
+    """Stamp the request start so ``_request_stats_end`` can record latency."""
+    g._pyne_req_t0 = time.perf_counter()
+    # Proper in-flight gauge: raised here, lowered in the after_request hook.
+    _stats.inc_gauge("http.in_flight")
+
+
+@app.after_request
+def _request_stats_end(resp):  # type: ignore[no-untyped-def]
+    """Fold one request into ``pynescript.stats`` and log it under PYNE_DEBUG.
+
+    Cheap when debug is off: counters are a few dict updates behind one lock.
+    """
+    try:
+        t0 = getattr(g, "_pyne_req_t0", None)
+        duration = (time.perf_counter() - t0) if t0 else 0.0
+        rule = getattr(request, "url_rule", None)
+        endpoint = rule.rule if rule is not None else request.path
+        status = resp.status_code
+        _stats.count("http.requests")
+        _stats.count("http.by_endpoint", dim=f"{request.method} {endpoint}")
+        _stats.count("http.by_status_class", dim=f"{status // 100}xx")
+        _stats.latency("http.request", duration)
+        _stats.dec_gauge("http.in_flight")
+        if status >= 500:
+            _stats.count("http.server_errors")
+        elif status >= 400:
+            _stats.count("http.client_errors")
+        if duration > 1.0:
+            _stats.count("http.slow_requests")
+        _dbg(
+            "%s %s -> %d in %.1fms (%s)",
+            request.method,
+            endpoint,
+            status,
+            duration * 1000.0,
+            _describe_source(),
+        )
+        if _debug_on() and duration > 0.5:
+            logger.debug("slow request %s %s took %.1fms", request.method, endpoint, duration * 1000.0)
+    except Exception:  # noqa: BLE001 — stats must never break a response
+        pass
+    return resp
+
+
+def _describe_source() -> str:
+    """Compact caller label for the debug access log (no PII, no secrets)."""
+    api_key = getattr(g, "api_key", None)
+    if api_key is not None:
+        return f"key={getattr(api_key, 'tier', 'unknown')}"
+    remote = request.remote_addr
+    return f"ip={remote}" if remote else "ip=?"
+
+
 @app.after_request
 def _ensure_cors_headers(resp):  # type: ignore[no-untyped-def]
     """Echo ACAO on every response for free paths / allowlisted Origins."""
@@ -283,13 +346,17 @@ def _maybe_host_compile_prewarm(*, force: bool = False) -> dict[str, Any] | None
             _HOST_COMPILE_PREWARMED = True
             return None
         # Builtins only here; explicit POST /compile/prewarm may pass scripts.
+        _dbg("host compile prewarm starting force=%s", force)
+        _t_pw0 = time.perf_counter()
         result = prewarm_scripts(None, force_builtins=force)
         _HOST_COMPILE_PREWARMED = True
+        _dbg("host compile prewarm done in %.1fms: %s", (time.perf_counter() - _t_pw0) * 1000.0, result)
         return result
     except Exception as exc:  # noqa: BLE001 — never block /run on prewarm
         import logging as _logging
 
         _logging.getLogger(__name__).debug("host compile prewarm failed: %s", exc, exc_info=True)
+        _dbg("host compile prewarm failed: %s", exc)
         _HOST_COMPILE_PREWARMED = True
         logger.warning("host compile prewarm failed: %s", exc)
         return {"error": "Internal server error", "has_numba": False}
@@ -519,6 +586,20 @@ def _execute_run_payload_inner(
     timeout_kw = _timeout_seconds_kwarg(validated.get("timeout_seconds"))
 
     runtime = Runtime(symbol=str(symbol))
+    _dbg(
+        "POST /run symbol=%s mode=%s bars=%d script_chars=%d inputs=%d libraries=%d profiler=%s "
+        "data_source=%s timeout=%s",
+        symbol,
+        mode,
+        len(ohlcv),
+        len(script),
+        len(inputs),
+        len(libraries),
+        profiler,
+        data_source,
+        timeout_kw.get("timeout_seconds"),
+    )
+    _t_run0 = time.perf_counter()
     result = runtime.run(
         script,
         ohlcv,
@@ -529,6 +610,13 @@ def _execute_run_payload_inner(
         profiler=profiler,
         libraries=libraries or None,
         **timeout_kw,
+    )
+    _dbg(
+        "POST /run returned in %.1fms mode=%s backend=%s error=%s",
+        (time.perf_counter() - _t_run0) * 1000.0,
+        result.get("mode"),
+        result.get("auto_backend"),
+        bool(result.get("error")),
     )
 
     # Response windowing — serialize only the requested bar range. Must run
@@ -682,6 +770,7 @@ def _health_payload() -> dict[str, Any]:
         "POST /run/batch": "Run multiple Pine scripts on shared OHLCV (free)",
         "POST /optimize": "Strategy hyperparameter search (free; interpret + inputs)",
         "POST /compile/prewarm": "Warm Numba builtins / optional scripts (free)",
+        "GET /stats": "Process runtime stats (engine, deltas, datafeed, http)",
         # Live sessions. Process-local, so these only resolve on the single
         # gunicorn worker — advertised here because /health is the discovery
         # surface agents and AXIS read to learn what this API can do.
@@ -750,6 +839,66 @@ def _health_payload() -> dict[str, Any]:
         "compile": _compile_health_section(),
         "endpoints": endpoints,
     }
+
+
+@app.route("/stats", methods=["GET"])
+def get_stats():
+    """Process-wide runtime statistics (counters, latencies, gauges).
+
+    Public like ``/health`` so ops can poll it without an API key. In-process
+    only — counters reset when the worker restarts, which is honest for the
+    single-worker gunicorn setup the live sessions require.
+
+    Payload sections:
+
+    - ``http`` — request count, per endpoint / status class, in-flight, slow
+    - ``run`` / ``interpret`` / ``compile`` / ``prewarm`` — execution engine
+    - ``delta`` — live-session ``append_bars`` (O(delta)) / forming-bar ticks
+    - ``sessions`` — live session store size and lifecycle counters
+    - ``datafeed`` / ``provider`` — CCXT realtime + historical fetches
+    - ``compile_cache`` — live engine cache sizes (same source as /health)
+    - ``debug`` — current ``PYNE_DEBUG`` configuration
+    """
+    from backend.logging_setup import debug_report
+
+    snapshot = _stats.snapshot()
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "pynescript-pro-api",
+            "version": "1.0.0",
+            "timestamp": int(time.time()),
+            "debug": debug_report(),
+            "counters": snapshot["counters"],
+            "latencies": snapshot["latencies"],
+            "gauges": snapshot["gauges"],
+            "compile_cache": _compile_cache_snapshot(),
+            "sessions": _sessions_snapshot(),
+            "notes": "in-process counters; reset on worker restart",
+        }
+    )
+
+
+def _compile_cache_snapshot() -> dict[str, Any]:
+    """Live compile cache sizes, or ``{}`` when the engine cannot be imported."""
+    try:
+        from pynescript.compiler.engine import compile_cache_stats
+
+        return compile_cache_stats()
+    except Exception as exc:  # noqa: BLE001 — /stats must stay up
+        logger.warning("stats compile cache: %s", exc)
+        return {"error": "unavailable"}
+
+
+def _sessions_snapshot() -> dict[str, Any]:
+    """Live session store size plus derived gauges."""
+    try:
+        st = SESSIONS.stats()
+        _stats.set_gauge("sessions.active", int(st.get("sessions", 0) or 0))
+        return st
+    except Exception as exc:  # noqa: BLE001 — /stats must stay up
+        logger.warning("stats sessions: %s", exc)
+        return {"error": "unavailable"}
 
 
 @app.before_request
@@ -1418,6 +1567,7 @@ def compile_prewarm():
 
         global _HOST_COMPILE_PREWARMED
         t0 = time.perf_counter()
+        _dbg("POST /compile/prewarm force=%s scripts=%d", force, len(sources))
         try:
             from pynescript.compiler.engine import prewarm_scripts
 
@@ -1425,6 +1575,7 @@ def compile_prewarm():
             _HOST_COMPILE_PREWARMED = True
         except Exception as exc:  # noqa: BLE001
             logger.warning("prewarm error: %s", exc)
+            _dbg("POST /compile/prewarm failed: %s", exc)
             return jsonify(
                 {
                     "status": "error",
@@ -1434,6 +1585,12 @@ def compile_prewarm():
             ), 500
 
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
+        _dbg(
+            "POST /compile/prewarm done in %.1fms ok=%s failed=%s",
+            elapsed_ms,
+            result.get("scripts_ok"),
+            result.get("scripts_failed"),
+        )
         body = {
             "status": "success",
             "prewarm_ms": round(elapsed_ms, 2),
@@ -1874,6 +2031,18 @@ except Exception:  # noqa: BLE001 — boot must not fail if runner misconfigured
     logger.exception("pyne runner scheduler failed to start")
 
 
+# Apply the PYNE_DEBUG logging policy at import so gunicorn workers, `flask run`
+# and `python -m backend.app` all get the same levels without extra flags.
+try:
+    from backend.logging_setup import configure_logging as _configure_logging
+
+    _LOGGING_POLICY = _configure_logging()
+    configure_logging = _configure_logging
+except Exception:  # noqa: BLE001 — logging setup must never block boot
+    _LOGGING_POLICY = {"enabled": False, "error": "configure_logging failed"}
+    logger.warning("logging setup failed; using defaults", exc_info=True)
+
+
 @app.errorhandler(404)
 def not_found(e):
     """JSON 404 for unknown paths."""
@@ -1915,13 +2084,19 @@ if __name__ == "__main__":
     # HOST=0.0.0.0 to expose the dev server to other machines if needed.
     import logging
 
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    _policy = configure_logging(force=True)
+    if not _policy["handler_installed"]:
+        logging.basicConfig(
+            level=getattr(logging, _policy["level"], logging.INFO),
+            format="%(levelname)s %(name)s: %(message)s",
+        )
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5002"))
     logging.getLogger(__name__).info(
-        "Pro API on http://%s:%s  websocket=%s",
+        "Pro API on http://%s:%s  websocket=%s  debug=%s",
         host,
         port,
         sock is not None,
+        _policy["enabled"],
     )
     app.run(host=host, port=port, debug=False)

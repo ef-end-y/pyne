@@ -41,6 +41,7 @@ import math
 import os
 import queue
 import threading
+import time
 
 from datetime import datetime
 from datetime import timedelta
@@ -51,8 +52,17 @@ from flask import Blueprint
 from flask import jsonify
 from flask import request
 
+from pynescript import stats as _stats
+from pynescript.debug import scope_enabled as _debug_scope
+
 
 logger = logging.getLogger(__name__)
+
+
+def _dbg(msg: str, *args: Any) -> None:
+    """Emit one datafeed-gateway debug line when ``PYNE_DEBUG`` is enabled."""
+    if _debug_scope(__name__):
+        logger.debug(msg, *args)
 
 datafeed_bp = Blueprint("datafeed", __name__, url_prefix="/datafeed")
 
@@ -226,24 +236,61 @@ def fetch_ohlcv():  # type: ignore[no-untyped-def]
 
     provider = _make_provider(exchange, credentials)
     if provider is None:
+        _dbg("GET /datafeed/ohlcv 503 ccxt missing exchange=%s symbol=%s", exchange, symbol)
+        _stats.count("datafeed.gateway", dim="ohlcv_unavailable")
         return (
             jsonify({"error": "CCXT not installed. Install with: pip install 'pynescript[datafeed]'"}),
             503,
         )
 
+    _dbg(
+        "GET /datafeed/ohlcv exchange=%s symbol=%s timeframe=%s since=%s limit=%s period=%s auth=%s",
+        exchange,
+        symbol,
+        timeframe,
+        since,
+        limit,
+        period or None,
+        bool(credentials),
+    )
+    _stats.count("datafeed.gateway", dim="ohlcv")
+    _t_fetch0 = time.perf_counter()
     try:
         raw = provider.fetch_ohlcv(symbol=symbol, timeframe=timeframe, since=since, limit=limit)
     except Exception as exc:
         logger.warning("datafeed ohlcv: %s", exc)
+        _dbg(
+            "GET /datafeed/ohlcv FAILED exchange=%s symbol=%s in %.1fms: %s",
+            exchange,
+            symbol,
+            (time.perf_counter() - _t_fetch0) * 1000.0,
+            exc,
+        )
+        _stats.count("datafeed.gateway_errors", dim="ohlcv")
+        _stats.latency("datafeed.gateway_ohlcv", time.perf_counter() - _t_fetch0)
         if "not installed" in str(exc).lower():
             return jsonify({"error": "Data provider not installed"}), 503
         return jsonify({"error": "Failed to fetch OHLCV data"}), 502
 
     bars = []
+    dropped = 0
     for candle in raw or []:
         bar = _candle_to_bar(candle)
         if bar is not None:
             bars.append(bar)
+        else:
+            dropped += 1
+    _dbg(
+        "GET /datafeed/ohlcv -> %d bars (dropped %d) exchange=%s symbol=%s in %.1fms",
+        len(bars),
+        dropped,
+        exchange,
+        symbol,
+        (time.perf_counter() - _t_fetch0) * 1000.0,
+    )
+    _stats.count("datafeed.gateway_bars", len(bars))
+    _stats.count("datafeed.gateway_dropped_candles", dropped)
+    _stats.latency("datafeed.gateway_ohlcv", time.perf_counter() - _t_fetch0)
     return jsonify(bars)
 
 
@@ -264,8 +311,13 @@ def fetch_markets():  # type: ignore[no-untyped-def]
 
     provider = _make_provider(exchange, credentials)
     if provider is None:
+        _dbg("GET /datafeed/markets 503 ccxt missing exchange=%s", exchange)
+        _stats.count("datafeed.gateway", dim="markets_unavailable")
         return jsonify({"error": "CCXT not installed"}), 503
 
+    _dbg("GET /datafeed/markets exchange=%s auth=%s", exchange, bool(credentials))
+    _stats.count("datafeed.gateway", dim="markets")
+    _t_mkt0 = time.perf_counter()
     try:
         ex = provider._get_exchange()
         markets = ex.fetch_markets()
@@ -279,9 +331,20 @@ def fetch_markets():  # type: ignore[no-untyped-def]
                     "active": m.get("active", True),
                 }
             )
+        _dbg(
+            "GET /datafeed/markets -> %d markets exchange=%s in %.1fms",
+            len(simplified),
+            exchange,
+            (time.perf_counter() - _t_mkt0) * 1000.0,
+        )
+        _stats.count("datafeed.gateway_markets", len(simplified))
+        _stats.latency("datafeed.gateway_markets", time.perf_counter() - _t_mkt0)
         return jsonify(simplified)
     except Exception as exc:
         logger.warning("datafeed markets: %s", exc)
+        _dbg("GET /datafeed/markets FAILED exchange=%s: %s", exchange, exc)
+        _stats.count("datafeed.gateway_errors", dim="markets")
+        _stats.latency("datafeed.gateway_markets", time.perf_counter() - _t_mkt0)
         return jsonify({"error": "Failed to fetch market data"}), 502
 
 
@@ -314,16 +377,35 @@ def bind_session():  # type: ignore[no-untyped-def]
         if uid:
             creds["uid"] = uid
         _store_session(exchange, creds, credential_id)
+        # Never log key material — only whether each field was supplied.
+        _dbg(
+            "POST /datafeed/session bound exchange=%s credential_id=%s inline has_password=%s has_uid=%s",
+            exchange,
+            credential_id or None,
+            bool(password),
+            bool(uid),
+        )
+        _stats.count("datafeed.session_binds", dim="inline")
+        _stats.set_gauge("datafeed.bound_sessions", len({k for k in _sessions if not k.startswith("ccxt:")}))
         return "", 204
 
     credentials = _get_credentials(exchange) or _get_env_credentials(exchange)
     if not credentials:
+        _dbg("POST /datafeed/session 404 exchange=%s (no inline creds, no env vars)", exchange)
+        _stats.count("datafeed.session_binds", dim="not_found")
         return (
             jsonify({"error": (f"No credentials found for {exchange}. POST apiKey+secret or set env vars.")}),
             404,
         )
 
     _store_session(exchange, credentials, credential_id)
+    _dbg(
+        "POST /datafeed/session bound exchange=%s credential_id=%s source=env",
+        exchange,
+        credential_id or None,
+    )
+    _stats.count("datafeed.session_binds", dim="env")
+    _stats.set_gauge("datafeed.bound_sessions", len({k for k in _sessions if not k.startswith("ccxt:")}))
     return "", 204
 
 
@@ -347,6 +429,9 @@ def unbind_session():  # type: ignore[no-untyped-def]
     if exchange:
         _sessions.pop(exchange, None)
         _sessions.pop(f"ccxt:{exchange}", None)
+    _dbg("DELETE /datafeed/session unbound exchange=%s cred=%s", exchange or None, cred or None)
+    _stats.count("datafeed.session_unbinds")
+    _stats.set_gauge("datafeed.bound_sessions", len({k for k in _sessions if not k.startswith("ccxt:")}))
     return "", 204
 
 
@@ -417,6 +502,8 @@ def watch_rest_poll(
                 _watch_put(out_q, bar)
         except Exception as exc:
             logger.warning("datafeed watch poll error: %s", exc)
+            _dbg("watch REST poll error %s %s %s: %s", getattr(provider, "_exchange_name", "?"), symbol, timeframe, exc)
+            _stats.count("datafeed.watch_poll_errors", dim="rest")
         stop.wait(_WATCH_POLL_SEC)
 
 
@@ -429,6 +516,8 @@ def run_watch_producer(  # noqa: PLR0913
     stop: threading.Event,
 ) -> None:
     """CCXT Pro watch, then REST poll if the venue/WS is unreachable."""
+    _dbg("watch producer start exchange=%s symbol=%s timeframe=%s auth=%s", exchange, symbol, timeframe, bool(creds))
+    _stats.count("datafeed.watch_producers", dim=exchange)
     try:
         from pynescript.util.datafeed import CCXTProDataFeed  # noqa: PLC0415
 
@@ -457,6 +546,8 @@ def run_watch_producer(  # noqa: PLR0913
         if stop.is_set():
             return
         logger.warning("datafeed watch pro failed, polling REST: %s", exc)
+        _dbg("watch producer CCXT Pro failed, falling back to REST poll: %s", exc)
+        _stats.count("datafeed.watch_fallbacks", dim="rest_poll")
         provider = _make_provider(exchange, creds)
         if provider is None:
             return
@@ -483,6 +574,15 @@ def register_watch_route(sock: Any) -> None:
 
         stop = threading.Event()
         out_q: queue.Queue[Any] = queue.Queue(maxsize=8)
+        _dbg(
+            "WS /datafeed/watch open exchange=%s symbol=%s timeframe=%s auth=%s",
+            exchange,
+            symbol,
+            timeframe,
+            bool(credentials),
+        )
+        _stats.inc_gauge("datafeed.watch_connections")
+        _stats.count("datafeed.watch_connections")
         worker = threading.Thread(
             target=run_watch_producer,
             args=(exchange, credentials or {}, symbol, timeframe, out_q, stop),
@@ -490,6 +590,7 @@ def register_watch_route(sock: Any) -> None:
             daemon=True,
         )
         worker.start()
+        n_sent = 0
         try:
             while worker.is_alive() or not out_q.empty():
                 try:
@@ -497,7 +598,15 @@ def register_watch_route(sock: Any) -> None:
                 except queue.Empty:
                     continue
                 ws.send(json.dumps(bar))
+                n_sent += 1
+                if n_sent <= 3 or n_sent % 100 == 0:
+                    _dbg("WS /datafeed/watch sent bar #%d %s", n_sent, bar)
         except Exception as exc:
             logger.warning("datafeed watch send error: %s", exc)
+            _dbg("WS /datafeed/watch send error after %d bar(s): %s", n_sent, exc)
+            _stats.count("datafeed.watch_errors")
         finally:
             stop.set()
+            _dbg("WS /datafeed/watch closed exchange=%s symbol=%s bars_sent=%d", exchange, symbol, n_sent)
+            _stats.dec_gauge("datafeed.watch_connections")
+            _stats.count("datafeed.watch_bars", n_sent)

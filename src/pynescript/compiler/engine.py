@@ -108,6 +108,7 @@ import os
 import pickle
 import sys
 import tempfile
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from dataclasses import field
@@ -117,8 +118,10 @@ from typing import Callable
 
 import numpy as np
 
+from pynescript import stats as _stats
 from pynescript.ast.helper import parse
 from pynescript.compiler.compiler import CompilerVisitor
+from pynescript.debug import scope_enabled as _debug_scope
 
 try:
     import numba  # noqa: F401
@@ -128,6 +131,12 @@ except ImportError:  # pragma: no cover
     _HAS_NUMBA = False
 
 _log = logging.getLogger(__name__)
+
+
+def _dbg(msg: str, *args: Any) -> None:
+    """Emit one compile-pipeline debug line when ``PYNE_DEBUG`` is enabled."""
+    if _debug_scope(__name__):
+        _log.debug(msg, *args)
 
 # ---------------------------------------------------------------------------
 # Typed exceptions (fail closed / surface cleanly — no silent wrong results)
@@ -471,6 +480,9 @@ def _warm_common_numba_builtins() -> None:
     if _BUILTINS_WARMED or not _HAS_NUMBA:
         return
     _BUILTINS_WARMED = True
+    _dbg("prewarm: warming shared Numba builtins (first touch, JIT)")
+    _stats.count("prewarm.builtin_warm")
+    t0 = time.perf_counter()
     try:
         _call_with_numba_cache_recovery(_run_common_numba_builtin_warm)
     except Exception as exc:
@@ -478,6 +490,11 @@ def _warm_common_numba_builtins() -> None:
         # Do not leave _BUILTINS_WARMED False forever on transient failure —
         # avoid thrashing; next compile still warms via generated entry.
         _log.debug("numba builtin prewarm failed (best-effort): %s", exc, exc_info=True)
+        _dbg("prewarm: builtin warm FAILED after %.1fms: %s", (time.perf_counter() - t0) * 1000.0, exc)
+        _stats.count("prewarm.builtin_warm_errors")
+    else:
+        _dbg("prewarm: builtins warm in %.1fms", (time.perf_counter() - t0) * 1000.0)
+        _stats.latency("prewarm.builtin_warm", time.perf_counter() - t0)
 
 
 def prewarm_numba_builtins(*, force: bool = False) -> bool:
@@ -499,10 +516,14 @@ def prewarm_numba_builtins(*, force: bool = False) -> bool:
     """
     global _BUILTINS_WARMED
     if not _HAS_NUMBA:
+        _dbg("prewarm_numba_builtins: skipped (numba unavailable)")
+        _stats.count("prewarm.calls", dim="no_numba")
         return False
     if force:
         _BUILTINS_WARMED = False
     ensure_compile_cache_dir()
+    _dbg("prewarm_numba_builtins: force=%s cache_dir=%s", force, _disk_cache_dir())
+    _stats.count("prewarm.calls", dim="forced" if force else "auto")
     _warm_common_numba_builtins()
     return True
 
@@ -533,6 +554,16 @@ def prewarm_scripts(
         ``scripts_ok``, ``scripts_failed``, ``errors`` (list of short strings).
     """
     ensure_compile_cache_dir()
+    t_prewarm0 = time.perf_counter()
+    n_requested = len(sources) if sources else 0
+    _dbg(
+        "prewarm_scripts: start scripts=%d force_builtins=%s has_numba=%s disk_cache=%s",
+        n_requested,
+        force_builtins,
+        _HAS_NUMBA,
+        _disk_cache_enabled(),
+    )
+    _stats.count("prewarm.scripts_calls")
     numba_ok = prewarm_numba_builtins(force=force_builtins)
     ok = 0
     failed = 0
@@ -544,8 +575,15 @@ def prewarm_scripts(
                 errors.append(f"scripts[{i}]: empty source")
                 continue
             try:
+                t_script0 = time.perf_counter()
                 compile_script(src)
                 ok += 1
+                _dbg(
+                    "prewarm_scripts: scripts[%d] compiled in %.1fms (%d chars)",
+                    i,
+                    (time.perf_counter() - t_script0) * 1000.0,
+                    len(src),
+                )
             except Exception as exc:  # noqa: BLE001 — surface per-script; continue
                 failed += 1
                 msg = f"scripts[{i}]: {type(exc).__name__}: {exc}"
@@ -553,6 +591,18 @@ def prewarm_scripts(
                     msg = msg[:237] + "..."
                 errors.append(msg)
                 _log.debug("prewarm_scripts failed for scripts[%s]: %s", i, exc, exc_info=True)
+                _dbg("prewarm_scripts: scripts[%d] FAILED: %s", i, exc)
+    _prewarm_ms = (time.perf_counter() - t_prewarm0) * 1000.0
+    _dbg(
+        "prewarm_scripts: done in %.1fms ok=%d failed=%d builtins_warmed=%s",
+        _prewarm_ms,
+        ok,
+        failed,
+        _BUILTINS_WARMED,
+    )
+    _stats.count("prewarm.scripts_ok", ok)
+    _stats.count("prewarm.scripts_failed", failed)
+    _stats.latency("prewarm.total", _prewarm_ms / 1000.0)
     stats = compile_cache_stats()
     return {
         "has_numba": numba_ok,
@@ -1529,21 +1579,36 @@ def compile_script(source: str, *, use_cache: bool = True) -> CompiledScript:
     """
     raw_source = source
     raw_key = _sha256_text(raw_source)
+    _t_compile0 = time.perf_counter()
 
     if use_cache:
         hit = _memory_cache_get(raw_key)
         if hit is not None:
+            _dbg(
+                "compile_script: MEMORY HIT raw_key=%s chars=%d in %.1fms",
+                raw_key[:12],
+                len(raw_source),
+                (time.perf_counter() - _t_compile0) * 1000.0,
+            )
+            _stats.count("compile_script.cache", dim="memory_raw")
+            _stats.latency("compile_script.total", time.perf_counter() - _t_compile0)
             return hit
 
     source = _sanitize_source(raw_source)
     san_key = _sha256_text(source)
     cache_keys = [raw_key] if raw_key == san_key else [raw_key, san_key]
+    sanitized = san_key != raw_key
+    if sanitized:
+        _dbg("compile_script: source sanitized raw_key=%s san_key=%s", raw_key[:12], san_key[:12])
 
-    if use_cache and san_key != raw_key:
+    if use_cache and sanitized:
         hit = _memory_cache_get(san_key)
         if hit is not None:
             # Alias raw → sanitized entry so next warm hit skips sanitize.
             _memory_cache_store([raw_key], hit)
+            _dbg("compile_script: MEMORY HIT (sanitized alias) san_key=%s", san_key[:12])
+            _stats.count("compile_script.cache", dim="memory_sanitized")
+            _stats.latency("compile_script.total", time.perf_counter() - _t_compile0)
             return hit
 
     # Disk source index (cross-process; still warms njit if Numba cache cold).
@@ -1553,10 +1618,25 @@ def compile_script(source: str, *, use_cache: bool = True) -> CompiledScript:
     if use_cache:
         shared_disk = _compile_via_disk_index(source, san_key, cache_keys)
         if shared_disk is not None:
+            _dbg(
+                "compile_script: DISK HIT san_key=%s in %.1fms",
+                san_key[:12],
+                (time.perf_counter() - _t_compile0) * 1000.0,
+            )
+            _stats.count("compile_script.cache", dim="disk")
+            _stats.latency("compile_script.total", time.perf_counter() - _t_compile0)
             return shared_disk
 
     code, titles, kinds, object_mode, attrs = _transpile_once(source, force_object_mode=False)
     ir_key = _sha256_text(code)
+    _dbg(
+        "compile_script: transpiled san_key=%s ir_key=%s object_mode=%s plots=%d chars=%d",
+        san_key[:12],
+        ir_key[:12],
+        object_mode,
+        len(titles),
+        len(code),
+    )
 
     # Same generated IR as a prior script → reuse warm njit callable, but only
     # when its wire metadata matches this source's freshly derived meta:
@@ -1577,10 +1657,28 @@ def compile_script(source: str, *, use_cache: bool = True) -> CompiledScript:
                 kinds=shared.plot_kinds,
                 attrs=shared.plot_attrs,
             )
+            _dbg(
+                "compile_script: IR SHARE HIT ir_key=%s in %.1fms",
+                ir_key[:12],
+                (time.perf_counter() - _t_compile0) * 1000.0,
+            )
+            _stats.count("compile_script.cache", dim="ir_share")
+            _stats.latency("compile_script.total", time.perf_counter() - _t_compile0)
             return shared
+        _dbg("compile_script: IR share rejected (metadata divergence) ir_key=%s", ir_key[:12])
 
     compiled = _exec_generated(source, code, titles, object_mode, ir_key=ir_key, plot_kinds=kinds, plot_attrs=attrs)
+    _stats.count("compile_script.cache", dim="miss")
     compiled, ir_key = _warm_numeric_or_fallback(source, compiled, ir_key=ir_key)
+    _dbg(
+        "compile_script: BUILT ir_key=%s object_mode=%s nopython_fallback=%s in %.1fms",
+        ir_key[:12],
+        compiled.object_mode,
+        compiled.nopython_fallback_reason,
+        (time.perf_counter() - _t_compile0) * 1000.0,
+    )
+    _stats.latency("compile_script.total", time.perf_counter() - _t_compile0)
+    _stats.latency("compile_script.miss", time.perf_counter() - _t_compile0)
 
     if use_cache:
         _memory_cache_store(cache_keys, compiled)

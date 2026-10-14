@@ -41,7 +41,9 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import random
+import time
 
 from abc import ABC
 from abc import abstractmethod
@@ -49,6 +51,18 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any
 from urllib.parse import urlparse
+
+from pynescript import stats as _stats
+from pynescript.debug import scope_enabled as _debug_scope
+
+
+_log = logging.getLogger(__name__)
+
+
+def _dbg(msg: str, *args: Any) -> None:
+    """Emit one historical-provider debug line when ``PYNE_DEBUG`` is enabled."""
+    if _debug_scope(__name__):
+        _log.debug(msg, *args)
 
 
 class DataProvider(ABC):
@@ -548,16 +562,21 @@ class CCXTProvider(DataProvider):
         self._password = password
         self._uid = uid
         self._exchange: Any | None = None
+        _dbg("CCXTProvider init exchange=%s has_key=%s", exchange, bool(api_key and secret))
+        _stats.count("provider.created", dim="ccxt")
 
     def _get_exchange(self):
         """Lazy import and initialize CCXT."""
         if self._exchange is None:
+            _t_ex0 = time.perf_counter()
             try:
                 import ccxt
 
                 exchange_class = getattr(ccxt, self._exchange_name.lower(), None)
                 if exchange_class is None:
                     msg = f"Exchange '{self._exchange_name}' not found in CCXT"
+                    _dbg("unknown CCXT exchange=%s", self._exchange_name)
+                    _stats.count("provider.errors", dim="unknown_exchange")
                     raise DataProviderError(msg)
 
                 params: dict[str, Any] = {"enableRateLimit": True, "timeout": 20_000}
@@ -573,8 +592,16 @@ class CCXTProvider(DataProvider):
 
                 self._exchange = exchange_class(params)
                 tune_ccxt_public_urls(self._exchange, self._exchange_name)
+                _dbg(
+                    "ccxt REST exchange ready exchange=%s in %.1fms",
+                    self._exchange_name,
+                    (time.perf_counter() - _t_ex0) * 1000.0,
+                )
+                _stats.count("provider.exchanges_connected", dim=str(self._exchange_name).lower())
             except ImportError:
                 msg = "ccxt not installed. Install with: pip install ccxt"
+                _dbg("ccxt REST unavailable")
+                _stats.count("provider.errors", dim="ccxt_missing")
                 raise DataProviderError(msg)
         return self._exchange
 
@@ -598,13 +625,44 @@ class CCXTProvider(DataProvider):
         exchange = self._get_exchange()
         tf = self._parse_timeframe(timeframe)
         unified = normalize_ccxt_symbol(self._exchange_name, symbol)
+        _dbg(
+            "fetch_ohlcv exchange=%s symbol=%s -> %s timeframe=%s since=%s limit=%s",
+            self._exchange_name,
+            symbol,
+            unified,
+            tf,
+            since,
+            limit,
+        )
+        _t_fetch0 = time.perf_counter()
+        _stats.count("provider.fetches", dim="ccxt")
         try:
             raw = exchange.fetch_ohlcv(unified, tf, since, limit)
         except Exception as e:
             hint = geo_block_message(self._exchange_name, e)
             msg = hint or f"Failed to fetch data from {self._exchange_name}: {e}"
+            _dbg(
+                "fetch_ohlcv FAILED exchange=%s %s in %.1fms: %s",
+                self._exchange_name,
+                unified,
+                (time.perf_counter() - _t_fetch0) * 1000.0,
+                e,
+            )
+            _stats.count("provider.fetch_errors", dim="ccxt")
+            _stats.latency("provider.fetch", time.perf_counter() - _t_fetch0)
             raise DataProviderError(msg)
-        return list(raw or [])
+        rows = list(raw or [])
+        _dbg(
+            "fetch_ohlcv exchange=%s %s %s -> %d bars in %.1fms",
+            self._exchange_name,
+            unified,
+            tf,
+            len(rows),
+            (time.perf_counter() - _t_fetch0) * 1000.0,
+        )
+        _stats.count("provider.bars_fetched", len(rows))
+        _stats.latency("provider.fetch", time.perf_counter() - _t_fetch0)
+        return rows
 
     def fetch(
         self,
@@ -656,11 +714,15 @@ class CCXTProvider(DataProvider):
         exchange = self._get_exchange()
         unified = normalize_ccxt_symbol(self._exchange_name, symbol)
 
+        _dbg("fetch_quote exchange=%s symbol=%s -> %s", self._exchange_name, symbol, unified)
+        _stats.count("provider.fetches", dim="ccxt_quote")
         try:
             ticker = exchange.fetch_ticker(unified)
         except Exception as e:
             hint = geo_block_message(self._exchange_name, e)
             msg = hint or f"Failed to fetch quote: {e}"
+            _dbg("fetch_quote FAILED exchange=%s %s: %s", self._exchange_name, unified, e)
+            _stats.count("provider.fetch_errors", dim="ccxt_quote")
             raise DataProviderError(msg)
 
         return {
@@ -702,9 +764,13 @@ def get_provider(name: str = "yahoo", **kwargs) -> DataProvider:
 
     if name not in providers:
         msg = f"Unknown provider: {name}. Available: {list(providers.keys())}"
+        _dbg("get_provider unknown name=%s", name)
+        _stats.count("provider.errors", dim="unknown_factory")
         raise DataProviderError(msg)
 
     provider_kwargs = {}
+    _dbg("get_provider name=%s kwargs=%s", name, sorted(kwargs))
+    _stats.count("provider.created", dim=str(name))
     if name == "alphavantage":
         provider_kwargs["api_key"] = kwargs.get("api_key", "demo")
     elif name == "ccxt":
@@ -743,6 +809,14 @@ def resolve_request_sources(
     opts = dict(source_options or {})
     feed = data_feed
     provider = data_provider
+    _dbg(
+        "resolve_request_sources symbol=%s data_source=%s have_feed=%s have_provider=%s chart_bars=%d",
+        symbol,
+        data_source,
+        feed is not None,
+        provider is not None,
+        len(chart_bars or []),
+    )
 
     if data_source:
         src = str(data_source).lower()
@@ -771,7 +845,14 @@ def resolve_request_sources(
 
     if provider is None and chart_bars:
         provider = ChartOHLCVProvider(chart_bars, symbol=symbol)
+        _dbg("resolve_request_sources: using ChartOHLCVProvider for %s (%d bars)", symbol, len(chart_bars))
+        _stats.count("provider.created", dim="chart")
 
+    _dbg(
+        "resolve_request_sources: resolved feed=%s provider=%s",
+        type(feed).__name__ if feed is not None else None,
+        type(provider).__name__ if provider is not None else None,
+    )
     return feed, provider
 
 

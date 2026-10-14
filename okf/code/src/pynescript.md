@@ -7,7 +7,7 @@ tags: [code, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:40:25Z
+  at: 2026-10-14T08:55:33Z
 sources:
   - id: tree
     resource: "src/pynescript"
@@ -21,6 +21,8 @@ okf_lock: generated
 * `__about__.py`
 * `__init__.py`
 * `__main__.py` — PyneGroup, check_cmd, cli, compile_cmd, convert_cmd, data, download_builtins_cmd, format_cmd, info_cmd, lint, optimize_cmd, parse_and_dump
+* `debug.py` — debug_enabled, debug_scopes, reset_debug_caches, scope_enabled
+* `stats.py` — count, dec_gauge, inc_gauge, latency, max_gauge, reset, set_gauge, snapshot, started_at, timer, uptime_seconds
 
 # Other files
 

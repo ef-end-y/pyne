@@ -32,6 +32,7 @@ backward compatibility.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import re
@@ -40,8 +41,10 @@ import uuid
 from sys import intern
 from typing import Any
 
+from pynescript import stats as _stats
 from pynescript.ast.helper import _scrub_pine_call_sites
 from pynescript.ast.helper import parse
+from pynescript.debug import scope_enabled as _debug_scope
 from pynescript.util.time_parts import utc_parts_from_ms
 
 from .evaluator import CustomEvaluator
@@ -55,6 +58,24 @@ from .series import (
     series_ring_enabled,
     trim_series_lists,
 )
+
+_log = logging.getLogger(__name__)
+
+
+def _dbg_on() -> bool:
+    """Fast gate for this module's debug logging (``PYNE_DEBUG``)."""
+    return _debug_scope(__name__)
+
+
+def _dbg(msg: str, *args: Any) -> None:
+    """Emit one engine debug line when ``PYNE_DEBUG`` is enabled.
+
+    Always call as ``_dbg("fmt %s", value)`` — the arguments are only
+    formatted when the flag is on, so the disabled path stays allocation-free.
+    """
+    if _debug_scope(__name__):
+        _log.debug(msg, *args)
+
 
 # Bare calendar series keys (Pine time components written into host context).
 _CAL_KEYS: tuple[str, ...] = (
@@ -316,6 +337,74 @@ def _build_run_profile(
     }
 
 
+def _record_run_stats(
+    result: dict[str, Any],
+    *,
+    total_ms: float,
+    bars: int,
+    mode: str,
+    parse_ms: float,
+    eval_ms: float,
+) -> None:
+    """Fold one finished run into the process stats (``GET /stats``).
+
+    Runs on every ``/run`` (interpret, compile, auto, or error payload), so the
+    counts and latency percentiles on ``/stats`` match real traffic. Always
+    wrapped in a ``try`` so stats bookkeeping can never fail a run.
+    """
+    try:
+        _stats.count("run.total")
+        _stats.count("run.bars", bars)
+        _stats.latency("run.total", total_ms / 1000.0)
+        _stats.latency("run.parse", parse_ms / 1000.0)
+        _stats.latency("run.eval", eval_ms / 1000.0)
+        _stats.count("run.mode_resolved", dim=mode)
+
+        error = result.get("error")
+        if error:
+            _stats.count("run.errors")
+            _stats.count("run.error_kind", dim=str(result.get("error_kind") or "unknown"))
+            _dbg(
+                "run finished with error mode=%s kind=%s bars=%d total=%.2fms parse=%.2fms eval=%.2fms: %s",
+                mode,
+                result.get("error_kind"),
+                bars,
+                total_ms,
+                parse_ms,
+                eval_ms,
+                error,
+            )
+        else:
+            _dbg(
+                "run finished mode=%s bars=%d total=%.2fms parse=%.2fms eval=%.2fms backend=%s fallback=%s",
+                mode,
+                bars,
+                total_ms,
+                parse_ms,
+                eval_ms,
+                result.get("auto_backend"),
+                result.get("compile_fallback_reason"),
+            )
+
+        if result.get("timed_out"):
+            _stats.count("run.timed_out")
+        auto_backend = result.get("auto_backend")
+        if auto_backend:
+            _stats.count("run.auto_backend", dim=str(auto_backend))
+        fallback = result.get("compile_fallback_reason")
+        if fallback:
+            _stats.count("run.compile_fallbacks")
+            _stats.count("run.compile_fallback_reasons", dim=str(fallback)[:120])
+        if result.get("compile_cached") is not None:
+            _stats.count("run.compile_cached", 1 if result.get("compile_cached") else 0)
+        if result.get("object_mode"):
+            _stats.count("run.object_mode")
+        if result.get("nopython_fallback_reason"):
+            _stats.count("run.nopython_fallback")
+    except Exception:  # noqa: BLE001 — stats must never break a run
+        pass
+
+
 def _attach_logs_profile(
     result: dict[str, Any],
     *,
@@ -326,7 +415,13 @@ def _attach_logs_profile(
     eval_ms: float = 0.0,
     lines: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Attach top-level and ``meta`` ``logs`` / ``profile`` fields to a result dict."""
+    """Attach top-level and ``meta`` ``logs`` / ``profile`` fields to a result dict.
+
+    Also the single choke point every interpret / compile / error return path
+    funnels through, so runtime stats are recorded exactly once per run here
+    rather than at each of the dozen return sites.
+    """
+    _record_run_stats(result, total_ms=total_ms, bars=bars, mode=mode, parse_ms=parse_ms, eval_ms=eval_ms)
     logs = _export_pine_logs()
     profile = _build_run_profile(
         total_ms=total_ms,
@@ -1597,6 +1692,17 @@ class InterpretSession:
         self._tree = _parse_script(source_code)
         self._parse_ms = (time.perf_counter() - t_parse0) * 1000.0
         self._t_eval0 = time.perf_counter()
+        _dbg(
+            "InterpretSession init symbol=%s run_id=%s bars=%d source_chars=%d parse=%.2fms",
+            getattr(runtime, "symbol", "?"),
+            getattr(runtime, "_run_id", "?"),
+            len(ohlcv_data or []),
+            len(source_code or ""),
+            self._parse_ms,
+        )
+        # Engine layer (``session.*``); the backend store counts ``sessions.*``.
+        _stats.count("session.created")
+        _stats.latency("session.parse", self._parse_ms / 1000.0)
 
         _cap_on = series_cap_enabled()
         _mbb_decl = parse_max_bars_back_from_source(source_code)
@@ -1856,6 +1962,25 @@ class InterpretSession:
             ctx["last_bar_time"] = self._col_time[-1]
         rt_enabled = rt_first is not None
 
+        # Debug-only: one timer for the whole batch. ``_dbg_on()`` is a single
+        # cached env lookup, so the disabled path pays ~nothing.
+        _dbg_batch = _dbg_on()
+        if _dbg_batch:
+            _dbg(
+                "bar-loop start run_id=%s session=%s start=%d end=%d bars=%d "
+                "realtime=%s rt_first=%s rt_ticks=%d total_bars=%d",
+                self.run_id,
+                id(self),
+                start,
+                n_total,
+                max(0, n_total - start),
+                rt_enabled,
+                rt_first,
+                rt_ticks,
+                n_total,
+            )
+        _dbg_t0 = time.perf_counter() if _dbg_batch else 0.0
+
         sl_open = self._series_lists["open"]
         sl_high = self._series_lists["high"]
         sl_low = self._series_lists["low"]
@@ -1976,6 +2101,14 @@ class InterpretSession:
                         bar_index=bar_index,
                         bar_time=bar_time,
                     )
+                    _dbg(
+                        "bar-loop aborted (order fill) run_id=%s bar_index=%d bar_time=%s after %d bar(s)",
+                        self.run_id,
+                        bar_index,
+                        bar_time,
+                        bar_index - start,
+                    )
+                    _stats.count("interpret.errors", dim="order_fill")
                     return
             # Bar-open rollback state for the session's current last bar.
             # update_last_bar restores var scope + TA windows to these so a
@@ -2019,6 +2152,18 @@ class InterpretSession:
                         bar_index=bar_index,
                         bar_time=bar_time,
                     )
+                    _dbg(
+                        "bar-loop aborted (runtime error) run_id=%s bar_index=%d bar_time=%s tick=%d/%d "
+                        "after %d bar(s): %s",
+                        self.run_id,
+                        bar_index,
+                        bar_time,
+                        tick_i,
+                        n_ticks,
+                        bar_index - start,
+                        e,
+                    )
+                    _stats.count("interpret.errors", dim="runtime")
                     return
                 if tick_i < n_ticks - 1:
                     _restore_realtime_scope(ev, tick_var_snap)
@@ -2037,6 +2182,19 @@ class InterpretSession:
                         d["script_id"] = self.script_id
                         d["run_id"] = self.run_id
                         self._all_events.append(d)
+        if _dbg_batch:
+            _dbg_ms = (time.perf_counter() - _dbg_t0) * 1000.0
+            _n_run = max(0, n_total - start)
+            _dbg(
+                "bar-loop done run_id=%s bars=%d in %.2fms (%.1f bars/ms) realtime=%s",
+                self.run_id,
+                _n_run,
+                _dbg_ms,
+                (_n_run / _dbg_ms) if _dbg_ms > 0 else float("inf"),
+                rt_enabled,
+            )
+            _stats.latency("interpret.bar_loop", _dbg_ms / 1000.0)
+            _stats.count("interpret.bars", _n_run)
         self._n_bars = n_total
         try:
             chart = ctx.get("chart")
@@ -2100,8 +2258,21 @@ class InterpretSession:
         if rt_first is not None and rt_first < start:
             # Previously committed bars stay confirmed; only re-tick the tail.
             rt_first = start
+        _dbg(
+            "append_bars run_id=%s delta=%d start=%d new_total=%d rt_first=%s rt_ticks=%d",
+            self.run_id,
+            len(new_bars),
+            start,
+            new_n,
+            rt_first,
+            rt_ticks,
+        )
+        _stats.count("delta.append_calls")
+        _stats.count("delta.bars_appended", len(new_bars))
+        _stats.max_gauge("delta.bars_per_append_max", len(new_bars))
         self._run_batch(start, rt_first=rt_first, rt_ticks=rt_ticks)
         if self._error_result is not None:
+            _stats.count("delta.append_errors")
             return self._error_result
         return self.result()
 
@@ -2248,6 +2419,20 @@ class InterpretSession:
         ev._ta_call_i = 0  # type: ignore[attr-defined]
         ev._plot_call_i = 0  # type: ignore[attr-defined]
         _drop_as_series_cache(ev)
+        _dbg(
+            "update_last_bar run_id=%s idx=%d bar_time=%s n_bars=%d ohlc=(%s,%s,%s,%s,%s)",
+            self.run_id,
+            idx,
+            bar_time,
+            self._n_bars,
+            o,
+            h,
+            low,
+            c,
+            v,
+        )
+        _stats.count("delta.update_last_bar_calls")
+        _dbg_t0 = time.perf_counter() if _dbg_on() else 0.0
         try:
             ev.visit(self._tree)
         except Exception as e:
@@ -2261,7 +2446,12 @@ class InterpretSession:
                 bar_index=idx,
                 bar_time=bar_time,
             )
+            _dbg("update_last_bar failed run_id=%s idx=%d: %s", self.run_id, idx, e)
+            _stats.count("interpret.errors", dim="update_last_bar")
             return self._error_result
+        if _dbg_t0:
+            _dbg("update_last_bar done run_id=%s in %.2fms", self.run_id, (time.perf_counter() - _dbg_t0) * 1000.0)
+            _stats.latency("delta.update_last_bar", time.perf_counter() - _dbg_t0)
         self._last_bar_unconfirmed = True
         # Overwrite (not append) strategy series history for this bar.
         if self._need_strategy:
@@ -2737,6 +2927,20 @@ class Runtime:
         # Line profiler needs the AST walker — skip compile when enabled.
         if profiler and mode_norm in ("compile", "auto"):
             mode_norm = "interpret"
+        _dbg(
+            "Runtime.run symbol=%s run_id=%s mode=%s normalized=%s bars=%d profiler=%s "
+            "inputs=%d libraries=%d timeout=%s",
+            getattr(self, "symbol", "?"),
+            self._run_id,
+            mode,
+            mode_norm,
+            len(ohlcv_data) if ohlcv_data else 0,
+            profiler,
+            len(inputs) if inputs else 0,
+            len(libraries) if libraries else 0,
+            timeout_seconds,
+        )
+        _stats.count("run.by_mode", dim=mode_norm)
         if mode_norm == "compile":
             return self._run_compiled(source_code, ohlcv_data)
         if mode_norm == "auto":
@@ -3133,18 +3337,33 @@ class Runtime:
         else:
             deadline = None
 
+        _dbg_loop = _dbg_on()
+        _dbg_t0 = time.perf_counter() if _dbg_loop else 0.0
+        if _dbg_loop:
+            _dbg(
+                "bar-loop start (one-shot) run_id=%s symbol=%s bars=%d realtime=%s rt_first=%s rt_ticks=%d",
+                self._run_id,
+                getattr(self, "symbol", "?"),
+                n_bars,
+                _rt_enabled,
+                _rt_first,
+                realtime_ticks,
+            )
+        _n_bars_done = 0
         for bar_index in range(n_bars):
             # Check every 32 bars to keep the hot path cheap.
             if deadline is not None and (bar_index & 31) == 0 and time.monotonic() > deadline:
                 timed_out = True
+                _n_bars_done = bar_index
+                _dbg("bar-loop timed out after %d/%d bars (timeout=%ss)", bar_index, n_bars, timeout_seconds)
+                _stats.count("interpret.timeouts")
                 break
             o = col_open[bar_index]
             h = col_high[bar_index]
             l = col_low[bar_index]
             c = col_close[bar_index]
             v = col_vol[bar_index]
-
-            # Packed columns are already host-contract floats — no per-bar float().
+            _n_bars_done = bar_index + 1
             # Inline current + appendleft (deque / ring view). Skip unused derived.
             open_series.current = o
             open_al(o)
@@ -3156,6 +3375,7 @@ class Runtime:
             close_al(c)
             volume_series.current = v
             volume_al(v)
+            # Packed columns are already host-contract floats — no per-bar float().
             if need_hl2:
                 hl2_val = (h + l) * 0.5
                 hl2_series.current = hl2_val
@@ -3475,6 +3695,18 @@ class Runtime:
 
         eval_ms = (time.perf_counter() - t_eval0) * 1000.0
         total_ms = (time.perf_counter() - t_total0) * 1000.0
+        if _dbg_loop:
+            _dbg(
+                "bar-loop done (one-shot) run_id=%s bars=%d/%d in %.2fms eval=%.2fms (%.1f bars/ms)",
+                self._run_id,
+                _n_bars_done,
+                n_bars,
+                (time.perf_counter() - _dbg_t0) * 1000.0,
+                eval_ms,
+                (_n_bars_done / eval_ms) if eval_ms > 0 else float("inf"),
+            )
+            _stats.latency("interpret.bar_loop", time.perf_counter() - _dbg_t0)
+        _stats.count("interpret.bars", _n_bars_done)
         line_rows = _export_line_profile(evaluator) if profiler else []
         meta_out: dict[str, Any] = {
             "overlay": overlay,
@@ -3655,6 +3887,14 @@ class Runtime:
             eligible, reason = False, prior_fail
         else:
             eligible, reason = self._compile_eligible(source_code)
+        _dbg(
+            "auto: eligibility src=%s eligible=%s reason=%s (cached_failure=%s)",
+            src_key[:12],
+            eligible,
+            reason,
+            prior_fail is not None,
+        )
+        _stats.count("compile.eligibility", dim="eligible" if eligible else "ineligible")
 
         compile_err: str | None = reason or None
         if eligible:
@@ -3663,12 +3903,16 @@ class Runtime:
                 _HOST_COMPILE_FAIL_CACHE.pop(src_key, None)
                 compiled_result["mode"] = "compile"
                 compiled_result["auto_backend"] = "compile"
+                _dbg("auto: using compile backend src=%s", src_key[:12])
                 return compiled_result
             compile_err = str(compiled_result.get("error") or "compile failed")
+            _dbg("auto: compile backend error, falling back to interpret src=%s: %s", src_key[:12], compile_err)
             if self._is_cacheable_compile_failure(compile_err):
                 self._remember_compile_failure(src_key, compile_err)
         elif reason and self._is_cacheable_compile_failure(reason):
             self._remember_compile_failure(src_key, reason)
+
+        _dbg("auto: interpret fallback src=%s reason=%s", src_key[:12], compile_err)
 
         # Interpret fallback (full host semantics)
         result = self.run(
@@ -3698,6 +3942,13 @@ class Runtime:
         t_total0 = time.perf_counter()
         _clear_pine_logger()
         n_bars_hint = len(ohlcv_data) if ohlcv_data else 0
+        _dbg(
+            "compile: enter run_id=%s symbol=%s bars=%d",
+            self._run_id,
+            getattr(self, "symbol", "?"),
+            n_bars_hint,
+        )
+        _stats.count("compile.attempts")
 
         try:
             from pynescript.compiler.engine import compile_script
@@ -3733,6 +3984,8 @@ class Runtime:
                 compiled = compile_script(source_code)
             except Exception as e:
                 compile_ms = (time.perf_counter() - t_compile0) * 1000.0
+                _dbg("compile: FAILED src=%s in %.2fms: %s", cache_key[:12], compile_ms, e)
+                _stats.count("compile.errors")
                 return _attach_logs_profile(
                     _error_payload(
                         _format_exc_message("Compile Error", e),
@@ -3753,6 +4006,17 @@ class Runtime:
             _HOST_COMPILE_CACHE[cache_key] = compiled
             _HOST_COMPILE_FAIL_CACHE.pop(cache_key, None)
         compile_ms = (time.perf_counter() - t_compile0) * 1000.0
+        _dbg(
+            "compile: %s src=%s script_id=%s in %.2fms host_cache_entries=%d",
+            "HIT" if was_cached else "MISS",
+            cache_key[:12],
+            script_id,
+            compile_ms,
+            len(_HOST_COMPILE_CACHE),
+        )
+        _stats.count("compile.host_cache", dim="hit" if was_cached else "miss")
+        _stats.latency("compile.total", compile_ms / 1000.0)
+        _stats.set_gauge("compile.host_cache_entries", len(_HOST_COMPILE_CACHE))
 
         # Single-pass float64 packing — same defaults as interpret (_pack_ohlcv_columns).
         try:
@@ -3800,6 +4064,18 @@ class Runtime:
                 eval_ms=run_ms,
             )
         run_ms = (time.perf_counter() - t_run0) * 1000.0
+        _dbg(
+            "compile: executed src=%s bars=%d run=%.2fms compile=%.2fms object_mode=%s "
+            "nopython_fallback=%s plots=%d",
+            cache_key[:12],
+            n_bars_hint,
+            run_ms,
+            compile_ms,
+            getattr(compiled, "object_mode", None),
+            getattr(compiled, "nopython_fallback_reason", None),
+            len(series_map) if isinstance(series_map, dict) else 0,
+        )
+        _stats.latency("compile.run", run_ms / 1000.0)
 
         drawings: list[Any] = []
         events: list[Any] = []

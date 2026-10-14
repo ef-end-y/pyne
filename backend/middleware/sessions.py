@@ -29,6 +29,8 @@ import uuid
 
 from typing import Any
 
+from pynescript import stats as _stats
+
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ class SessionStore:
             self._discard_locked(sid, reason="idle")
         if expired:
             logger.info("session store: evicted %d idle session(s)", len(expired))
+            _stats.count("sessions.evicted", len(expired), dim="idle")
 
     def _discard_locked(self, session_id: str, reason: str) -> None:
         session = self._sessions.pop(session_id, None)
@@ -91,6 +94,8 @@ class SessionStore:
             except Exception:
                 logger.warning("session store: close() failed for %s", session_id)
         logger.debug("session store: dropped %s (%s)", session_id, reason)
+        _stats.count("sessions.dropped", dim=reason)
+        _stats.set_gauge("sessions.active", len(self._sessions))
 
     # ── public API ─────────────────────────────────────────────────────────
 
@@ -123,6 +128,10 @@ class SessionStore:
             session_id = uuid.uuid4().hex
             self._sessions[session_id] = session
             self._last_seen[session_id] = now
+            _stats.count("sessions.created")
+            _stats.set_gauge("sessions.active", len(self._sessions))
+            _stats.max_gauge("sessions.active_max", len(self._sessions))
+            _stats.set_gauge("sessions.capacity", self._max)
             return session_id
 
     def get(self, session_id: str) -> Any | None:
@@ -163,6 +172,9 @@ class SessionStore:
     def stats(self) -> dict[str, Any]:
         with self._lock:
             self._sweep_locked(time.monotonic())
+            _stats.set_gauge("sessions.active", len(self._sessions))
+            _stats.max_gauge("sessions.active_max", len(self._sessions))
+            _stats.set_gauge("sessions.capacity", self._max)
             return {
                 "sessions": len(self._sessions),
                 "max_sessions": self._max,
