@@ -11,3 +11,5 @@ matplotlib>=3.8.0
 gunicorn>=21.0.0
 # Optional key-store backend (compose profile redis / REDIS_URL)
 redis>=5.0.0
+# Exchange datafeed (/datafeed/*, /data/series/fetch, /data/session tick) — CCXT
+ccxt>=4.0.0
