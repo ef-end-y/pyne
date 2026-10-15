@@ -163,6 +163,7 @@ def sync_data_session(
     binding: live.SeriesBinding,
     *,
     is_alive: Callable[[], bool] | None = None,
+    on_apply: Callable[[str, Any], None] | None = None,
 ) -> live.SyncOutcome:
     """Pull candles since the stored newest and advance *session*.
 
@@ -210,7 +211,7 @@ def sync_data_session(
         closed = [c for c in candles if c["time"] + interval_s <= now_s]
         if closed:
             store.provide(key, closed, source=SOURCE_TICK)
-        return live.sync_session(session, binding, candles, now_s, stale=stale)
+        return live.sync_session(session, binding, candles, now_s, stale=stale, on_apply=on_apply)
 
 
 def _key_from_args(args: Any) -> SeriesKey:

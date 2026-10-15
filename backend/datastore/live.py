@@ -28,6 +28,7 @@ engine confirms history in order.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -70,9 +71,25 @@ def _ohlcv(bar: dict[str, Any]) -> tuple[Any, ...]:
     return (bar["open"], bar["high"], bar["low"], bar["close"], bar["volume"])
 
 
-def sync_session(
-    session: Any, binding: SeriesBinding, candles: list[dict[str, Any]], now_s: int, *, stale: bool = False
+def sync_session(  # noqa: PLR0913 — session, binding, candles, clock + two options
+    session: Any,
+    binding: SeriesBinding,
+    candles: list[dict[str, Any]],
+    now_s: int,
+    *,
+    stale: bool = False,
+    on_apply: Callable[[str, Any], None] | None = None,
 ) -> SyncOutcome:
+    """Advance ``session`` from ``candles`` (ascending, unique by time).
+
+    ``stale`` marks an outcome whose walk was clamped to a recent window
+    because the stored anchor was too old — the client may want to re-sync
+    history instead of relying on the bounded catch-up.
+
+    ``on_apply`` (optional) reports each in-place mutation — ``("tick", bar)``
+    after ``update_last_bar``, ``("append", bars)`` after ``append_bars`` — so
+    the session journal can mirror the object without re-reading it.
+    """
     """Advance ``session`` from ``candles`` (ascending, unique by time).
 
     ``stale`` marks an outcome whose walk was clamped to a recent window
@@ -90,6 +107,8 @@ def sync_session(
     if tail_bar is not None and _ohlcv(tail_bar) != _ohlcv(binding.last_bar):
         result = session.update_last_bar(tail_bar)
         binding.last_bar = dict(tail_bar)
+        if on_apply is not None:
+            on_apply("tick", tail_bar)
 
     batch = list(closed_newer)
     if forming_bar is not None and forming_bar["time"] > tail:
@@ -98,6 +117,8 @@ def sync_session(
         result = session.append_bars(batch)
         binding.last_time = int(batch[-1]["time"])
         binding.last_bar = dict(batch[-1])
+        if on_apply is not None:
+            on_apply("append", batch)
 
     unchanged = result is None
     if result is None:

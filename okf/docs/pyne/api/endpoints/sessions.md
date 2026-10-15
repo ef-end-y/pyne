@@ -7,7 +7,7 @@ tags: [api, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-14T09:03:07Z
+  at: 2026-10-15T18:34:04Z
 sources:
   - id: tree
     resource: "docs/pyne/api/endpoints/sessions.mdx"
@@ -33,6 +33,7 @@ Repo path `docs/pyne/api/endpoints/sessions.mdx`.
 * Tick semantics
 * Response windowing
 * Capacity, TTL, and the single-worker constraint
+* Restart recovery
 * Failure modes
 * Internals (map)
 * See also

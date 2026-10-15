@@ -143,11 +143,17 @@ Events and drawings are filtered to the window when they carry `bar_index`. Obje
 
 | Property | Value |
 | --- | --- |
-| Idle TTL | 900 s (15 min), swept at most every 30 s |
-| Capacity | 64 concurrent sessions |
+| Idle TTL | 900 s (15 min), swept at most every 30 s (`SESSION_TTL_SECONDS`) |
+| Capacity | 64 concurrent sessions (`SESSION_MAX_SESSIONS`) |
 | Full | `503 SESSIONS_FULL` — back off rather than retrying into a growing pile |
 
 Sessions live in a **process-local** `SessionStore`. They only resolve on the single gunicorn worker, which is why `GUNICORN_WORKERS` defaults to `1`. `/health` still advertises the routes (they are part of the capability surface), and `features.live_modes` reports `["every-tick", "bar-close"]` for AXIS capability detection.
+
+## Restart recovery
+
+A worker recycle (`--max-requests`) or a container restart empties the process — but every mutation is also journaled to SQLite (`backend/datastore/session_log.py`, `sessions` + `session_bars` tables under `PYNE_SESSION_DB`, default `/data/sessions.db` when `/data` exists, memory-only otherwise). On the first access after a restart the store rebuilds the session with one `create_session` over the logged bars and registers it under its original id, so ticks continue O(1) after that single re-evaluation. Journal writes are best-effort: an unreachable db degrades to memory-only instead of failing the request.
+
+The rebuild is a rebase, not a byte-identical resume: indicators evaluate identically over the same bars, but stateful constructs that never roll back (strategy fills) may differ exactly as if the client had created a new session over the same window. `GET /session/<id>` on a journaled-but-unloaded session answers from the row without rebuilding, and lists `persisted` (journaled rows) next to `sessions` (live objects) in `sessions` stats blocks.
 
 For live data sourced from an exchange rather than the request body, see [Data plane](/pyne/docs/api/endpoints/data-plane) — `POST /data/session` binds a session to a **stored** series and advances it from the engine feed.
 
@@ -158,6 +164,7 @@ For live data sourced from an exchange rather than the request body, see [Data p
 | `MODE_UNSUPPORTED` | `mode: "compile"` on `/session` | Drop `mode`; sessions are interpret only |
 | `SESSIONS_FULL` | 64 live sessions held | `DELETE` finished ones, or wait for TTL |
 | `404` on tick/append | Session swept (idle TTL) | Create a new session |
+| First tick after restart is slow | Session rebuilt (one full re-evaluation) | Expected; subsequent ticks are O(1) again |
 | `409` on `/data/session/<id>/tick` | Session bound to a different series | Release and rebind |
 | `503 CCXT_UNAVAILABLE` | `ccxt` not installed on the host | `pip install 'pyne[datafeed]'` |
 
@@ -167,6 +174,7 @@ For live data sourced from an exchange rather than the request body, see [Data p
 | --- | --- |
 | `backend/app.py` | `/session` routes, window application |
 | `backend/middleware/sessions.py` | TTL + capacity `SessionStore` (process-local) |
+| `backend/datastore/session_log.py` | SQLite session journal (restart recovery) |
 | `backend/middleware/window.py` | `apply_window` — serialization-boundary trim |
 | `backend/datastore/live.py` | Session ↔ stored-series binding + sync |
 | `src/pynescript/runtime/host.py` | `InterpretSession`, `append_bars`, `update_last_bar` |

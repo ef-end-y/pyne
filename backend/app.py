@@ -33,6 +33,7 @@ import os
 import re
 import time
 
+from collections.abc import Callable
 from typing import Any
 
 
@@ -1174,8 +1175,10 @@ def _load_session(
                 "status": "error",
                 "code": "NO_SESSION",
                 "message": (
-                    "Unknown or expired session id. Sessions are process-local and "
-                    "evicted after the idle TTL; create a new one with POST /session."
+                    "Unknown or expired session id. Sessions idle longer than"
+                    " the TTL are evicted and cannot be recovered; recent ones"
+                    " are rebuilt automatically after a restart. Create a new"
+                    " one with POST /session."
                 ),
             },
             404,
@@ -1229,11 +1232,12 @@ def create_session_route():
 
     try:
         runtime = Runtime(symbol=str(validated.get("symbol") or "CHART"))
+        libraries = _parse_run_libraries(validated.get("libraries")) or None
         session = runtime.create_session(
             script,
             ohlcv,
             inputs=validated.get("inputs") or None,
-            libraries=_parse_run_libraries(validated.get("libraries")) or None,
+            libraries=libraries,
             profiler=bool(validated.get("profiler")),
             mode="interpret",
         )
@@ -1257,6 +1261,18 @@ def create_session_route():
                 "message": _sanitize_error_for_response(str(exc)),
             }
         ), 503
+
+    # Journal the inputs so a worker recycle / container restart rebuilds the
+    # session from identical bars instead of 404ing (best-effort).
+    SESSIONS.track(
+        session_id,
+        script=script,
+        symbol=str(validated.get("symbol") or "CHART"),
+        inputs=validated.get("inputs") or {},
+        libraries=libraries or [],
+        profiler=bool(validated.get("profiler")),
+        bars=list(ohlcv),
+    )
 
     return jsonify(_session_envelope(session.result(), session_id, {"sessions": SESSIONS.stats()})), 200
 
@@ -1316,6 +1332,7 @@ def session_tick_route(session_id: str):
             }
         ), 400
 
+    SESSIONS.note_tick(session_id, bar)
     result, window = _session_window(result, validated)
     extra: dict[str, Any] = {"session_id": session_id}
     if window is not None:
@@ -1361,6 +1378,7 @@ def session_append_route(session_id: str):
             }
         ), 400
 
+    SESSIONS.note_append(session_id, bars_in)
     result, window = _session_window(result, validated)
     extra: dict[str, Any] = {"session_id": session_id, "appended": len(bars_in)}
     if window is not None:
@@ -1437,11 +1455,12 @@ def create_data_session_route():
 
     try:
         runtime = Runtime(symbol=str(validated["symbol"]))
+        libraries = _parse_run_libraries(validated.get("libraries")) or None
         session = runtime.create_session(
             validated["script"],
             bars,
             inputs=validated.get("inputs") or None,
-            libraries=_parse_run_libraries(validated.get("libraries")) or None,
+            libraries=libraries,
             profiler=bool(validated.get("profiler")),
             mode="interpret",
         )
@@ -1467,12 +1486,44 @@ def create_data_session_route():
         ), 503
 
     data_live.bind_session(session, key, bars[-1])
+    binding = data_live.binding_of(session)
+    SESSIONS.track(
+        session_id,
+        script=validated["script"],
+        symbol=str(validated["symbol"]),
+        inputs=validated.get("inputs") or {},
+        libraries=libraries or [],
+        profiler=bool(validated.get("profiler")),
+        bars=list(bars),
+        binding=(
+            {"key": binding.key.text, "last_time": binding.last_time, "last_bar": dict(binding.last_bar)}
+            if binding is not None
+            else None
+        ),
+    )
     extra: dict[str, Any] = {
         "sessions": SESSIONS.stats(),
         "cache": "hit",
         "data": {"key": key.text, "count": have, "newest": status["newest"]},
     }
     return jsonify(_session_envelope(session.result(), session_id, extra)), 200
+
+
+def _make_session_journal_recorder(session_id: str) -> Callable[[str, Any], None]:
+    """Report ``live.sync_session`` mutations into the session journal.
+
+    Mirrors the in-place ``update_last_bar`` / ``append_bars`` calls so a
+    restart rebuilds from the same bars the object holds.
+    """
+
+    def _record_applied(kind: str, payload: Any) -> None:
+        if kind == "tick" and isinstance(payload, dict):
+            SESSIONS.note_tick(session_id, payload)
+        elif kind == "append" and isinstance(payload, list):
+            SESSIONS.note_append(session_id, payload)
+
+    return _record_applied
+
 
 
 @app.route("/data/session/<session_id>/tick", methods=["POST"])
@@ -1492,6 +1543,8 @@ def data_session_tick_route(session_id: str):
     if err is not None:
         return _err_to_dict(err)
 
+    # Re-read the binding from the (possibly just rebuilt) session: after a
+    # restart the object is fresh and the persisted tail is the anchor.
     binding = data_live.binding_of(session)
     if binding is None or not binding.key.identity_matches(validated["exchange"], validated["symbol"]):
         return jsonify(
@@ -1508,6 +1561,7 @@ def data_session_tick_route(session_id: str):
             session,
             binding,
             is_alive=lambda: SESSIONS.get(session_id) is session,
+            on_apply=_make_session_journal_recorder(session_id),
         )
     except series_store.DataError as exc:
         return jsonify({**exc.body(), "session_id": session_id}), exc.status
@@ -1521,6 +1575,14 @@ def data_session_tick_route(session_id: str):
                 "session_id": session_id,
             }
         ), 400
+
+    if not outcome.unchanged:
+        fresh = data_live.binding_of(session)
+        if fresh is not None:
+            SESSIONS.note_binding(
+                session_id,
+                {"key": fresh.key.text, "last_time": fresh.last_time, "last_bar": dict(fresh.last_bar)},
+            )
 
     extra: dict[str, Any] = {
         "session_id": session_id,
