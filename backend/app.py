@@ -243,7 +243,7 @@ def _apply_cors_headers(resp, origin: str | None = None):  # type: ignore[no-unt
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Vary"] = "Origin"
         resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS, HEAD"
-        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Admin-Token, Accept"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Admin-Token, X-Api-Key, Accept"
         resp.headers["Access-Control-Max-Age"] = "86400"
     return resp
 
@@ -252,7 +252,7 @@ CORS(
     app,
     origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != "*" else "*",
     methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["Content-Type", "Authorization", "X-Admin-Token", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "X-Admin-Token", "X-Api-Key", "Accept"],
     expose_headers=["Content-Type"],
     supports_credentials=False,
     max_age=86400,
