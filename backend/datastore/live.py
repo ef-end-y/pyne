@@ -52,6 +52,7 @@ class SyncOutcome:
     appended: int
     forming: bool
     unchanged: bool
+    stale: bool = False
 
 
 def bind_session(session: Any, key: SeriesKey, last_bar: dict[str, Any]) -> SeriesBinding:
@@ -69,8 +70,15 @@ def _ohlcv(bar: dict[str, Any]) -> tuple[Any, ...]:
     return (bar["open"], bar["high"], bar["low"], bar["close"], bar["volume"])
 
 
-def sync_session(session: Any, binding: SeriesBinding, candles: list[dict[str, Any]], now_s: int) -> SyncOutcome:
-    """Advance ``session`` from ``candles`` (ascending, unique by time)."""
+def sync_session(
+    session: Any, binding: SeriesBinding, candles: list[dict[str, Any]], now_s: int, *, stale: bool = False
+) -> SyncOutcome:
+    """Advance ``session`` from ``candles`` (ascending, unique by time).
+
+    ``stale`` marks an outcome whose walk was clamped to a recent window
+    because the stored anchor was too old — the client may want to re-sync
+    history instead of relying on the bounded catch-up.
+    """
     interval_s = binding.key.interval_seconds
     tail = binding.last_time
     forming = [c for c in candles if c["time"] + interval_s > now_s]
@@ -99,4 +107,5 @@ def sync_session(session: Any, binding: SeriesBinding, candles: list[dict[str, A
         appended=len(closed_newer),
         forming=forming_bar is not None,
         unchanged=unchanged,
+        stale=stale,
     )

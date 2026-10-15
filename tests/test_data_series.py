@@ -25,11 +25,15 @@ CCXT is replaced by an in-memory fake provider, so no test touches the network.
 
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 
 from backend.api import data_series as data_api
 from backend.api import datafeed as datafeed_mod
 from backend.app import app
+from backend.datastore import live as data_live
 from backend.datastore import series as series_store
 from backend.datastore.series import DataError
 from backend.datastore.series import SeriesStore
@@ -193,6 +197,14 @@ class TestSeriesStore:
     def test_series_are_isolated_by_key(self, store):
         store.provide(KEY, [bar(T)])
         assert store.status(make_key("bybit", "BTC/USDT", "1h"))["count"] == 0
+
+    def test_provide_trims_beyond_retention_cap(self, store, monkeypatch):
+        monkeypatch.setattr(series_store, "MAX_SERIES_BARS", 10)
+        result = store.provide(KEY, [bar(T + H * i) for i in range(15)], source="axis-local")
+        assert result["count"] == 10
+        status = store.status(KEY)
+        assert (status["oldest"], status["newest"]) == (T + 5 * H, T + 14 * H)
+        assert [b["time"] for b in store.window(KEY, 3)] == [T + 12 * H, T + 13 * H, T + 14 * H]
 
     @pytest.mark.parametrize(
         "bad",
@@ -454,6 +466,97 @@ class TestDataSessionTick:
         assert client.delete(f"/session/{bound}").status_code == 200
         res = _tick(client, bound, exchange="binance", symbol="BTC/USDT")
         assert res.status_code == 404
+
+    def test_tick_on_stale_anchor_clamps_the_walk_and_flags_stale(self, client, exchange):
+        """A stale stored newest must not trigger a 200-page backfill walk."""
+        stale_last = NOW - 10_000 * MIN  # ~1 week behind on 1m bars
+        client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(58, last=stale_last)})
+        sid = _create(client, 50).get_json()["session_id"]
+        exchange.candles = [candle(t) for t in range(NOW - 300 * MIN, NOW + 1, MIN)]
+        res = _tick(client, sid, exchange="binance", symbol="BTC/USDT")
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["stale"] is True
+        assert body["appended"] == 300  # the clamped recent window, not the whole gap
+        # The walk starts at the bounded clamp window, not at the stale anchor.
+        assert (
+            exchange.calls[-1]["since"]
+            == (NOW + 10 - (data_api.TICK_MAX_BARS + data_api.TICK_OVERLAP_BARS) * MIN) * 1000
+        )
+        assert len(exchange.calls) == 1
+
+    def test_tick_fetch_does_not_hold_key_lock(self, client, exchange):
+        """The upstream walk runs outside key_lock (no head-of-line blocking)."""
+        client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(58, last=NOW - 3 * MIN)})
+        sid = _create(client, 50).get_json()["session_id"]
+        session = SESSIONS.get(sid)
+        binding = data_live.binding_of(session)
+        assert binding is not None
+        entered = threading.Event()
+        release = threading.Event()
+        original = exchange.fetch_ohlcv
+
+        def blocking_fetch(*args, **kwargs):
+            entered.set()
+            assert release.wait(timeout=5)
+            return original(*args, **kwargs)
+
+        exchange.fetch_ohlcv = blocking_fetch
+        thread = threading.Thread(target=data_api.sync_data_session, args=(session, binding))
+        thread.start()
+        try:
+            assert entered.wait(timeout=5)
+            store = series_store.get_store()
+            t0 = time.monotonic()
+            with store.key_lock(KEY_TEXT):
+                store.status(make_key("binance", "BTC/USDT", "1m"))
+            # The same-series lock was free while the fetch was still blocked.
+            assert time.monotonic() - t0 < 1.0
+        finally:
+            release.set()
+            thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    def test_tick_aborts_when_session_is_deleted_mid_fetch(self, client, exchange):
+        """A tick in flight must not persist/advance after the session is gone."""
+        client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(58, last=NOW - 3 * MIN)})
+        sid = _create(client, 50).get_json()["session_id"]
+        session = SESSIONS.get(sid)
+        binding = data_live.binding_of(session)
+        assert binding is not None
+        entered = threading.Event()
+        release = threading.Event()
+        original = exchange.fetch_ohlcv
+        exchange.candles = [candle(NOW - MIN)]  # one closed bar to persist
+
+        def blocking_fetch(*args, **kwargs):
+            entered.set()
+            assert release.wait(timeout=5)
+            return original(*args, **kwargs)
+
+        exchange.fetch_ohlcv = blocking_fetch
+        errors: list[DataError] = []
+
+        def run():
+            try:
+                data_api.sync_data_session(session, binding, is_alive=lambda: SESSIONS.get(sid) is session)
+            except DataError as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        try:
+            assert entered.wait(timeout=5)
+            SESSIONS.drop(sid)  # client releases the session mid-flight
+        finally:
+            release.set()
+            thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert len(errors) == 1
+        assert errors[0].code == "SESSION_GONE"
+        assert errors[0].status == 404
+        # Nothing was persisted for the released session.
+        assert series_store.get_store().status(make_key("binance", "BTC/USDT", "1m"))["count"] == 58
 
 
 # ── discovery ────────────────────────────────────────────────────────────────

@@ -89,6 +89,21 @@ class TestDebugToggle:
         reset_debug_caches()
         assert debug_enabled() is True
 
+    def test_env_file_sets_the_debug_flag(self, tmp_path, monkeypatch):
+        """``.env`` is honored by ``backend.app`` when python-dotenv is present."""
+        pytest.importorskip("dotenv")
+        import os
+
+        from backend.app import _load_env_file
+
+        monkeypatch.delenv("PYNE_DEBUG", raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".env").write_text("PYNE_DEBUG=1\n")
+        assert _load_env_file() is True
+        assert os.environ.get("PYNE_DEBUG") == "1"
+        reset_debug_caches()
+        assert debug_enabled() is True
+
     @pytest.mark.parametrize("raw", ["0", "false", "no", "off", "", "banana"])
     def test_falsy_and_unknown_values_disable(self, monkeypatch, raw: str):
         monkeypatch.setenv("PYNE_DEBUG", raw)
@@ -130,6 +145,24 @@ class TestLoggingPolicy:
         assert policy["enabled"] is False
         assert policy["level"] == "INFO"
         assert logging.getLogger("pynescript").level == logging.INFO
+
+    def test_backend_app_logger_is_managed_by_the_debug_policy(self, monkeypatch):
+        """``backend.app``'s module logger must sit inside the managed prefix.
+
+        Under ``python -m backend.app`` the module name is ``__main__``, which
+        ``configure_logging`` does not manage — the per-request access log was
+        silently dropped. The module therefore uses an explicit logger name.
+        """
+        from backend import app as app_module
+
+        monkeypatch.setenv("PYNE_DEBUG", "1")
+        try:
+            configure_logging(force=True)
+            assert app_module.logger.name == "backend.app"
+            assert app_module.logger.isEnabledFor(logging.DEBUG)
+        finally:
+            monkeypatch.delenv("PYNE_DEBUG", raising=False)
+            configure_logging(force=True)
 
     def test_debug_level_when_enabled(self, monkeypatch):
         monkeypatch.setenv("PYNE_DEBUG", "1")

@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+### Fixed
+
+- **Live-session ticks no longer backfill runaway histories (connection-storm fix).** `POST /data/session/<id>/tick` fetched candles from the stored anchor with **no bar cap**, so a stale series (cached restore, failed first fetch, symbol/interval switch) walked CCXT pages across the whole gap — up to `MAX_FETCH_PAGES` × `FETCH_PAGE_LIMIT` = 200,000 bars of sequential upstream round trips per tick. One such tick pinned an HTTP request for 145–240 s, serialized every other request on the same series behind `key_lock`, and wrote ~200k junk bars into the series store per tick; on gunicorn (1 worker × 4 threads, 120 s timeout) a few charts exhausted the pool and the timeout kills dropped every in-flight connection, producing the "connection issues several times a minute" symptom. Now: the walk is capped at `TICK_MAX_BARS` (2,500), a stale anchor is **clamped to a bounded recent window** instead of paging the whole gap, and the tick response flags `stale: true` so AXIS can re-sync history deliberately. The upstream walk also runs **outside** `key_lock` (only the fast local commit — liveness check, persist, session advance — holds it), and a tick aborts with `404 SESSION_GONE` when the session is released mid-flight instead of persisting for a dead session.
+- **Series retention ceiling.** `SeriesStore.provide` now trims the oldest bars beyond `MAX_SERIES_BARS` (200,000 — 2× the largest legit window), so a runaway backfill or a chatty client cannot grow a series without bound.
+- **The PYNE_DEBUG access log was silently dropped under `make run`.** `python -m backend.app` names the module `__main__`, which `backend.logging_setup` does not manage (its prefixes are `pynescript`/`backend`), so the per-request `METHOD /path -> status in ms` lines and the slow-request lines never appeared while engine/datafeed lines did. `backend/app.py` now logs under an explicit `backend.app` logger; gunicorn was already correct.
+- **`.env` is now honored by `python -m backend.app` and gunicorn** (previously only Docker Compose `env_file` read it). A guarded `python-dotenv` loader runs at import, existing environment variables always win, and without `python-dotenv` installed it is a quiet no-op. `python-dotenv` was added to `backend/requirements.txt` and the `[pro]` extra.
+
+### Changed
+
+- `POST /data/session/<id>/tick` responses now include `stale` (walk was clamped because the stored anchor was too old).
+
 ## [0.6.10] — 2026-10-14
 
 ### Added

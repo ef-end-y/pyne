@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 
+from collections.abc import Callable
 from typing import Any
 
 from flask import Blueprint
@@ -56,6 +57,12 @@ MAX_FETCH_PAGES = 200
 # A tick re-reads this many bars before the stored newest so a corrected or
 # still-forming bar is picked up.
 TICK_OVERLAP_BARS = 2
+# A tick only ever needs to catch up a few bars. When the stored anchor is
+# staler than this window the walk is CLAMPED to the most recent TICK_MAX_BARS
+# bars instead of paging through the whole gap — a stale anchor used to run the
+# full 200-page budget (~200k sequential CCXT round trips), pin the request for
+# minutes and serialize every other request on the same series behind key_lock.
+TICK_MAX_BARS = 2500
 SOURCE_FETCH = "ccxt-fetch"
 SOURCE_TICK = "ccxt-tick"
 
@@ -151,24 +158,59 @@ def fetch_history(key: SeriesKey, history_bars: int) -> dict[str, Any]:
     return {"fetched": len(window), **status}
 
 
-def sync_data_session(session: Any, binding: live.SeriesBinding) -> live.SyncOutcome:
-    """Pull candles since the stored newest, persist closed bars, advance *session*."""
+def sync_data_session(
+    session: Any,
+    binding: live.SeriesBinding,
+    *,
+    is_alive: Callable[[], bool] | None = None,
+) -> live.SyncOutcome:
+    """Pull candles since the stored newest and advance *session*.
+
+    The network walk runs **outside** ``key_lock`` so a slow upstream cannot
+    hold up every other request for the same series (head-of-line blocking);
+    the lock only guards the fast local commit: the status read, the liveness
+    check, the closed-bar persist and the session advance.
+
+    When the stored anchor is staler than :data:`TICK_MAX_BARS`, the walk is
+    clamped to a bounded recent window and the outcome is flagged ``stale`` so
+    the client can re-sync history instead of paging through the whole gap.
+
+    ``is_alive`` (optional) re-checks session liveness after the fetch; when it
+    returns ``False`` the tick raises ``SESSION_GONE`` before persisting or
+    advancing anything.
+    """
     key = binding.key
     interval_s = key.interval_seconds
     provider = provider_for(key.exchange)
     if provider is None:
         raise _ccxt_unavailable()
     store = series_store.get_store()
+    now_s = series_store.now_seconds()
+
     with store.key_lock(key.text):
-        now_s = series_store.now_seconds()
         newest = store.status(key)["newest"]
-        anchor = binding.last_time if newest is None else int(newest)
+    anchor = binding.last_time if newest is None else int(newest)
+    stale = now_s - anchor > TICK_MAX_BARS * interval_s
+    if stale:
+        # Clamp to a bounded recent window instead of walking the whole gap.
+        since_ms = max(0, now_s - (TICK_MAX_BARS + TICK_OVERLAP_BARS) * interval_s) * 1000
+    else:
         since_ms = max(0, anchor - TICK_OVERLAP_BARS * interval_s) * 1000
-        candles = _collect_or_raise(provider, key, since_ms=since_ms, now_ms=now_s * 1000, max_bars=None)
+
+    # Upstream walk outside the per-series lock. Bounded by the clamp above,
+    # by max_bars and by MAX_FETCH_PAGES in collect_candles.
+    candles = _collect_or_raise(provider, key, since_ms=since_ms, now_ms=now_s * 1000, max_bars=TICK_MAX_BARS)
+
+    # The local commit (liveness, persist, session advance) is fast, so it
+    # serializes concurrent ticks under the per-series lock — but the network
+    # walk above does not hold it.
+    with store.key_lock(key.text):
+        if is_alive is not None and not is_alive():
+            raise DataError("SESSION_GONE", "Session was released while the tick was in flight.", 404)
         closed = [c for c in candles if c["time"] + interval_s <= now_s]
         if closed:
             store.provide(key, closed, source=SOURCE_TICK)
-        return live.sync_session(session, binding, candles, now_s)
+        return live.sync_session(session, binding, candles, now_s, stale=stale)
 
 
 def _key_from_args(args: Any) -> SeriesKey:

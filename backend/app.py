@@ -36,7 +36,11 @@ import time
 from typing import Any
 
 
-logger = logging.getLogger(__name__)
+# Explicit name (not ``__name__``): under ``python -m backend.app`` the module
+# is ``__main__``, which logging_setup.configure_logging does NOT manage (its
+# prefixes are ``pynescript``/``backend``), so the PYNE_DEBUG access log was
+# silently dropped. Under gunicorn ``__name__`` is ``backend.app`` anyway.
+logger = logging.getLogger("backend.app")
 
 
 def _dbg(msg: str, *args: Any) -> None:
@@ -54,6 +58,27 @@ def _sanitize_error_for_response(msg: str) -> str:
     if len(msg) > _MAX_ERROR_MSG_LEN:
         msg = msg[:_MAX_ERROR_MSG_LEN] + "..."
     return msg.strip() or "An error occurred"
+
+
+def _load_env_file() -> bool:
+    """Load ``.env`` into the process environment (python-dotenv optional).
+
+    Flask's own CLI does this for ``flask run``; ``python -m backend.app`` and
+    gunicorn do not. Existing environment variables always win. Without
+    python-dotenv installed this is a quiet no-op (``pip install -r
+    backend/requirements.txt`` installs it).
+    """
+    try:
+        from dotenv import load_dotenv  # noqa: PLC0415
+    except ImportError:
+        logger.debug("python-dotenv not installed; .env is ignored")
+        return False
+    return bool(load_dotenv())
+
+
+# Read .env before any env-dependent module-level configuration below
+# (logging policy, key store, runner scheduler).
+_load_env_file()
 
 
 from flask import Flask
@@ -1479,7 +1504,11 @@ def data_session_tick_route(session_id: str):
         ), 409
 
     try:
-        outcome = data_api.sync_data_session(session, binding)
+        outcome = data_api.sync_data_session(
+            session,
+            binding,
+            is_alive=lambda: SESSIONS.get(session_id) is session,
+        )
     except series_store.DataError as exc:
         return jsonify({**exc.body(), "session_id": session_id}), exc.status
     except Exception as exc:
@@ -1498,6 +1527,7 @@ def data_session_tick_route(session_id: str):
         "appended": outcome.appended,
         "forming": outcome.forming,
         "unchanged": outcome.unchanged,
+        "stale": outcome.stale,
     }
     return jsonify(_session_envelope(outcome.result, session_id, extra)), 200
 
@@ -2092,7 +2122,7 @@ if __name__ == "__main__":
         )
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5002"))
-    logging.getLogger(__name__).info(
+    logger.info(
         "Pro API on http://%s:%s  websocket=%s  debug=%s",
         host,
         port,

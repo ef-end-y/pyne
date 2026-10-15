@@ -48,6 +48,9 @@ DEFAULT_HISTORY_BARS = 5000
 MAX_HISTORY_BARS = 100000
 DEFAULT_WINDOW_LIMIT = 10000
 MAX_WINDOW_LIMIT = 100000
+# Retention ceiling per series: 2x the largest legit window (100k). A runaway
+# backfill or a chatty client must not grow a series without bound.
+MAX_SERIES_BARS = 200_000
 MAX_SOURCE_LEN = 64
 
 # Bind-parameter chunk size; stays well under SQLite's variable limit.
@@ -272,7 +275,11 @@ class SeriesStore:
         return {"key": key.text, "count": int(count), "oldest": oldest, "newest": newest, "updated_at": updated_at}
 
     def provide(self, key: SeriesKey, bars: Any, source: str = "") -> dict[str, Any]:
-        """Upsert bars by time. Returns counts and the refreshed series bounds."""
+        """Upsert bars by time. Returns counts and the refreshed series bounds.
+
+        Series are retention-capped at :data:`MAX_SERIES_BARS`; the oldest
+        bars are trimmed when a provide pushes a series over the ceiling.
+        """
         rows = normalize_bars(bars)
         now = now_seconds()
         with self._lock:
@@ -288,6 +295,7 @@ class SeriesStore:
                             for r in rows[start : start + _CHUNK]
                         ],
                     )
+                self._trim_locked(key.text)
                 state = self._refresh_series_row(key, source[:MAX_SOURCE_LEN], now)
                 conn.execute("COMMIT")
             except BaseException:
@@ -295,6 +303,19 @@ class SeriesStore:
                 raise
         updated = len(existing)
         return {"added": len(rows) - updated, "updated": updated, **state}
+
+    def _trim_locked(self, key_text: str) -> None:
+        """Drop the oldest bars when a series exceeds ``MAX_SERIES_BARS``. Caller holds the lock."""
+        count = int(self._conn.execute("SELECT COUNT(*) FROM bars WHERE key = ?", (key_text,)).fetchone()[0])
+        if count <= MAX_SERIES_BARS:
+            return
+        cutoff = self._conn.execute(
+            "SELECT time FROM bars WHERE key = ? ORDER BY time DESC LIMIT 1 OFFSET ?",
+            (key_text, MAX_SERIES_BARS - 1),
+        ).fetchone()
+        if cutoff is None:
+            return
+        self._conn.execute("DELETE FROM bars WHERE key = ? AND time < ?", (key_text, int(cutoff[0])))
 
     def window(self, key: SeriesKey, limit: int) -> list[dict[str, float | int]]:
         """Newest ``limit`` bars, returned in ascending time order."""
