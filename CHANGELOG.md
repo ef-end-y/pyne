@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Security
+
+- **Redis key store is no longer reachable from the internet; auth is opt-in.** The compose `redis` service published `6379` on all interfaces without a password; automated scanners wiped the key store (`FLUSHALL`) and staged cron miner payloads (`backup1-4`). The service now publishes no ports (internal network only — the API is unaffected) and accepts `--requirepass` via `REDIS_PASSWORD`, with `REDIS_URL=redis://:PASSWORD@redis:6379/0` as the matching API side (explicit `REDIS_URL` still wins for Memorystore). Generate with `openssl rand -hex 32`.
+
 ### Added
 
 - **Live sessions survive worker recycles and container restarts.** Every session mutation is journaled to SQLite (`backend/datastore/session_log.py`: `sessions` + `session_bars` tables under `PYNE_SESSION_DB`, default `/data/sessions.db` when `/data` exists, memory-only otherwise). The bar log mirrors `InterpretSession._ohlcv_data` exactly — create writes the full bars, tick replaces the last, append extends — so the first access after a restart rebuilds the session with one `create_session` over identical bars under its original id, and ticks are O(1) again after that single re-evaluation. This also fixes the session churn from gunicorn `--max-requests` recycling, which previously dropped every in-flight session silently. The rebuild is a rebase (indicators identical; strategy fills may differ as with a client-side rebase), `GET /session/<id>` answers journaled-but-unloaded sessions from the row without rebuilding, and all journal writes are best-effort (an unreachable db degrades to memory-only). New knobs `SESSION_TTL_SECONDS` / `SESSION_MAX_SESSIONS` (defaults 900 / 64, unchanged). Covered by `tests/test_session_persistence.py` (HTTP create → tick → append → simulated restart → tick round-trips, TTL expiry, capacity, data-session binding).

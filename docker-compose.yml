@@ -37,6 +37,8 @@ services:
       API_KEY_STORE: /data/api_keys.json
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-https://hoox.sh,https://hoox.sh/axis,http://localhost:8081,http://127.0.0.1:8081}
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # Explicit REDIS_URL wins (e.g. Memorystore, or the passworded local
+      # form redis://:PASSWORD@redis:6379/0 matching REDIS_PASSWORD above).
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       PYTHONPATH: /app/src:/app
       # Optional hosted runner (script registry + bar-close). Off by default.
@@ -67,13 +69,16 @@ services:
     image: redis:7-alpine
     profiles:
       - redis
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # No published ports: the key store must never be reachable from the
+    # internet (an exposed Redis is wiped within hours — FLUSHALL + cron
+    # miner payloads). The API reaches it over the internal network.
+    # Set REDIS_PASSWORD (and the matching REDIS_URL below) for auth.
     volumes:
       - redis_data:/data
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Plain ping first (no password set), then authenticated (password set).
+      test: ["CMD-SHELL", "redis-cli ping 2>/dev/null || redis-cli -a $${REDIS_PASSWORD} ping"]
       interval: 30s
       timeout: 5s
       retries: 3
