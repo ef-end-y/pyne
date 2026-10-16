@@ -2,8 +2,13 @@
 # Copyright (C) 2024-2026 jango_blockchained
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Deploy pyne (pynescript) Pro API to the Hetzner VPS (pynescript.online).
-# AXIS PWA is served from Cloudflare Pages (axis.hoox.sh) — skip dist by default.
+# Deploy pyne (pynescript) Pro API to the Hetzner VPS (pynescript.online)
+# as the docker prod stack (compose base + prod overlay, gunicorn, no source
+# mounts). AXIS PWA is served from Cloudflare Pages (axis.hoox.sh).
+#
+# The legacy venv+systemd path (pynescript-api.service) was retired: the VPS
+# already runs the compose stack and the unit files were uninstalled. This
+# script no longer installs or restarts any systemd unit.
 #
 # Usage:
 #   ./scripts/deploy_vps.sh
@@ -20,6 +25,7 @@
 #   VPS_PORT=22
 #   VPS_PATH=/root/pynescript
 #   VPS_IDENTITY_FILE=~/.ssh/id_ed25519
+#   VPS_REDIS=1               # also (re)create redis when 1 (default; prod uses it)
 #   AXIS_REPO=/path/to/axis   (default: sibling ../axis)
 #   AXIS_BUILD=1              # run `bun run build` in AXIS_REPO before rsync
 #   AXIS_SKIP_DIST=1          # skip rsync of axis dist/ (default on this host)
@@ -143,45 +149,31 @@ else
   echo "==> skip AXIS PWA rsync (API-only host; set AXIS_SKIP_DIST=0 to ship dist)"
 fi
 
-echo "==> remote: pip install + restart services"
+echo "==> remote: compose build + recreate (docker prod)"
 REMOTE bash -s <<EOF
 set -euo pipefail
 cd "${VPS_PATH}"
-if [[ -x .venv/bin/pip ]]; then
-  # Editable package + Pro API deps (includes numba for compile mode)
-  .venv/bin/pip install -e ".[lsp,compile,datafeed]" -q
-  .venv/bin/pip install -r backend/requirements.txt -q
-  .venv/bin/python -c "import pynescript; import numba; from pynescript.compiler.engine import has_numba; print('venv', pynescript.__file__, 'numba', numba.__version__, 'has_numba', has_numba())"
-  .venv/bin/python -c "import ccxt; print('ccxt', ccxt.__version__, 'exchanges', len(ccxt.exchanges))"
-else
-  echo "no .venv/bin/pip — skip install" >&2
+# Named volumes (api_data: sessions/keys/series, redis_data) survive recreate —
+# never prune volumes here.
+PROFILE_ARGS=()
+SERVICES="api"
+if [[ "${VPS_REDIS:-1}" == "1" ]]; then
+  PROFILE_ARGS+=(--profile redis)
+  SERVICES="api redis"
 fi
-systemctl reset-failed axis-pwa.service 2>/dev/null || true
-# Install the versioned systemd units (worker recycling is load-bearing:
-# without --max-requests the workers grow until swap fills and /health stalls).
-# 2026-10-03: a stale tuning.conf drop-in overrode the base unit and dropped
-# recycling → OOM loop. Install versioned drop-ins (cors.conf, tuning.conf);
-# local-only drop-ins (oauth.conf, runner.conf) are left untouched.
-if [[ -f "${VPS_PATH}/deploy/pynescript-api.service" ]]; then
-  echo "install pynescript-api.service units"
-  install -m 644 "${VPS_PATH}/deploy/pynescript-api.service" /etc/systemd/system/pynescript-api.service
-  mkdir -p /etc/systemd/system/pynescript-api.service.d
-  for dropin in cors.conf tuning.conf; do
-    if [[ -f "${VPS_PATH}/deploy/pynescript-api.service.d/\${dropin}" ]]; then
-      install -m 644 "${VPS_PATH}/deploy/pynescript-api.service.d/\${dropin}" "/etc/systemd/system/pynescript-api.service.d/\${dropin}"
-    fi
-  done
-  systemctl daemon-reload
-fi
-systemctl restart pynescript-api.service
-# AXIS PWA is on CF Pages; axis-pwa.service is optional on this host.
-if systemctl list-unit-files axis-pwa.service >/dev/null 2>&1; then
-  systemctl restart axis-pwa.service || true
-fi
-sleep 1
-systemctl is-active pynescript-api.service
-curl -s -o /dev/null -w "api=%{http_code}\n" --max-time 5 http://127.0.0.1:5002/health || true
-curl -s -o /dev/null -w "nginx=%{http_code}\n" --max-time 5 -k https://127.0.0.1/health || true
+export GIT_SHA="$(cd "${ROOT}" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+export PYNESCRIPT_VERSION="$(cd "${ROOT}" && git describe --tags --abbrev=0 2>/dev/null || echo dev)"
+# shellcheck disable=SC2086
+docker compose "\${PROFILE_ARGS[@]}" -f docker-compose.yml -f docker-compose.prod.yml up --build -d \$SERVICES
+# Wait for the fresh container to report healthy (new image, old data volume).
+for i in \$(seq 1 30); do
+  if [[ "\$(docker inspect -f '{{.State.Health.Status}}' pynescript-api-1 2>/dev/null)" == "healthy" ]]; then
+    break
+  fi
+  sleep 10
+done
+docker inspect -f '{{.Name}} {{.State.Health.Status}} ({{.Config.Image}})' pynescript-api-1
+curl -s -o /dev/null -w "api=%{http_code}\n" --max-time 10 http://127.0.0.1:5002/ || true
 EOF
 
 echo "==> done"
