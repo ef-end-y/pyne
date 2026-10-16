@@ -49,6 +49,7 @@ def _dbg(msg: str, *args: Any) -> None:
     if _debug_on():
         logger.debug(msg, *args)
 
+
 _INTERNAL_PATH_RE = re.compile(r'(?:File ")?[\\/](?:[\w.-]+[\\/])*[\w.-]+\.py(?:", line \d+)?')
 _MAX_ERROR_MSG_LEN = 500
 
@@ -861,6 +862,7 @@ def _health_payload() -> dict[str, Any]:
             # Engine-owned data plane (AXIS D3): capabilities are read from here.
             "live_modes": ["every-tick", "bar-close"],
             "data_session": True,
+            "session_delta": True,
         },
         "compile": _compile_health_section(),
         "endpoints": endpoints,
@@ -1165,6 +1167,94 @@ def _session_envelope(result: Any, session_id: str, extra: dict[str, Any] | None
     return out
 
 
+def _delta_tail(values: Any, tail_len: int) -> list[Any] | None:
+    """Last ``tail_len`` entries of a result column, or None when unusable.
+
+    An empty column carries no length information and stays empty (the client
+    treats empty-vs-non-empty as a mismatch and falls back to a full run).
+    A shorter non-empty column cannot be expressed as a tail — the caller
+    answers the full envelope instead.
+    """
+    if not isinstance(values, list):
+        return None
+    if not values:
+        return []
+    if tail_len <= 0 or len(values) < tail_len:
+        return None
+    return values[-tail_len:]
+
+
+def _delta_envelope(
+    result: dict[str, Any], session_id: str, extra: dict[str, Any], tail_len: int
+) -> dict[str, Any] | None:
+    """Tail-only variant of :func:`_session_envelope` for ``delta: true`` ticks.
+
+    ``tail_len == 0`` answers flags only (unchanged ticks: no plots/series at
+    all — the client reuses its cached result). Otherwise only the last
+    ``tail_len`` cells of ``plots``/``series`` travel; small fields
+    (events/drawings/alerts/meta/…) stay full, they are tiny next to 10k-bar
+    series. The client merges positionally
+    (``full = cached[:base_index] + tail``) after checking ``count``.
+
+    Returns None when the result cannot be expressed as a tail — the caller
+    then answers the full envelope instead of a corrupt delta.
+    """
+    count = result.get("count")
+    plots = result.get("plots") or []
+    series = result.get("series") or {}
+    expressible = (
+        isinstance(count, int)
+        and count >= 0
+        and isinstance(series, dict)
+        and (
+            tail_len <= 0
+            or (
+                count - tail_len >= 0
+                and _delta_tail(plots, tail_len) is not None
+                and all(_delta_tail(v, tail_len) is not None for v in series.values())
+            )
+        )
+    )
+    if not expressible:
+        return None
+    out = _session_envelope(result, session_id, extra)
+    if not isinstance(out, dict) or out.get("status") != "success":
+        return out
+    if tail_len > 0:
+        out["plots"] = _delta_tail(plots, tail_len)
+        out["series"] = {k: _delta_tail(v, tail_len) for k, v in series.items()}
+        out["delta"] = {"base_index": count - tail_len, "count": count, "tail_len": tail_len}
+    else:
+        out["plots"] = []
+        out["series"] = {}
+    return out
+
+
+def _maybe_delta_envelope(
+    result: Any,
+    session_id: str,
+    extra: dict[str, Any],
+    validated: dict[str, Any],
+    tail_len: int,
+) -> dict[str, Any]:
+    """Answer a delta envelope when the client opted in, else the full one.
+
+    A requested window trim (``from_bar``/``to_bar``) always takes the full
+    trimmed path — trims and tails do not compose.
+    """
+    if (
+        validated.get("delta") is True
+        and isinstance(result, dict)
+        and "error" not in result
+        and validated.get("from_bar") is None
+        and validated.get("to_bar") is None
+    ):
+        delta = _delta_envelope(result, session_id, extra, tail_len)
+        if delta is not None:
+            return delta
+    return _session_envelope(result, session_id, extra)
+
+
 def _load_session(
     session_id: str,
 ) -> tuple[Any | None, tuple[dict[str, Any], int] | None]:
@@ -1337,7 +1427,9 @@ def session_tick_route(session_id: str):
     extra: dict[str, Any] = {"session_id": session_id}
     if window is not None:
         extra["window"] = window
-    return jsonify(_session_envelope(result, session_id, extra)), 200
+        return jsonify(_session_envelope(result, session_id, extra)), 200
+    # A tick only revises the tail cell: delta answers that one cell.
+    return jsonify(_maybe_delta_envelope(result, session_id, extra, validated, 1)), 200
 
 
 @app.route("/session/<session_id>/append", methods=["POST"])
@@ -1383,7 +1475,8 @@ def session_append_route(session_id: str):
     extra: dict[str, Any] = {"session_id": session_id, "appended": len(bars_in)}
     if window is not None:
         extra["window"] = window
-    return jsonify(_session_envelope(result, session_id, extra)), 200
+        return jsonify(_session_envelope(result, session_id, extra)), 200
+    return jsonify(_maybe_delta_envelope(result, session_id, extra, validated, len(bars_in))), 200
 
 
 @app.route("/session/<session_id>", methods=["DELETE"])
@@ -1525,7 +1618,6 @@ def _make_session_journal_recorder(session_id: str) -> Callable[[str, Any], None
     return _record_applied
 
 
-
 @app.route("/data/session/<session_id>/tick", methods=["POST"])
 @require_api_key
 def data_session_tick_route(session_id: str):
@@ -1591,7 +1683,8 @@ def data_session_tick_route(session_id: str):
         "unchanged": outcome.unchanged,
         "stale": outcome.stale,
     }
-    return jsonify(_session_envelope(outcome.result, session_id, extra)), 200
+    tail_len = 0 if outcome.unchanged else outcome.grown + (1 if outcome.reticked else 0)
+    return jsonify(_maybe_delta_envelope(outcome.result, session_id, extra, validated, tail_len)), 200
 
 
 @app.route("/optimize", methods=["POST"])

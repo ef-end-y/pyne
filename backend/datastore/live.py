@@ -54,6 +54,14 @@ class SyncOutcome:
     forming: bool
     unchanged: bool
     stale: bool = False
+    # The previous tail bar was revised in place before appending (its values
+    # changed while its time did not). Delta envelopes must include the revised
+    # tail cell in addition to the appended bars.
+    reticked: bool = False
+    # Bars the session grew by in this tick (closed appends + a newer forming
+    # bar). Delta tail length is ``grown + reticked``; ``appended`` alone misses
+    # a new forming bar, which grows the session without closing anything.
+    grown: int = 0
 
 
 def bind_session(session: Any, key: SeriesKey, last_bar: dict[str, Any]) -> SeriesBinding:
@@ -104,15 +112,18 @@ def sync_session(  # noqa: PLR0913 — session, binding, candles, clock + two op
 
     result: dict[str, Any] | None = None
     tail_bar = next((c for c in candles if c["time"] == tail), None)
+    reticked = False
     if tail_bar is not None and _ohlcv(tail_bar) != _ohlcv(binding.last_bar):
         result = session.update_last_bar(tail_bar)
         binding.last_bar = dict(tail_bar)
+        reticked = True
         if on_apply is not None:
             on_apply("tick", tail_bar)
 
     batch = list(closed_newer)
     if forming_bar is not None and forming_bar["time"] > tail:
         batch.append(forming_bar)
+    grown = len(batch)
     if batch:
         result = session.append_bars(batch)
         binding.last_time = int(batch[-1]["time"])
@@ -129,4 +140,6 @@ def sync_session(  # noqa: PLR0913 — session, binding, candles, clock + two op
         forming=forming_bar is not None,
         unchanged=unchanged,
         stale=stale,
+        reticked=reticked,
+        grown=grown,
     )

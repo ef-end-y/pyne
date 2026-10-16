@@ -257,6 +257,52 @@ class TestSessionRoutes:
         assert w is not None, "a trimmed tick must report its window"
         assert w["bars"] == 20
 
+    def test_tick_delta_returns_only_the_tail_cell(self, client):
+        """Opt-in delta ticks carry 1 cell per column instead of full series."""
+        last = _bars(1, start=119)[0]
+        last = dict(last, close=last["close"] + 5.0, high=last["high"] + 5.0)
+        sid_full = client.post("/session", json={"script": SCRIPT, "data": _bars(120)}).get_json()["session_id"]
+        full = client.post(f"/session/{sid_full}/tick", json={"bar": last}).get_json()
+        sid_delta = client.post("/session", json={"script": SCRIPT, "data": _bars(120)}).get_json()["session_id"]
+        res = client.post(f"/session/{sid_delta}/tick", json={"bar": last, "delta": True})
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["status"] == "success"
+        assert body["count"] == 120
+        assert body["delta"] == {"base_index": 119, "count": 120, "tail_len": 1}
+        assert len(body["plots"]) == 1
+        assert body["plots"] == full["plots"][-1:]
+        assert set(body["series"]) == set(full["series"])
+        for k, v in body["series"].items():
+            assert v == full["series"][k][-1:]
+
+    def test_append_delta_returns_only_appended_cells(self, client):
+        new_bars = _bars(3, start=120)
+        sid_full = client.post("/session", json={"script": SCRIPT, "data": _bars(120)}).get_json()["session_id"]
+        full = client.post(f"/session/{sid_full}/append", json={"bars": new_bars}).get_json()
+        sid_delta = client.post("/session", json={"script": SCRIPT, "data": _bars(120)}).get_json()["session_id"]
+        res = client.post(f"/session/{sid_delta}/append", json={"bars": new_bars, "delta": True})
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["count"] == 123
+        assert body["delta"] == {"base_index": 120, "count": 123, "tail_len": 3}
+        assert body["plots"] == full["plots"][-3:]
+        for k, v in body["series"].items():
+            assert v == full["series"][k][-3:]
+
+    def test_delta_with_window_trim_answers_full(self, client):
+        """Trims and tails do not compose: trim wins, no delta block."""
+        sid = client.post("/session", json={"script": SCRIPT, "data": _bars(120)}).get_json()["session_id"]
+        last = _bars(1, start=119)[0]
+        res = client.post(f"/session/{sid}/tick", json={"bar": last, "delta": True, "from_bar": -20})
+        assert res.status_code == 200
+        body = res.get_json()
+        assert "delta" not in body
+        assert body.get("window", {}).get("bars") == 20
+
+    def test_health_advertises_session_delta(self, client):
+        assert client.get("/").get_json()["features"]["session_delta"] is True
+
     def test_repeated_ticks_are_stable(self, client):
         """Ticking the same bar repeatedly must not corrupt state."""
         sid = client.post("/session", json={"script": SCRIPT, "data": _bars(150)}).get_json()["session_id"]

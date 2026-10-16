@@ -510,6 +510,43 @@ class TestDataSessionTick:
         assert _tick(client, bound, exchange="binance", symbol="BTC/USDT").status_code == 200
         assert len(exchange.calls) == 2
 
+    def test_data_tick_delta_returns_tail_cells(self, client, exchange, bound):
+        """Opt-in delta data ticks carry only changed tail cells."""
+        exchange.candles = [candle(NOW - 2 * MIN), candle(NOW - MIN), candle(NOW)]
+        other = _create(client, 50).get_json()["session_id"]
+        full = _tick(client, bound, exchange="binance", symbol="BTC/USDT").get_json()
+        assert full["status"] == "success"
+        assert "delta" not in full
+        data_api._reset_walk_cache_for_tests()
+        res = client.post(
+            f"/data/session/{other}/tick",
+            json={"exchange": "binance", "symbol": "BTC/USDT", "delta": True},
+        )
+        assert res.status_code == 200
+        body = res.get_json()
+        assert body["status"] == "success"
+        assert body["appended"] == full["appended"]
+        delta = body["delta"]
+        assert delta["count"] == body["count"] == full["count"]
+        assert delta["tail_len"] > 0
+        assert delta["base_index"] == delta["count"] - delta["tail_len"]
+        # Merging the tail onto the pre-tick full result reproduces the tick.
+        assert body["plots"] == full["plots"][-delta["tail_len"] :]
+        for k, v in body["series"].items():
+            assert v == full["series"][k][-delta["tail_len"] :]
+
+    def test_data_tick_delta_unchanged_answers_flags_only(self, client, exchange, bound):
+        exchange.candles = [candle(NOW - 2 * MIN), candle(NOW - MIN), candle(NOW)]
+        _tick(client, bound, exchange="binance", symbol="BTC/USDT")
+        body = client.post(
+            f"/data/session/{bound}/tick",
+            json={"exchange": "binance", "symbol": "BTC/USDT", "delta": True},
+        ).get_json()
+        assert body["status"] == "success"
+        assert body["unchanged"] is True
+        assert "delta" not in body
+        assert body["plots"] == [] and body["series"] == {}
+
     def test_changed_forming_bar_is_retickd_in_place(self, client, exchange, bound):
         exchange.candles = [candle(NOW - MIN), candle(NOW)]
         _tick(client, bound, exchange="binance", symbol="BTC/USDT")

@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- **Opt-in delta envelopes for session tick/append routes.** `POST /session/<id>/tick`, `POST /session/<id>/append` and `POST /data/session/<id>/tick` accept `delta: true` and answer tail-only: the last cells of `plots`/`series` plus a `delta` block (`base_index`/`count`/`tail_len`) for positional merging (`full = cached[:base_index] + tail`), or flags-only for unchanged data-session ticks (no plots/series at all — the client reuses its cache). Small fields (events/drawings/alerts/meta) stay full. Window trims still take the full path, and unshapely results fall back to the full envelope instead of a corrupt delta. Advertised as `features.session_delta`; clients that never send the flag see byte-identical responses. Covered by delta cases in `tests/test_backend_sessions.py` and `tests/test_data_series.py` (including tail-equals-full comparisons and flags-only unchanged ticks).
+
 ### Fixed
 
 - **Concurrent session ticks share one upstream walk (singleflight + cross-session reuse).** AXIS ticks one data session per script instance (chart + N indicators) against the same series within seconds of each other; each tick paid its own CCXT walk for identical candles, and on the single gunicorn worker those walks serialized behind each other — the per-tick seconds observed from AXIS live mode. `sync_data_session` now shares the walk per series for `TICK_WALK_REUSE_S` (5 s): concurrent ticks join the in-flight walk instead of stacking round trips, and sequential ticks for *other* sessions reuse a fresh covering walk. The ticking session itself always refetches so forming-bar re-ticks observe every revision; truncated walks (hit `TICK_MAX_BARS`) are never shared. Covered by `test_concurrent_session_ticks_share_one_upstream_walk`, `test_concurrent_ticks_singleflight_one_walk` and `test_walk_cache_expires_for_new_data` in `tests/test_data_series.py`.

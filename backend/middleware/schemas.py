@@ -106,6 +106,8 @@ SESSION_TICK_SCHEMA: dict[str, tuple[type, bool, Any]] = {
     # Optional envelope trim, same semantics as POST /run.
     "from_bar": (int, False, None),
     "to_bar": (int, False, None),
+    # Delta response: only the re-ticked tail cell instead of full series.
+    "delta": (bool, False, False),
 }
 
 SESSION_APPEND_SCHEMA: dict[str, tuple[type, bool, Any]] = {
@@ -113,6 +115,8 @@ SESSION_APPEND_SCHEMA: dict[str, tuple[type, bool, Any]] = {
     "realtime_ticks": (int, False, 1),
     "from_bar": (int, False, None),
     "to_bar": (int, False, None),
+    # Delta response: only the appended tail instead of full series.
+    "delta": (bool, False, False),
 }
 
 # ── Engine-owned OHLCV data plane (/data/*) ─────────────────────────────────
@@ -152,6 +156,9 @@ DATA_SESSION_CREATE_SCHEMA: dict[str, tuple[type, bool, Any]] = {
 DATA_SESSION_TICK_SCHEMA: dict[str, tuple[type, bool, Any]] = {
     "exchange": (str, True, ""),
     "symbol": (str, True, ""),
+    # Delta response: only changed tail cells instead of full series.
+    # Unchanged ticks answer with flags only (no plots/series at all).
+    "delta": (bool, False, False),
 }
 
 # Shared OHLCV + many scripts (AXIS multi-indicator). Nested script objects
