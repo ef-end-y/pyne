@@ -5,11 +5,12 @@
 # Production entrypoint for the Pro API (gunicorn).
 # Worker/thread/timeout counts are env-tunable without rebuilding the image.
 #
-# WebSocket (/ws/run) note:
-#   Default gthread/sync workers do NOT speak WebSocket. AXIS will fall back
-#   to POST /run. For native WS, run a compatible stack (e.g. geventwebsocket)
-#   or keep preferWs=false in AXIS settings. Raise GUNICORN_TIMEOUT for large
-#   compile-mode runs (default 120s).
+# WebSocket (/ws/run, /ws/live, /datafeed/watch) note:
+#   The default worker speaks WebSocket (gevent + gevent-websocket), so all
+#   flask-sock routes upgrade natively. Sync/gthread workers canNOT upgrade —
+#   AXIS then falls back to REST. Select via GUNICORN_WORKER_CLASS
+#   (e.g. "gthread" for the old behavior; --threads only applies there).
+#   Raise GUNICORN_TIMEOUT for large compile-mode runs (default 120s).
 #
 # Warm compile (H2):
 #   PYNE_COMPILE_DISK_CACHE=1 (default) + PYNE_COMPILE_CACHE_DIR=/data/compile-cache
@@ -26,6 +27,11 @@ PORT="${PORT:-8080}"
 # Override only if session state has moved to an external store.
 WORKERS="${GUNICORN_WORKERS:-1}"
 THREADS="${GUNICORN_THREADS:-4}"
+# WS-capable default: gevent handles thousands of concurrent connections
+# (REST + long-lived sockets) in the single worker the live sessions require.
+# "sync" or "gthread" restores the pre-WS behavior (--threads applies there).
+WORKER_CLASS="${GUNICORN_WORKER_CLASS:-geventwebsocket.gunicorn.workers.GeventWebSocketWorker}"
+WORKER_CONNECTIONS="${GUNICORN_WORKER_CONNECTIONS:-1000}"
 TIMEOUT="${GUNICORN_TIMEOUT:-120}"
 BIND="${GUNICORN_BIND:-0.0.0.0:${PORT}}"
 # Worker recycling bounds per-worker memory growth across requests
@@ -42,13 +48,34 @@ if [ "${PYNE_RUNNER:-0}" != "0" ]; then
   mkdir -p "$(dirname "${PYNE_RUNNER_DB:-/data/runner.db}")" 2>/dev/null || true
 fi
 
-exec gunicorn \
-  --bind "${BIND}" \
-  --workers "${WORKERS}" \
-  --threads "${THREADS}" \
-  --timeout "${TIMEOUT}" \
-  --max-requests "${MAX_REQUESTS}" \
-  --max-requests-jitter "${MAX_REQUESTS_JITTER}" \
-  --access-logfile "-" \
-  --error-logfile "-" \
-  backend.app:app
+case "${WORKER_CLASS}" in
+  sync|gthread)
+    # Thread workers: no WebSocket upgrades (AXIS falls back to REST).
+    exec gunicorn \
+      --bind "${BIND}" \
+      --workers "${WORKERS}" \
+      --worker-class "${WORKER_CLASS}" \
+      --threads "${THREADS}" \
+      --timeout "${TIMEOUT}" \
+      --max-requests "${MAX_REQUESTS}" \
+      --max-requests-jitter "${MAX_REQUESTS_JITTER}" \
+      --access-logfile "-" \
+      --error-logfile "-" \
+      backend.app:app
+    ;;
+  *)
+    # Async (gevent) workers: --threads does not apply; size greenlets instead.
+    # Long-lived WS connections delay --max-requests recycling gracefully.
+    exec gunicorn \
+      --bind "${BIND}" \
+      --workers "${WORKERS}" \
+      --worker-class "${WORKER_CLASS}" \
+      --worker-connections "${WORKER_CONNECTIONS}" \
+      --timeout "${TIMEOUT}" \
+      --max-requests "${MAX_REQUESTS}" \
+      --max-requests-jitter "${MAX_REQUESTS_JITTER}" \
+      --access-logfile "-" \
+      --error-logfile "-" \
+      backend.app:app
+    ;;
+esac
