@@ -28,6 +28,8 @@ provider the datafeed gateway uses. ``/data/session*`` routes are registered in
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 import logging
 import threading
 import time
@@ -85,7 +87,12 @@ SOURCE_TICK = "ccxt-tick"
 # Truncated walks (hit ``max_bars``) never reach the newest bar, so they are
 # neither cached nor shared. History-affecting routes (``/series/fetch``)
 # never use this.
-TICK_WALK_REUSE_S = 5.0
+#
+# 12s (not per-tick fresh): AXIS ticks chart + indicator sessions staggered a
+# few seconds apart against the same series. A reused walk may lag the newest
+# seconds; the next cycle refreshes. Same-session refetch still always walks,
+# so forming-bar revisions are observed at least every other cycle.
+TICK_WALK_REUSE_S = 12.0
 _WALK_CACHE_MAX = 512
 
 
@@ -179,6 +186,10 @@ def _reset_walk_cache_for_tests() -> None:
     with _walk_lock:
         _walk_cache.clear()
         _flights.clear()
+    with _provider_guard:
+        _providers.clear()
+        _provider_at.clear()
+        _fetch_locks.clear()
 
 
 def data_error_response(exc: DataError) -> tuple[Any, int]:
@@ -186,9 +197,59 @@ def data_error_response(exc: DataError) -> tuple[Any, int]:
 
 
 def provider_for(exchange: str) -> Any | None:
-    """CCXT provider for *exchange*, or ``None`` when CCXT is not installed."""
+    """Cached CCXT provider for *exchange*, or ``None`` when CCXT is missing.
+
+    One provider (one ccxt exchange object) per (exchange, credentials): the
+    first ``fetch_ohlcv`` on a fresh object pays ``loadMarkets`` (multi-MB
+    ``exchangeInfo`` + rate-limit init, ~3s observed), so building a new
+    provider per tick put a 3s floor under every cache-missing tick. Cached
+    objects refresh after ``_PROVIDER_TTL_S`` so new listings appear without
+    a restart. ``None`` is never cached — a missing-CCXT answer must not pin
+    later tests/process states that install it.
+    """
     _, credentials = datafeed._resolve_session(exchange, "")
-    return datafeed._make_provider(exchange, credentials)
+    key = _provider_cache_key(exchange, credentials)
+    now = time.monotonic()
+    with _provider_guard:
+        provider = _providers.get(key)
+        if provider is not None and now - _provider_at.get(key, 0.0) < _PROVIDER_TTL_S:
+            return provider
+        provider = datafeed._make_provider(exchange, credentials)
+        if provider is None:
+            return None
+        _providers[key] = provider
+        _provider_at[key] = now
+        _fetch_locks.setdefault(key, threading.Lock())
+        return provider
+
+
+def _provider_cache_key(exchange: str, credentials: dict[str, str] | None) -> str:
+    """Cache key that separates credential sets without storing secrets."""
+    try:
+        fp = hashlib.sha256(json.dumps(credentials or {}, sort_keys=True, default=str).encode()).hexdigest()[:12]
+    except Exception:  # noqa: BLE001 — unserializable creds still need a key
+        fp = "nofp"
+    return f"{str(exchange or '').strip().lower()}|{fp}"
+
+
+_providers: dict[str, Any] = {}
+_provider_at: dict[str, float] = {}
+# One fetch lock per cached provider: ccxt sync objects mutate rate-limit
+# state per call, so concurrent tick walks for different series on one
+# exchange serialize instead of racing it. Leaf lock — never held while
+# acquiring ``_walk_lock`` (walks run outside it by design).
+_fetch_locks: dict[str, threading.Lock] = {}
+_provider_guard = threading.Lock()
+# Cached exchange objects hold loadMarkets output; refresh periodically.
+_PROVIDER_TTL_S = 1800.0
+
+
+def _fetch_lock_for_exchange(exchange: str) -> threading.Lock:
+    """Fetch-serialization lock for the cached provider of *exchange*."""
+    _, credentials = datafeed._resolve_session(exchange, "")
+    key = _provider_cache_key(exchange, credentials)
+    with _provider_guard:
+        return _fetch_locks.setdefault(key, threading.Lock())
 
 
 def _ccxt_unavailable() -> DataError:
@@ -247,7 +308,11 @@ def _collect_or_raise(
     max_bars: int | None,
 ) -> list[dict[str, float | int]]:
     try:
-        return collect_candles(provider, key, since_ms=since_ms, now_ms=now_ms, max_bars=max_bars)
+        # Serialize walks per cached provider: ccxt sync exchange objects
+        # mutate rate-limit state per call. The walk itself runs outside the
+        # per-series lock (no nesting — this is a leaf lock).
+        with _fetch_lock_for_exchange(key.exchange):
+            return collect_candles(provider, key, since_ms=since_ms, now_ms=now_ms, max_bars=max_bars)
     except DataError:
         raise
     except Exception as exc:  # every provider failure is an upstream failure here
