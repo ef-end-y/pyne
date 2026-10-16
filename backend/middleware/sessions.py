@@ -29,6 +29,8 @@ every few hundred milliseconds must never expire mid-stream.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import threading
@@ -96,6 +98,11 @@ class SessionStore:
         self._last_seen: dict[str, float] = {}
         self._lock = threading.Lock()
         self._last_sweep = time.monotonic()
+        # Shared-session pooling (F-29): content fingerprint → session id, plus
+        # a refcount per pooled id. Tabs attach/detach instead of
+        # create/release; the session itself still expires by idle TTL.
+        self._shared: dict[str, str] = {}
+        self._shared_refs: dict[str, int] = {}
 
     # ── journal (best-effort; never raises) ──────────────────────────────
 
@@ -197,6 +204,10 @@ class SessionStore:
         self._log(_session_log.delete_record, session_id)
         session = self._sessions.pop(session_id, None)
         self._last_seen.pop(session_id, None)
+        self._shared_refs.pop(session_id, None)
+        for fingerprint, pooled in list(self._shared.items()):
+            if pooled == session_id:
+                del self._shared[fingerprint]
         if session is None:
             return
         # InterpretSession holds no OS resources today; this is here so adding
@@ -247,6 +258,89 @@ class SessionStore:
             _stats.max_gauge("sessions.active_max", len(self._sessions))
             _stats.set_gauge("sessions.capacity", self._max)
             return session_id
+
+    # ── shared pooling (F-29) ────────────────────────────────────────────
+
+    @staticmethod
+    def shared_fingerprint(
+        script: str = "",
+        symbol: str = "CHART",
+        inputs: Any = None,
+        libraries: Any = None,
+        profiler: bool = False,
+    ) -> str:
+        """Stable content id for a session so identical tabs share one."""
+        canonical = json.dumps(
+            {
+                "script": script or "",
+                "symbol": symbol or "CHART",
+                "inputs": inputs if inputs is not None else {},
+                "libraries": libraries if libraries is not None else [],
+                "profiler": bool(profiler),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+    def acquire_shared(self, fingerprint: str, factory: Any) -> tuple[str, bool]:
+        """Return ``(session_id, created)`` for a pooled session.
+
+        ``factory`` builds the session object on a miss (called under no lock;
+        a raced duplicate is discarded in favor of the winner). Hits bump the
+        refcount instead of creating. Raises ``RuntimeError`` at capacity,
+        like :meth:`put`.
+        """
+        now = time.monotonic()
+        with self._lock:
+            self._sweep_locked(now)
+            pooled = self._shared.get(fingerprint)
+            if pooled is not None and pooled in self._sessions:
+                self._shared_refs[pooled] = self._shared_refs.get(pooled, 0) + 1
+                self._last_seen[pooled] = now
+                _stats.count("sessions.shared_hits")
+                return pooled, False
+            if len(self._sessions) >= self._max:
+                msg = f"session store is full ({self._max}); retry after an existing session goes idle"
+                raise RuntimeError(msg)
+        session = factory()
+        with self._lock:
+            winner = self._shared.get(fingerprint)
+            if winner is not None and winner in self._sessions:
+                self._shared_refs[winner] = self._shared_refs.get(winner, 0) + 1
+                self._last_seen[winner] = time.monotonic()
+                _stats.count("sessions.shared_hits")
+                return winner, False
+            if len(self._sessions) >= self._max:
+                msg = f"session store is full ({self._max}); retry after an existing session goes idle"
+                raise RuntimeError(msg)
+            session_id = uuid.uuid4().hex
+            self._sessions[session_id] = session
+            self._last_seen[session_id] = time.monotonic()
+            self._shared[fingerprint] = session_id
+            self._shared_refs[session_id] = 1
+            _stats.count("sessions.created")
+            _stats.count("sessions.shared_misses")
+            _stats.set_gauge("sessions.active", len(self._sessions))
+            _stats.max_gauge("sessions.active_max", len(self._sessions))
+            _stats.set_gauge("sessions.shared", len(self._shared_refs))
+            return session_id, True
+
+    def release_shared(self, session_id: str) -> bool:
+        """Drop one pooled reference. The session itself idles out by TTL."""
+        with self._lock:
+            refs = self._shared_refs.get(session_id, 0)
+            if refs <= 0:
+                return False
+            if refs == 1:
+                del self._shared_refs[session_id]
+                for fingerprint, pooled in list(self._shared.items()):
+                    if pooled == session_id:
+                        del self._shared[fingerprint]
+            else:
+                self._shared_refs[session_id] = refs - 1
+            _stats.set_gauge("sessions.shared", len(self._shared_refs))
+            return True
 
     def get(self, session_id: str) -> Any | None:
         """Return a live session and mark it used, or ``None`` if unknown.
@@ -379,6 +473,7 @@ class SessionStore:
                 "sessions": len(self._sessions),
                 "max_sessions": self._max,
                 "ttl_seconds": self._ttl,
+                "shared": len(self._shared_refs),
             }
         if self._db_path is not None:
             try:
@@ -398,6 +493,8 @@ class SessionStore:
             for sid in ids:
                 self._discard_locked(sid, reason="clear")
             count = len(ids)
+            self._shared.clear()
+            self._shared_refs.clear()
         # Rows for ids never loaded into this process (pre-restart creates).
         self._log(_session_log.delete_all_records)
         return count
