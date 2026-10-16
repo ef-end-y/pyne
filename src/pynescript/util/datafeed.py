@@ -250,6 +250,53 @@ class CCXTProDataFeed(DataFeed):
 
         return self._exchange
 
+    async def supports_for_symbols(self) -> bool:
+        """True when the venue implements ``watchOHLCVForSymbols`` (fan-in)."""
+        try:
+            exchange = await self._get_exchange()
+        except Exception:  # noqa: BLE001
+            return False
+        has = getattr(exchange, "has", None)
+        if isinstance(has, dict):
+            return bool(has.get("watchOHLCVForSymbols"))
+        return hasattr(exchange, "watchOHLCVForSymbols")
+
+    async def watch_ohlcv_for_symbols(
+        self,
+        symbols: list[tuple[str, str]],
+    ) -> AsyncIterator[tuple[str, str, list[Any]]]:
+        """Fan-in stream: ``(symbol, timeframe, candles)`` per update.
+
+        Raises :class:`DataFeedError` when the venue has no
+        ``watchOHLCVForSymbols`` — callers fall back to per-series watches.
+        """
+        exchange = await self._get_exchange()
+        impl = getattr(exchange, "watchOHLCVForSymbols", None)
+        if impl is None:
+            msg = f"{self._exchange_name} has no watchOHLCVForSymbols"
+            raise DataFeedError(msg)
+        _stats.count("datafeed.streams", dim="ohlcv_for_symbols")
+        while True:
+            try:
+                grouped = await impl([[s, tf] for s, tf in symbols])
+                if isinstance(grouped, dict):
+                    for sym, per_tf in grouped.items():
+                        if isinstance(per_tf, dict):
+                            for tf, candles in per_tf.items():
+                                if candles:
+                                    yield (sym, tf, candles)
+                        elif per_tf:
+                            yield (sym, "", per_tf)
+                elif grouped:
+                    for sym, tf in symbols:
+                        yield (sym, tf, grouped)
+            except Exception as e:  # noqa: BLE001
+                if "closed" in str(e).lower() or "connection" in str(e).lower():
+                    await asyncio.sleep(1)
+                    continue
+                msg = f"watch_ohlcv_for_symbols error: {e}"
+                raise DataFeedError(msg) from e
+
     async def watch_ohlcv(
         self,
         symbol: str,
@@ -533,9 +580,7 @@ class MockDataFeed(DataFeed):
             "low": float(self.price) * 0.99,
         }
 
-    def fetch_latest_ohlcv(
-        self, symbol: str | None = None, timeframe: str = "1m", limit: int = 5
-    ) -> list[list[Any]]:
+    def fetch_latest_ohlcv(self, symbol: str | None = None, timeframe: str = "1m", limit: int = 5) -> list[list[Any]]:
         _ = symbol or self.symbol
         _ = timeframe
         ts = 1_700_000_000_000
@@ -601,9 +646,7 @@ class CompositeDataFeed(DataFeed):
                     continue
         return {}
 
-    def fetch_latest_ohlcv(
-        self, symbol: str, timeframe: str = "1m", limit: int = 5
-    ) -> list[list[Any]]:
+    def fetch_latest_ohlcv(self, symbol: str, timeframe: str = "1m", limit: int = 5) -> list[list[Any]]:
         for src in (self.primary, self.fallback):
             if src is not None and hasattr(src, "fetch_latest_ohlcv"):
                 try:

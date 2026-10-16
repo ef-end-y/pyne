@@ -348,6 +348,12 @@ else:
         register_watch_route(sock)
     except ImportError:
         pass
+    try:
+        from backend.api.live_ws import register_live_route
+
+        register_live_route(sock)
+    except ImportError:
+        pass
 
 
 def _maybe_host_compile_prewarm(*, force: bool = False) -> dict[str, Any] | None:
@@ -434,6 +440,9 @@ def _parse_run_libraries(raw_libs: Any) -> list[dict[str, Any]]:
 
 
 _RUN_TIMEOUT_DEFAULT = 30.0
+
+# Degraded tail-poll cap (F-14): a dropped socket polls bars, never history.
+TAIL_MAX_BARS = 5000
 # Matches docker/entrypoint-api.sh GUNICORN_TIMEOUT default.
 _RUN_TIMEOUT_MAX_DEFAULT = 120.0
 
@@ -803,6 +812,7 @@ def _health_payload() -> dict[str, Any]:
         # surface agents and AXIS read to learn what this API can do.
         "POST /session": "Create a live session (interpret only; O(1) re-tick)",
         "GET /session/<session_id>": "Live session status (bars, idle, TTL)",
+        "GET /session/<session_id>/tail": "Bars after a cursor (degraded WS fallback)",
         "POST /session/<session_id>/tick": "Re-tick the forming bar — O(1)",
         "POST /session/<session_id>/append": "Append closed bars — O(delta)",
         "DELETE /session/<session_id>": "Release a session (else idle TTL)",
@@ -837,6 +847,7 @@ def _health_payload() -> dict[str, Any]:
         endpoints["POST /cron/run"] = "Tick hosted scripts (bar-close)"
     if sock is not None:
         endpoints["WS /ws/run"] = "Run Pine Script over WebSocket (prefer WSS when available)"
+        endpoints["WS /ws/live"] = "Engine-owned subscriptions: subscribe → status → full → delta → close"
         endpoints["WS /datafeed/watch"] = "CCXT Pro OHLCV stream (AXIS ccxt-ws)"
     endpoints["GET /datafeed/ohlcv"] = "CCXT historical OHLCV (AXIS ccxt-rest)"
     endpoints["GET /datafeed/markets"] = "CCXT markets for an exchange"
@@ -863,6 +874,7 @@ def _health_payload() -> dict[str, Any]:
             "live_modes": ["every-tick", "bar-close"],
             "data_session": True,
             "session_delta": True,
+            "live_stream": True,
         },
         "compile": _compile_health_section(),
         "endpoints": endpoints,
@@ -1380,6 +1392,55 @@ def session_status_route(session_id: str):
             }
         ), 404
     return jsonify({"status": "success", **described}), 200
+
+
+@app.route("/session/<session_id>/tail", methods=["GET"])
+def session_tail_route(session_id: str):
+    """Degraded live fallback (F-14): bars after a client cursor.
+
+    Query: ``since_count`` — bars the client already holds. Answers
+    ``{status, count, closed_upto, tail}`` with at most ``TAIL_MAX_BARS`` bars
+    so a dropped socket degrades to polling the same shapes the WS pushes.
+    ``closed_upto`` is null for sessions without a series binding (the client
+    cannot treat the tip as closed without an interval).
+    """
+    from flask import request as flask_request
+
+    from backend.datastore import live as live_mod
+
+    try:
+        since_count = max(0, int(flask_request.args.get("since_count", "0")))
+    except (TypeError, ValueError):
+        since_count = 0
+    session = SESSIONS.get(session_id)
+    if session is None:
+        return jsonify(
+            {
+                "status": "error",
+                "code": "NO_SESSION",
+                "message": f"Unknown session {session_id!r}.",
+            }
+        ), 404
+    bars = getattr(session, "_ohlcv_data", None) or []
+    count = len(bars)
+    tail = bars[max(0, min(since_count, count)) :][:TAIL_MAX_BARS]
+    closed_upto = None
+    binding = live_mod.binding_of(session)
+    if binding is not None:
+        try:
+            import time as _time
+
+            now_s = int(_time.time())
+            interval_s = int(binding.key.interval_seconds)
+            upto = 0
+            for bar in bars:
+                t = int(bar["time"])
+                if t + interval_s <= now_s and t > upto:
+                    upto = t
+            closed_upto = upto
+        except (KeyError, TypeError, ValueError):
+            closed_upto = None
+    return jsonify({"status": "success", "count": count, "closed_upto": closed_upto, "tail": tail}), 200
 
 
 @app.route("/session/<session_id>/tick", methods=["POST"])

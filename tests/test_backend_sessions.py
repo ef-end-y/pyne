@@ -376,3 +376,31 @@ def test_advertised_session_routes_are_actually_routable(client):
         for m in sorted(r.methods - {"HEAD", "OPTIONS"})
     }
     assert advertised == registered, f"advertised={sorted(advertised)} registered={sorted(registered)}"
+
+
+class TestSessionTail:
+    def test_tail_serves_bars_after_cursor(self, client):
+        sid = client.post("/session", json={"script": SCRIPT, "data": _bars(10)}).get_json()["session_id"]
+        res = client.get(f"/session/{sid}/tail?since_count=7")
+        body = res.get_json()
+        assert res.status_code == 200
+        assert body["status"] == "success"
+        assert body["count"] == 10
+        assert len(body["tail"]) == 3
+        assert body["tail"][0]["time"] == _bars(10)[7]["time"]
+
+    def test_tail_defaults_to_full_window(self, client):
+        sid = client.post("/session", json={"script": SCRIPT, "data": _bars(5)}).get_json()["session_id"]
+        body = client.get(f"/session/{sid}/tail").get_json()
+        assert body["count"] == 5
+        assert len(body["tail"]) == 5
+
+    def test_tail_unknown_session_is_gone(self, client):
+        res = client.get("/session/deadbeef/tail?since_count=0")
+        assert res.status_code == 404
+        assert res.get_json()["code"] == "NO_SESSION"
+
+    def test_tail_closed_upto_null_without_binding(self, client):
+        sid = client.post("/session", json={"script": SCRIPT, "data": _bars(5)}).get_json()["session_id"]
+        body = client.get(f"/session/{sid}/tail?since_count=0").get_json()
+        assert body["closed_upto"] is None

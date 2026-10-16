@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-15T18:34:04Z
+  at: 2026-10-16T18:29:55Z
 sources:
   - id: tree
     resource: "tests"
@@ -24,7 +24,7 @@ okf_lock: generated
 * `test_alerts.py` — TestAlerts
 * `test_backend.py` — TestAuth, TestBacktest, TestBacktestService, TestChartRenderer, TestGitOAuth, TestHealth, TestOptimizeEndpoint, TestPreview, TestRun, api_key, client
 * `test_backend_runner.py` — TestRunnerCron, TestRunnerDisabled, TestRunnerRegistry, client, off_client
-* `test_backend_sessions.py` — TestSessionRoutes, TestSessionStore, client, test_advertised_session_routes_are_actually_routable, test_health_advertises_every_session_route
+* `test_backend_sessions.py` — TestSessionRoutes, TestSessionStore, TestSessionTail, client, test_advertised_session_routes_are_actually_routable, test_health_advertises_every_session_route
 * `test_backend_window.py` — TestApplyWindow, TestNormalizeWindow, TestSizeReduction
 * `test_bgcolor_plotshape_export.py` — test_bgcolor_export_kind_and_color_series, test_drawing_registry_merge_visual_series_wrapper, test_materialize_bgcolor_default_titles_from_drawings, test_materialize_plotshape_from_compile_drawings, test_plot_meta_kind_plot_compat, test_plotchar_export, test_plotshape_export_bool_series_and_style, test_titled_bgcolor_compile_matches_interpret, test_uniquify_series_title_matches_runtime
 * `test_builtins.py` — TestChartPointFunctions, TestIntegratedPhase5Features, TestLoggingFunctions, TestPhase5EdgeCases, TestPolylineFunctions, TestTickerFunctions
@@ -53,6 +53,7 @@ okf_lock: generated
 * `test_error_handling.py` — TestBodyTypeErrorFailClosed, TestCamarillaPlotLinewidth, TestColorNewKwargsDispatch, TestRequestSoftFailPreserved, TestRuntimeErrorClassification, TestStrategyDeclarationFailClosed, TestTypeErrorHelper
 * `test_evaluator.py` — test_bid_ask_default_na_when_host_omits_quotes, test_bid_ask_host_supplied_quotes_win, test_callee_body_typeerror_fail_closed, test_defs_locked_skips_top_level_indicator_after_first_visit, test_eval_arg_plan_reuses_empty_kwargs_and_scratch, test_evaluator_abs, test_evaluator_array_abs, test_evaluator_array_avg, test_evaluator_array_binary_search, test_evaluator_array_binary_search_leftmost, test_evaluator_array_binary_search_rightmost, test_evaluator_array_concat
 * `test_expr_parity_r8.py` — TestElementwiseSoftConcat, TestPeriodOrNone, TestRuntimeIfBlock, TestRuntimePeriodOrNone, TestRuntimeSoftConcatAndNaArith, TestRuntimeSwitchNa, TestRuntimeUtilityBare, TestSwitchCaseMatchHelper
+* `test_feed_manager.py` — test_apply_feed_candles_advances_session_without_walk, test_dispatch_fans_out_and_isolates_failures, test_fan_in_used_when_supported, test_normalize_candles_sorts_dedups_and_converts, test_per_series_fallback_without_fan_in, test_split_key
 * `test_first_party_ta_goldens.py` — bars, make_ohlcv, series_allclose, test_atr_wilder_dual_host, test_fixture_files_shipped, test_inline_atr_compile_object_mode_ok, test_keltner_dual_host, test_supertrend_dual_host, test_supertrend_dual_host_factor_period, test_supertrend_formula_after_atr_warmup, test_supertrend_interpret_compile_inc_numba
 * `test_for_loop_syntax.py` — test_comma_chained_for_structure, test_orderbook_style_typed_for, test_series_typed_for_iterator, test_switch_default_only_arm, test_switch_multi_value_arm, test_typed_for_in_iterator, test_typed_for_to_iterator
 * `test_free_limits.py` — client, test_free_data_source_allowlist, test_free_slot_and_rate_noop_when_limits_off, test_free_tier_limits_disabled_by_default, test_free_tier_limits_opt_in_truthy, test_health_reports_free_tier_limits_flag, test_json_key_store_is_hash_only, test_json_key_store_migrates_legacy_raw_keys, test_json_key_store_skips_orphaned_sha256_records, test_run_batch_rejects_ssrf_webhook, test_run_rejects_external_data_source, test_run_rejects_ssrf_webhook
@@ -64,6 +65,9 @@ okf_lock: generated
 * `test_lexer_corpus_fixes.py` — test_bare_name_equal_is_assign_not_reassign, test_bitwise_ops_shift_and_or, test_blank_lines_between_arrow_and_indented_method_body, test_bracket_wrap_any_indent_parity_with_parens, test_c_style_block_comment, test_color_literal_still_parses_after_hash_comment_rule, test_hash_line_comment_not_color, test_inline_block_comment, test_markdown_backticks_ignored, test_multiline_ternary_after_question_with_trailing_spaces, test_multiline_triple_quoted_string_roundtrip, test_multiline_type_new_nested_map_new
 * `test_library_export_import.py` — TestExportConstParse, TestLibraryExportConstRuntime, TestLibraryExportTypeAndEnum, TestLibraryImportRuntime, TestRuntimeGitPublishLibraries
 * `test_linter.py` — TestPineLinter, TestRetiredRules
+* `test_live_ensure.py` — test_bad_key_rejected, test_resume_unknown_is_gone, test_script_kind_creates_bound_session, test_script_without_script_rejected, test_series_kind_ready_without_session
+* `test_live_push.py` — FakeWs, test_feed_batch_emits_delta_to_socket, test_push_hub_routes_and_drops_dead_sockets, test_series_push_emits_bars_delta_and_close, test_serve_loop_subscribe_over_fake_socket
+* `test_live_ws.py` — test_bad_auth_token_rejected, test_canonical_key_normalizes_casing, test_frame_builders_carry_seq_and_watermark, test_handshake_key_prefers_bearer_then_query, test_history_bars_clamped, test_next_seq_is_monotonic_per_subscription, test_repair_unavailable_but_retryable, test_resubscribe_same_id_is_idempotent, test_resume_replies_snapshot_and_live, test_resume_unknown_is_gone, test_series_subscribe_carries_bars_not_plots, test_subscribe_ready_emits_ready_calculating_full_live
 * `test_lsp_features.py` — TestBuiltinMetadata, TestCapabilities, TestCompletionHandler, TestCompletionList, TestConvertToV6, TestDefinitionHandler, TestDocumentSymbolsHandler, TestFormattingHandler, TestHoverHandler, TestReferencesHandler, TestSemanticTokensHandler
 * `test_lsp_http.py` — client, test_lsp_completion_ta, test_lsp_convert_requires_source, test_lsp_convert_v4_to_v6, test_lsp_diagnostics_ok, test_lsp_diagnostics_syntax_error, test_lsp_hover_plot
 * `test_map_collections.py` — TestMapBasics, TestMapCopy, TestMapDifferentKeyTypes, TestMapDifferentValueTypes, TestMapEdgeCases, TestMapPutAll, TestMapQueryMethods
