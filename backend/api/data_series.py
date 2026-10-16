@@ -27,7 +27,10 @@ provider the datafeed gateway uses. ``/data/session*`` routes are registered in
 
 from __future__ import annotations
 
+import dataclasses
 import logging
+import threading
+import time
 
 from collections.abc import Callable
 from typing import Any
@@ -65,6 +68,117 @@ TICK_OVERLAP_BARS = 2
 TICK_MAX_BARS = 2500
 SOURCE_FETCH = "ccxt-fetch"
 SOURCE_TICK = "ccxt-tick"
+
+# Short-lived reuse of the upstream tick walk, per series. AXIS ticks one
+# session per script instance (chart + N indicators) against the same series
+# within seconds of each other; without reuse each tick pays its own CCXT walk
+# for identical candles — and on the single gunicorn worker those walks also
+# serialize behind each other. Two mechanisms, both covering-only and safe:
+#
+# - cross-session time reuse: a fresh walk fetched for another session is
+#   reused when it covers the requested window. The *same* session always
+#   refetches, so forming-bar re-ticks observe every revision. A reused walk
+#   may lag the newest seconds by the reuse window; the next cycle refreshes.
+# - singleflight: concurrent ticks for one series share the in-flight walk
+#   instead of stacking identical CCXT round trips.
+#
+# Truncated walks (hit ``max_bars``) never reach the newest bar, so they are
+# neither cached nor shared. History-affecting routes (``/series/fetch``)
+# never use this.
+TICK_WALK_REUSE_S = 5.0
+_WALK_CACHE_MAX = 512
+
+
+@dataclasses.dataclass
+class _CachedWalk:
+    fetched_at: float
+    since_ms: int
+    candles: list[dict[str, float | int]]
+    owner_id: int | None
+
+
+@dataclasses.dataclass
+class _Flight:
+    since_ms: int
+    event: threading.Event
+    candles: list[dict[str, float | int]] | None = None
+    complete: bool = False
+
+
+_walk_cache: dict[str, _CachedWalk] = {}
+_flights: dict[str, _Flight] = {}
+_walk_lock = threading.Lock()
+
+
+def _filter_walk(candles: list[dict[str, float | int]], since_ms: int) -> list[dict[str, float | int]]:
+    return [c for c in candles if int(c["time"]) * 1000 >= since_ms]
+
+
+def _cached_walk(  # noqa: PLR0913 — provider, key, window, budget + owner
+    provider: Any,
+    key: SeriesKey,
+    *,
+    since_ms: int,
+    now_ms: int,
+    max_bars: int | None,
+    owner_id: int | None = None,
+) -> list[dict[str, float | int]]:
+    """Walk the upstream, sharing fresh walks for the same series when covering.
+
+    Extra older candles in a shared walk are harmless: ``sync_session`` filters
+    by each session's own tail.
+    """
+    now_mono = time.monotonic()
+    with _walk_lock:
+        hit = _walk_cache.get(key.text)
+        if (
+            hit is not None
+            and now_mono - hit.fetched_at < TICK_WALK_REUSE_S
+            and hit.since_ms <= since_ms
+            and hit.owner_id != owner_id
+        ):
+            return _filter_walk(hit.candles, since_ms)
+        flight = _flights.get(key.text)
+        if flight is not None and flight.since_ms <= since_ms:
+            waiter = True
+        else:
+            flight = _Flight(since_ms=since_ms, event=threading.Event())
+            _flights[key.text] = flight
+            waiter = False
+    if waiter and flight is not None:
+        if flight.event.wait(timeout=60.0) and flight.candles is not None and flight.complete:
+            return _filter_walk(flight.candles, since_ms)
+        # Timed out, or the owner failed / truncated: pay our own walk rather
+        # than fail because a sibling tick did. (Unregistered: never nest.)
+        return _collect_or_raise(provider, key, since_ms=since_ms, now_ms=now_ms, max_bars=max_bars)
+    try:
+        candles = _collect_or_raise(provider, key, since_ms=since_ms, now_ms=now_ms, max_bars=max_bars)
+    except Exception:
+        with _walk_lock:
+            flight.event.set()
+            if _flights.get(key.text) is flight:
+                del _flights[key.text]
+        raise
+    complete = max_bars is None or len(candles) < max_bars
+    with _walk_lock:
+        if complete:
+            if len(_walk_cache) >= _WALK_CACHE_MAX:
+                oldest = min(_walk_cache, key=lambda k: _walk_cache[k].fetched_at)
+                del _walk_cache[oldest]
+            _walk_cache[key.text] = _CachedWalk(now_mono, since_ms, candles, owner_id)
+        flight.candles = candles
+        flight.complete = complete
+        flight.event.set()
+        if _flights.get(key.text) is flight:
+            del _flights[key.text]
+    return candles
+
+
+# Test helper — clear the tick walk cache and in-flight registry between cases.
+def _reset_walk_cache_for_tests() -> None:
+    with _walk_lock:
+        _walk_cache.clear()
+        _flights.clear()
 
 
 def data_error_response(exc: DataError) -> tuple[Any, int]:
@@ -199,8 +313,17 @@ def sync_data_session(
         since_ms = max(0, anchor - TICK_OVERLAP_BARS * interval_s) * 1000
 
     # Upstream walk outside the per-series lock. Bounded by the clamp above,
-    # by max_bars and by MAX_FETCH_PAGES in collect_candles.
-    candles = _collect_or_raise(provider, key, since_ms=since_ms, now_ms=now_s * 1000, max_bars=TICK_MAX_BARS)
+    # by max_bars and by MAX_FETCH_PAGES in collect_candles. Shared per series
+    # for a few seconds (see _cached_walk): concurrent session ticks for the
+    # same series reuse one walk instead of paying N identical CCXT round trips.
+    candles = _cached_walk(
+        provider,
+        key,
+        since_ms=since_ms,
+        now_ms=now_s * 1000,
+        max_bars=TICK_MAX_BARS,
+        owner_id=id(session),
+    )
 
     # The local commit (liveness, persist, session advance) is fast, so it
     # serializes concurrent ticks under the per-series lock — but the network

@@ -87,8 +87,10 @@ def _isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("PYNE_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(series_store, "now_seconds", lambda: NOW + 10)
     SESSIONS.clear()
+    data_api._reset_walk_cache_for_tests()
     yield
     SESSIONS.clear()
+    data_api._reset_walk_cache_for_tests()
 
 
 @pytest.fixture
@@ -446,6 +448,67 @@ class TestDataSessionTick:
         _tick(client, bound, exchange="binance", symbol="BTC/USDT")
         body = _tick(client, bound, exchange="binance", symbol="BTC/USDT").get_json()
         assert (body["appended"], body["forming"], body["unchanged"]) == (0, True, True)
+
+    def test_concurrent_session_ticks_share_one_upstream_walk(self, client, exchange, bound):
+        """Chart + indicator sessions tick the same series back to back.
+
+        Without walk reuse each tick pays its own CCXT walk for identical
+        candles (and serializes behind the others on one worker) — the
+        per-tick seconds observed from AXIS live mode.
+        """
+        exchange.candles = [candle(NOW - 2 * MIN), candle(NOW - MIN), candle(NOW)]
+        other = _create(client, 50).get_json()["session_id"]
+        assert _tick(client, bound, exchange="binance", symbol="BTC/USDT").status_code == 200
+        assert _tick(client, other, exchange="binance", symbol="BTC/USDT").status_code == 200
+        assert len(exchange.calls) == 1
+
+    def test_concurrent_ticks_singleflight_one_walk(self, client, exchange):
+        """Two sessions ticking at the same instant share the in-flight walk."""
+        client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(58, last=NOW - 3 * MIN)})
+        exchange.candles = [candle(NOW - 2 * MIN), candle(NOW - MIN), candle(NOW)]
+        sids = [_create(client, 50).get_json()["session_id"] for _ in range(2)]
+        pairs = [(SESSIONS.get(sid), data_live.binding_of(SESSIONS.get(sid))) for sid in sids]
+        assert all(s is not None and b is not None for s, b in pairs)
+        entered = threading.Event()
+        release = threading.Event()
+        original = exchange.fetch_ohlcv
+
+        def blocking_fetch(*args, **kwargs):
+            entered.set()
+            assert release.wait(timeout=10)
+            return original(*args, **kwargs)
+
+        exchange.fetch_ohlcv = blocking_fetch
+        errors: list[Exception] = []
+
+        def run(session, binding):
+            try:
+                data_api.sync_data_session(session, binding)
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=run, args=p) for p in pairs]
+        for t in threads:
+            t.start()
+        try:
+            assert entered.wait(timeout=10)
+            release.set()
+            for t in threads:
+                t.join(timeout=10)
+        finally:
+            release.set()
+        assert not any(t.is_alive() for t in threads)
+        assert not errors
+        assert len(exchange.calls) == 1
+
+    def test_walk_cache_expires_for_new_data(self, client, exchange, bound, monkeypatch):
+        exchange.candles = [candle(NOW - 2 * MIN), candle(NOW - MIN), candle(NOW)]
+        assert _tick(client, bound, exchange="binance", symbol="BTC/USDT").status_code == 200
+        assert len(exchange.calls) == 1
+        # After the reuse window the next tick walks upstream again.
+        monkeypatch.setattr(data_api, "TICK_WALK_REUSE_S", 0.0)
+        assert _tick(client, bound, exchange="binance", symbol="BTC/USDT").status_code == 200
+        assert len(exchange.calls) == 2
 
     def test_changed_forming_bar_is_retickd_in_place(self, client, exchange, bound):
         exchange.candles = [candle(NOW - MIN), candle(NOW)]

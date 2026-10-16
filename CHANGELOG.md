@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- **Concurrent session ticks share one upstream walk (singleflight + cross-session reuse).** AXIS ticks one data session per script instance (chart + N indicators) against the same series within seconds of each other; each tick paid its own CCXT walk for identical candles, and on the single gunicorn worker those walks serialized behind each other — the per-tick seconds observed from AXIS live mode. `sync_data_session` now shares the walk per series for `TICK_WALK_REUSE_S` (5 s): concurrent ticks join the in-flight walk instead of stacking round trips, and sequential ticks for *other* sessions reuse a fresh covering walk. The ticking session itself always refetches so forming-bar re-ticks observe every revision; truncated walks (hit `TICK_MAX_BARS`) are never shared. Covered by `test_concurrent_session_ticks_share_one_upstream_walk`, `test_concurrent_ticks_singleflight_one_walk` and `test_walk_cache_expires_for_new_data` in `tests/test_data_series.py`.
+
 ### Security
 
 - **Redis key store is no longer reachable from the internet; auth is opt-in.** The compose `redis` service published `6379` on all interfaces without a password; automated scanners wiped the key store (`FLUSHALL`) and staged cron miner payloads (`backup1-4`). The service now publishes no ports (internal network only — the API is unaffected) and accepts `--requirepass` via `REDIS_PASSWORD`, with `REDIS_URL=redis://:PASSWORD@redis:6379/0` as the matching API side (explicit `REDIS_URL` still wins for Memorystore). Generate with `openssl rand -hex 32`.
