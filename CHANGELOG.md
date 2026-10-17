@@ -1,3 +1,13 @@
+## [0.6.12] — 2026-10-17
+
+### Fixed
+
+- **`WS /ws/run`, `WS /ws/live` and `/datafeed/watch` now actually exchange frames (F-30 correction).** The 0.6.11 default — `geventwebsocket.gunicorn.workers.GeventWebSocketWorker` — completed the HTTP→WS upgrade but then corrupted every frame: that worker's handler upgrades the socket itself (`wsgi.websocket`) while flask-sock ignores `wsgi.websocket` and hijacks `gunicorn.socket` to re-frame the same socket. The app raised immediately after the `101`, so Werkzeug's HTTP error response was written where a WS frame belonged. Clients saw it as a protocol error after a *successful* handshake — Chromium reports `Invalid frame header`, and a strict client aborts with `1002 reserved bits must be 0` (the first byte of `HTTP/...`, `0x48`, sets RSV1). AXIS therefore kept silently falling back to REST, exactly as before F-30, with reconnect churn on top. The default worker class is now `gthread`, which exposes `gunicorn.socket` — the transport flask-sock documents for Gunicorn — and `GUNICORN_THREADS` defaults to 100 (one thread per live WS connection). Verified against the built image: a `gthread` container answers the handshake with a well-formed frame (`{"type":"error","code":"UNAUTHORIZED",…}`) while the gevent-websocket container produces the reserved-bits protocol error. `sync` still cannot upgrade, and `gevent-websocket` remains installed but is no longer selectable by default.
+
+### Changed
+
+- **The worker-class contract in the docs/comments was inverted and is now accurate.** `docker/entrypoint-api.sh` and `backend/requirements.txt` claimed "sync/gthread workers cannot upgrade" and that gevent + gevent-websocket made the flask-sock routes "upgrade natively". Neither holds: gthread is the flask-sock-compatible worker, and the gevent-websocket worker is the one that breaks framing. (Comment-only elsewhere; no behaviour change for an explicit `GUNICORN_WORKER_CLASS` override.)
+
 ## [Unreleased]
 
 ## [0.6.11] — 2026-10-17

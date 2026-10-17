@@ -6,11 +6,17 @@
 # Worker/thread/timeout counts are env-tunable without rebuilding the image.
 #
 # WebSocket (/ws/run, /ws/live, /datafeed/watch) note:
-#   The default worker speaks WebSocket (gevent + gevent-websocket), so all
-#   flask-sock routes upgrade natively. Sync/gthread workers canNOT upgrade —
-#   AXIS then falls back to REST. Select via GUNICORN_WORKER_CLASS
-#   (e.g. "gthread" for the old behavior; --threads only applies there).
-#   Raise GUNICORN_TIMEOUT for large compile-mode runs (default 120s).
+#   These routes use flask-sock, which performs the HTTP→WS upgrade itself by
+#   hijacking gunicorn's transport (`gunicorn.socket`). The default is
+#   therefore `gthread --threads N` — one thread per live WS connection.
+#   Do NOT select geventwebsocket.gunicorn.workers.GeventWebSocketWorker:
+#   that worker's handler upgrades the socket on its own (`wsgi.websocket`)
+#   and then flask-sock hijacks the same socket and re-frames it, so clients
+#   receive an HTTP error body where a WS frame belongs — *after* a successful
+#   101 (Chromium reports "Invalid frame header"). `sync` cannot upgrade at
+#   all, so AXIS falls back to REST there. Select via GUNICORN_WORKER_CLASS;
+#   --threads only applies to gthread. Raise GUNICORN_TIMEOUT for large
+#   compile-mode runs (default 120s).
 #
 # Warm compile (H2):
 #   PYNE_COMPILE_DISK_CACHE=1 (default) + PYNE_COMPILE_CACHE_DIR=/data/compile-cache
@@ -23,14 +29,15 @@ PORT="${PORT:-8080}"
 # Default 1, deliberately. The live-session routes (/session, …/append, …/tick)
 # keep parsed script + series + TA state in process so a re-tick is O(1); that
 # state is per-process, so a second worker would 404 on ~half of all follow-up
-# calls. gevent still handles thousands of concurrent connections per worker.
+# calls. gthread still serves many concurrent connections (threads below).
 # Override only if session state has moved to an external store.
 WORKERS="${GUNICORN_WORKERS:-1}"
-THREADS="${GUNICORN_THREADS:-4}"
-# WS-capable default: gevent handles thousands of concurrent connections
-# (REST + long-lived sockets) in the single worker the live sessions require.
-# "sync" or "gthread" restores the pre-WS behavior (--threads applies there).
-WORKER_CLASS="${GUNICORN_WORKER_CLASS:-geventwebsocket.gunicorn.workers.GeventWebSocketWorker}"
+# One thread per live WS connection (plus REST), so the default is generous.
+THREADS="${GUNICORN_THREADS:-100}"
+# flask-sock owns the upgrade: gthread exposes gunicorn.socket, which
+# simple-websocket hijacks. See the WebSocket note at the top of this file
+# for why the gevent-websocket worker must not be used here.
+WORKER_CLASS="${GUNICORN_WORKER_CLASS:-gthread}"
 WORKER_CONNECTIONS="${GUNICORN_WORKER_CONNECTIONS:-1000}"
 TIMEOUT="${GUNICORN_TIMEOUT:-120}"
 BIND="${GUNICORN_BIND:-0.0.0.0:${PORT}}"
@@ -50,7 +57,8 @@ fi
 
 case "${WORKER_CLASS}" in
   sync|gthread)
-    # Thread workers: no WebSocket upgrades (AXIS falls back to REST).
+    # gthread upgrades through flask-sock (gunicorn.socket); sync cannot
+    # upgrade, so AXIS falls back to REST on that worker class.
     exec gunicorn \
       --bind "${BIND}" \
       --workers "${WORKERS}" \
@@ -64,7 +72,9 @@ case "${WORKER_CLASS}" in
       backend.app:app
     ;;
   *)
-    # Async (gevent) workers: --threads does not apply; size greenlets instead.
+    # Async workers (gevent/eventlet): --threads does not apply. flask-sock
+    # needs a plain socket to hijack — the gevent-websocket worker breaks
+    # framing (see the WebSocket note at the top of this file).
     # Long-lived WS connections delay --max-requests recycling gracefully.
     exec gunicorn \
       --bind "${BIND}" \
