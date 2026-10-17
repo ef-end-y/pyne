@@ -36,9 +36,13 @@ from __future__ import annotations
 import hashlib
 import itertools
 import json
+import logging
 import threading
 import time
 from typing import Any
+
+
+logger = logging.getLogger(__name__)
 
 
 PROTOCOL_VERSION = "live/1"
@@ -182,7 +186,7 @@ class LiveConnection:
         try:
             attacher(key_text, engine_session_id, client_id, self._registry, self._hub)
         except Exception:  # noqa: BLE001 — attach failure degrades to snapshot-only
-            pass
+            logger.warning("feed attach failed for %s (%s)", key_text, client_id, exc_info=True)
 
     def _ensure(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         ensurer = self._ensurer
@@ -360,7 +364,13 @@ class LiveConnection:
             bars = self._store_window(series_key, int(ensured.get("count") or 0))
             full_kwargs = {"bars": bars}
         self._registry.attach(client_id, ensured.get("session_id"), bars)
-        self._attach(series_key, ensured.get("session_id"), client_id)
+        # A series-kind subscription has no engine session (its bars serve
+        # straight from the store), but it still needs the feed: without an
+        # attach nothing keeps the store moving, and the client only ever got
+        # the frozen ensure-time snapshot. The registry's own live id is the
+        # listener key — stable per client + series, so a re-subscribe replaces
+        # the listener in place instead of stacking one per frame.
+        self._attach(series_key, ensured.get("session_id") or session["session_id"], client_id)
         key = parse_live_key(series_key)
         watermark = closed_upto(bars, int(key.interval_seconds) if key else 60, int(time.time()))
         seq = self._registry.next_seq(client_id)

@@ -16,6 +16,8 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import pytest  # noqa: E402
+
 from backend.api.live_push import HUB, PushHub, attach_feed  # noqa: E402
 from backend.api.live_ws import LiveConnection, LiveRegistry  # noqa: E402
 
@@ -221,3 +223,159 @@ def test_series_push_emits_bars_delta_and_close():
     assert frames[1]["type"] == "close"
     assert frames[1]["payload"]["time"] == 1_700_000_000 + 11 * 60
     assert record["count"] == 12
+
+
+# ---------------------------------------------------------------------------
+# Store sink: the feed keeps the stored series advancing.
+#
+# The engine's live feed advances *sessions* walk-free; nothing on that path
+# touched the series store, so a kind:series subscription (and every reader of
+# GET /data/series) reported `newest` frozen at the bar history was ensured at
+# — lagging the venue forever while the feed streamed the very bars that would
+# have healed it.
+# ---------------------------------------------------------------------------
+
+
+def _provide(bars):
+    from backend.datastore import series as series_store
+
+    key = series_store.make_key("binance", "BTC/USDT", "1m", "spot")
+    series_store.get_store().provide(key, bars, source="test")
+    return key
+
+
+@pytest.fixture()
+def _isolated(tmp_path, monkeypatch):
+    monkeypatch.setenv("PYNE_DATA_DIR", str(tmp_path / "data"))
+    import backend.api.live_push as push_mod
+
+    push_mod._persisted.clear()
+    yield
+    push_mod._persisted.clear()
+
+
+def test_persist_feed_bars_advances_stored_bounds(_isolated):
+    import backend.api.live_push as push_mod
+
+    from backend.datastore import series as series_store
+
+    key = _provide(_bars10())
+    before = series_store.get_store().status(key)
+    assert before["newest"] == _bars10()[-1]["time"]
+
+    newer = dict(_bars10()[-1], time=before["newest"] + 60, close=1.5)
+    assert push_mod.persist_feed_bars(KEY_TEXT, [newer], now_ms=1_000) is True
+
+    after = series_store.get_store().status(key)
+    assert after["newest"] == newer["time"]
+    assert after["count"] == before["count"] + 1
+
+
+def test_persist_feed_bars_updates_the_forming_row_and_throttles_reticks(_isolated, monkeypatch):
+    import backend.api.live_push as push_mod
+
+    from backend.datastore import series as series_store
+
+    key = _provide(_bars10())
+    provides: list = []
+    real_get_store = series_store.get_store
+
+    class _CountingStore:
+        def __init__(self, store):
+            self._store = store
+
+        def provide(self, *args, **kwargs):
+            provides.append((args, kwargs))
+            return self._store.provide(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._store, name)
+
+    monkeypatch.setattr(series_store, "get_store", lambda: _CountingStore(real_get_store()))
+
+    tip = dict(_bars10()[-1], close=2.0)
+    assert push_mod.persist_feed_bars(KEY_TEXT, [tip], now_ms=1_000) is True
+    # The forming row lands upserted, so the next snapshot serves the live tip.
+    assert series_store.get_store().window(key, 1)[0]["close"] == 2.0
+    # Re-ticks of the same slot inside the window are dropped …
+    assert push_mod.persist_feed_bars(KEY_TEXT, [tip], now_ms=1_500) is False
+    # … and written once the window elapses, or as soon as a new slot opens.
+    assert push_mod.persist_feed_bars(KEY_TEXT, [tip], now_ms=1_000 + push_mod.PERSIST_MIN_MS) is True
+    newer = dict(tip, time=tip["time"] + 60)
+    assert push_mod.persist_feed_bars(KEY_TEXT, [newer], now_ms=1_001 + push_mod.PERSIST_MIN_MS) is True
+    assert len(provides) == 3
+
+
+def test_persist_feed_bars_fails_soft(_isolated, monkeypatch):
+    import backend.api.live_push as push_mod
+
+    from backend.datastore import series as series_store
+
+    _provide(_bars10())
+    assert push_mod.persist_feed_bars("junk", [_bars10()[-1]]) is False
+    assert push_mod.persist_feed_bars(KEY_TEXT, []) is False
+    assert push_mod.persist_feed_bars(KEY_TEXT, ["junk"]) is False
+
+    message = "db down"
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(series_store, "get_store", _boom)
+    assert push_mod.persist_feed_bars(KEY_TEXT, [_bars10()[-1]], now_ms=9_000) is False
+
+
+def test_series_subscription_attaches_feed_and_persists(_isolated, monkeypatch):
+    """A kind:series subscribe now binds its feed: deltas reach the socket and
+    the stored bounds move, instead of a frozen ensure-time snapshot."""
+    import backend.api.feed_manager as feed_mod
+
+    from backend.datastore import series as series_store
+
+    key = _provide(_bars10())
+    registry = LiveRegistry()
+    attached: list = []
+
+    class _FakeManager:
+        def subscribe(self, key_text, session_id, callback):
+            attached.append((key_text, session_id))
+            self.cb = callback
+            return True
+
+        def unsubscribe(self, key_text, session_id):
+            return None
+
+    manager = _FakeManager()
+    monkeypatch.setattr(feed_mod, "get_feed_manager", lambda: manager)
+
+    sent: list[dict] = []
+    hub = PushHub()
+    hub.register("sub-s", sent.append)
+
+    conn = LiveConnection(
+        registry=registry,
+        authed=True,
+        ensurer=lambda _kind, _key, _history, **_kw: {
+            "outcome": "ready",
+            "session_id": None,
+            "count": 10,
+            "newest": 1,
+        },
+        store_window=lambda _k, _l: _bars10(),
+        hub=hub,
+        sender=sent.append,
+    )
+    replies = conn.handle_dict({"type": "subscribe", "id": "sub-s", "payload": {"kind": "series", "meta": META}})
+    assert [r["type"] for r in replies] == ["status", "full", "status"]
+
+    # The listener id is the subscription's own live id — stable per client +
+    # series, so a re-subscribe replaces the listener instead of stacking one.
+    assert attached == [(KEY_TEXT, "live_1")]
+
+    batch = [dict(_bars10()[-1], time=_bars10()[-1]["time"] + 60, close=1.5)]
+    manager.cb(batch)
+
+    assert sent[0]["type"] == "delta"
+    assert sent[0]["payload"]["bars"] == batch
+    assert sent[0]["payload"]["base_index"] == 10
+    assert series_store.get_store().status(key)["newest"] == batch[0]["time"]

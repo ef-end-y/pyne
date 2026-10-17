@@ -8,7 +8,10 @@ nothing would ever push again. :func:`attach_feed` binds the engine session to
 its series feed: each candle batch advances the session walk-free
 (:func:`apply_feed_candles`) and emits ``delta`` + ``close`` frames with
 per-subscription ``seq`` through the :class:`PushHub` sender the socket loop
-registers.
+registers. Every batch is also upserted into the series store
+(:func:`persist_feed_bars`), because a ``kind: series`` subscription — and any
+reader of ``GET /data/series`` — renders the stored bounds, which no other path
+on this plane advances.
 
 Unchanged ticks emit nothing (the client already holds the tip). Sessions
 released or TTL-evicted detach themselves on the next batch.
@@ -16,8 +19,13 @@ released or TTL-evicted detach themselves on the next batch.
 
 from __future__ import annotations
 
+import logging
 import threading
+import time
 from typing import Any, Callable
+
+
+logger = logging.getLogger(__name__)
 
 
 class PushHub:
@@ -48,6 +56,59 @@ class PushHub:
 
 
 HUB = PushHub()
+
+
+# A kline stream pushes the forming bar on every trade, so a feed batch can
+# arrive several times a second. The stored bounds only need to track the slot
+# boundary promptly and the forming bar's values approximately (clients get the
+# sub-second tip from the ``delta`` frames this module emits).
+PERSIST_MIN_MS = 2_000
+
+_persist_lock = threading.Lock()
+_persisted: dict[str, tuple[int, int]] = {}
+
+
+def persist_feed_bars(key_text: str, candles: list[dict[str, Any]], now_ms: int | None = None) -> bool:
+    """Upsert a feed batch into the series store so its bounds keep moving.
+
+    Nothing on the feed path otherwise touches the store: the engine's own feed
+    advances *sessions* walk-free (:func:`apply_feed_candles`), while the store
+    only moves when a REST walk runs (``fetch_history``) or a data session
+    ticks (``sync_data_session``). A series served straight from the store — a
+    ``kind: series`` subscription, and every reader of ``GET /data/series`` —
+    therefore reported ``newest`` frozen at the bar history was ensured at,
+    lagging the venue forever while the very feed streaming those bars on
+    socket deltas could not heal it.
+
+    Batches are upserted by time, so the venue's re-ticks of the forming bar
+    converge and a batch another path already persisted is a no-op. Throttled
+    per series (:data:`PERSIST_MIN_MS`): a new slot always persists, a re-tick
+    of the current one at most once per window. Never raises — a store failure
+    must not take the feed down with it.
+    """
+    from backend.api.data_series import SOURCE_TICK
+    from backend.api.live_ensure import parse_live_key
+    from backend.datastore import series as series_store
+
+    batch = [c for c in candles if isinstance(c, dict) and "time" in c]
+    if not batch:
+        return False
+    key = parse_live_key(key_text)
+    if key is None:
+        return False
+    newest = max(int(c["time"]) for c in batch)
+    at = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    with _persist_lock:
+        seen_at, seen_newest = _persisted.get(key_text, (0, 0))
+        if newest <= seen_newest and at - seen_at < PERSIST_MIN_MS:
+            return False
+        _persisted[key_text] = (at, max(newest, seen_newest))
+    try:
+        series_store.get_store().provide(key, batch, source=SOURCE_TICK)
+    except Exception:  # noqa: BLE001 — a store write must not kill the feed
+        logger.warning("feed persist failed for %s", key_text, exc_info=True)
+        return False
+    return True
 
 
 def _journal_recorder(session_id: str) -> Callable[[str, Any], None]:
@@ -189,9 +250,14 @@ def attach_feed(
     manager = get_feed_manager()
 
     def on_candles(candles: list[dict[str, Any]]) -> None:
+        now_s = now_seconds()
+        # A series subscription renders straight from the store, and so does
+        # every /data/series reader: keep the stored bounds advancing with the
+        # feed instead of leaving them at the ensure-time snapshot.
+        persist_feed_bars(key_text, candles)
         record = registry.get(client_id)
         if record is not None and str(record.get("kind") or "") == "series":
-            for frame in emit_series_push(client_id, registry, record, candles, now_seconds()):
+            for frame in emit_series_push(client_id, registry, record, candles, now_s):
                 hub.send(client_id, frame)
             return
         session = SESSIONS.get(engine_session_id)
@@ -202,12 +268,12 @@ def attach_feed(
         binding = data_live.binding_of(session)
         if binding is None:
             return
-        now_s = now_seconds()
         try:
             outcome = apply_feed_candles(
                 session, binding, candles, now_s, on_apply=_journal_recorder(engine_session_id)
             )
         except Exception:  # noqa: BLE001
+            logger.warning("feed apply failed for %s", key_text, exc_info=True)
             return
         for frame in emit_push_frames(
             client_id, registry, session, engine_session_id, binding, outcome, candles, now_s
