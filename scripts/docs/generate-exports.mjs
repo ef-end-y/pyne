@@ -197,7 +197,9 @@ const PRODUCTS = {
     docsRoot: AXIS_DOCS_ROOT,
     publicBase: "/axis/docs",
     publicUrl: `${SITE}/axis/docs`,
-    repoPath: path.relative(ROOT, AXIS_DOCS_ROOT).replace(/\\/g, "/") || "docs/axis",
+    // Repo-relative docs path inside the axis repository (for GitHub tree
+    // links and llm.txt FILE: prefixes) — not a filesystem path.
+    repoPath: "docs",
     // AXIS docs live in the axis repo — emitting the pyne URL here sent readers
     // and agents to the wrong repository.
     repoUrl: "https://github.com/hoox-sh/axis",
@@ -659,6 +661,22 @@ html, body {
   padding: 0;
   border-radius: 0;
 }
+/* Mermaid diagrams — rendered SVG plates */
+.content pre.mermaid {
+  background: #f7f5f2;
+  border: 1px solid #e5e1db;
+  border-left: 3px solid ${accent};
+  padding: 10px 12px;
+  overflow: hidden;
+  page-break-inside: avoid;
+}
+.content pre.mermaid svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+.content p, .content li, .content blockquote { overflow-wrap: anywhere; }
 .content table {
   width: 100%; border-collapse: collapse; font-size: 8.5pt;
   margin: 0.8em 0; page-break-inside: avoid;
@@ -667,6 +685,11 @@ html, body {
   border: 1px solid #ddd; padding: 5px 7px; text-align: left; vertical-align: top;
 }
 .content th { background: #f0f2f4; font-weight: 600; }
+/* Never let media overflow the printable column — Chromium shrink-fits
+   (scales the whole document) when any block exceeds the page width. */
+.content img, .content svg, .content video {
+  max-width: 100%; height: auto;
+}
 .content a { color: ${accentDark(accent)}; text-decoration: none; }
 .content hr { border: none; border-top: 1px solid #e5e5e5; margin: 1.4em 0; }
 `
@@ -685,6 +708,139 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
+}
+
+// ── Mermaid diagrams (printed as SVG plates) ────────────────────────────────
+//
+// ```mermaid fences arrive from `marked` as `<pre><code class="language-mermaid">`.
+// When a `mermaid.min.js` bundle (and, optionally, the landing repo's palette
+// helpers) is available, fences are converted to `pre.mermaid`, rendered in the
+// browser before printing, and captured as vector graphics in the PDF.
+
+const MERMAID_FONT = '"IBM Plex Sans", "Segoe UI", sans-serif'
+let MERMAID_ENABLED = false
+let MERMAID_HELPERS = null
+
+/** Locate a mermaid.min.js bundle: local deps, sibling landing repo, or env. */
+function findMermaidJs() {
+  const candidates = [
+    process.env.MERMAID_JS,
+    path.join(ROOT, "node_modules/mermaid/dist/mermaid.min.js"),
+    path.join(ROOT, "../hoox-landing-page/node_modules/mermaid/dist/mermaid.min.js"),
+    "/home/jango/Git/hoox-landing-page/node_modules/mermaid/dist/mermaid.min.js",
+    path.join(ROOT, "../axis/node_modules/mermaid/dist/mermaid.min.js"),
+  ].filter(Boolean)
+  for (const p of candidates) {
+    if (existsSync(p)) return p
+  }
+  return null
+}
+
+/** Optional palette helpers — shared with the landing-page export pipeline. */
+async function loadMermaidTheme() {
+  const candidates = [
+    process.env.MERMAID_THEME_MODULE,
+    path.join(ROOT, "../hoox-landing-page/lib/mermaid-theme.mjs"),
+    "/home/jango/Git/hoox-landing-page/lib/mermaid-theme.mjs",
+  ].filter(Boolean)
+  for (const p of candidates) {
+    if (!existsSync(p)) continue
+    try {
+      return await import(pathToFileURL(p).href)
+    } catch {
+      /* fall through to default theme */
+    }
+  }
+  return null
+}
+
+function decodeHtmlEntities(s) {
+  return String(s)
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+}
+
+/** Turn marked's language-mermaid fences into mermaid.js run targets. */
+function injectMermaidBlocks(html, accent) {
+  if (!MERMAID_ENABLED) return html
+  const palette = MERMAID_HELPERS?.pdfMermaidPalette?.(accent)
+  return String(html).replace(
+    /<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/gi,
+    (_, code) => {
+      let src = decodeHtmlEntities(code).trim()
+      if (palette && MERMAID_HELPERS?.recolorMermaidSource) {
+        src = MERMAID_HELPERS.recolorMermaidSource(src, palette)
+      }
+      return `<pre class="mermaid">${escapeHtml(src)}</pre>`
+    },
+  )
+}
+
+/**
+ * Insert <wbr> break opportunities inside long unbroken runs in table cells
+ * (paths, URLs, identifiers). This keeps a table's min-content width small so
+ * Chromium's print pipeline never shrink-fits (scales) the whole document —
+ * without introducing mid-word breaks in ordinary short words, which
+ * `overflow-wrap: anywhere` would cause when auto-layout squeezes columns.
+ * Only visible text is touched; element markup and attributes stay intact.
+ */
+function hardenTableCells(html) {
+  const MIN_RUN = 26
+  const CHUNK = 24
+  const breakText = (text) =>
+    String(text)
+      .replace(/([^\s<>&;]{26,})/g, (run) =>
+        run.replace(/([/._\-:,?=&@+])/g, "$1<wbr>"),
+      )
+      .replace(/([^\s<>&;]{26,})/g, (run) =>
+        run.replace(new RegExp(`(.{${CHUNK}})`, "g"), "$1<wbr>"),
+      )
+  const breakCell = (inner) =>
+    String(inner)
+      .split(/(<[^>]*>)/g)
+      .map((part) => (part && part[0] === "<" ? part : breakText(part)))
+      .join("")
+  return String(html).replace(
+    /(<t[dh]\b[^>]*>)([\s\S]*?)(<\/t[dh]>)/gi,
+    (_m, open, inner, close) => open + breakCell(inner) + close,
+  )
+}
+
+/** Boot script injected before </body> when mermaid rendering is enabled. */
+function mermaidBootMarkup(accent) {
+  if (!MERMAID_ENABLED) return ""
+  const options = {
+    startOnLoad: false,
+    securityLevel: "loose",
+    fontFamily: MERMAID_FONT,
+  }
+  const palette = MERMAID_HELPERS?.pdfMermaidPalette?.(accent)
+  if (palette && MERMAID_HELPERS?.mermaidThemeVariables) {
+    options.theme = "base"
+    options.look = "classic"
+    options.themeVariables = MERMAID_HELPERS.mermaidThemeVariables(palette, {
+      fontFamily: MERMAID_FONT,
+      darkMode: false,
+    })
+  } else {
+    options.theme = "neutral"
+  }
+  return `<script src="./mermaid.min.js"></script>
+<script>
+  (function () {
+    function done() { document.documentElement.dataset.mermaid = "ready"; }
+    if (!window.mermaid) { done(); return; }
+    try {
+      mermaid.initialize(${JSON.stringify(options)});
+      var run = mermaid.run({ querySelector: "pre.mermaid" });
+      if (run && typeof run.then === "function") run.then(done, done);
+      else done();
+    } catch (e) { done(); }
+  })();
+</script>`
 }
 
 function wrapHtml({ product, title, subtitle, audience, chapters, dateIso }) {
@@ -756,6 +912,7 @@ function wrapHtml({ product, title, subtitle, audience, chapters, dateIso }) {
   </section>
 
   ${body}
+  ${mermaidBootMarkup(product.accent)}
 </body>
 </html>`
 }
@@ -850,6 +1007,21 @@ async function htmlToPdf(htmlPath, pdfPath) {
     })
     // Give webfonts a beat
     await new Promise((r) => setTimeout(r, 500))
+
+    // Wait for mermaid diagrams to finish rendering (no-op when none exist)
+    try {
+      await page.waitForFunction(
+        () => {
+          const blocks = document.querySelectorAll("pre.mermaid")
+          if (blocks.length === 0) return true
+          if (document.documentElement.dataset.mermaid === "ready") return true
+          return Array.from(blocks).every((el) => el.querySelector("svg"))
+        },
+        { timeout: 45_000 },
+      )
+    } catch {
+      console.warn("  mermaid wait timed out — printing anyway")
+    }
 
     const contentMargins = {
       top: "16mm",
@@ -956,7 +1128,12 @@ async function buildManual(product, manual, docsJson) {
     }
     const raw = await readFile(file, "utf8")
     const { title, description, body } = mdxToMarkdown(raw, product)
-    const html = marked.parse(body, { gfm: true, breaks: false })
+    const html = hardenTableCells(
+      injectMermaidBlocks(
+        marked.parse(body, { gfm: true, breaks: false }),
+        product.accent,
+      ),
+    )
     const parts = key
       .replace(/^docs\//, "")
       .split("/")
@@ -1106,7 +1283,7 @@ async function buildAgentFiles(product, docsJson) {
   const chunks = [
     `${product.name} CONSOLIDATED DOCUMENTATION — LLM CONTEXT PACK`,
     `Generated: ${dateIso}`,
-    `Source: ${product.repoPath}`,
+    `Source: ${(product.repoUrl ?? REPO).replace(/^https?:\/\//, "")}/${product.repoPath}`,
     `Public: ${product.publicUrl}`,
     `Repository: ${product.repoUrl ?? REPO}`,
     ``,
@@ -1150,6 +1327,17 @@ async function main() {
   await mkdir(OUT_DIR, { recursive: true })
   await mkdir(CACHE, { recursive: true })
 
+  // Mermaid: render ```mermaid fences as SVG in the PDFs when a bundle exists.
+  const mermaidJs = findMermaidJs()
+  if (mermaidJs) {
+    MERMAID_HELPERS = await loadMermaidTheme()
+    MERMAID_ENABLED = true
+    await copyFile(mermaidJs, path.join(CACHE, "mermaid.min.js"))
+    console.log(`  mermaid bundle: ${mermaidJs}`)
+  } else {
+    console.warn("  mermaid.min.js not found — diagrams print as source text")
+  }
+
   const manifest = {
     generatedAt: new Date().toISOString(),
     site: SITE,
@@ -1185,8 +1373,8 @@ async function main() {
       docs: product.publicUrl,
       marketing: product.marketing,
       pdfs,
-      llm: `/${product.repoPath}/llm.txt`,
-      llms: `/${product.repoPath}/llms.txt`,
+      llm: `${product.publicBase}/llm.txt`,
+      llms: `${product.publicBase}/llms.txt`,
       exportLlm: `/exports/${productId}-llm.txt`,
       exportLlms: `/exports/${productId}-llms.txt`,
       agents,

@@ -1,6 +1,6 @@
 PYNE CONSOLIDATED DOCUMENTATION — LLM CONTEXT PACK
-Generated: 2026-10-14
-Source: docs/pyne
+Generated: 2026-10-17
+Source: github.com/hoox-sh/pyne/docs/pyne
 Public: https://hoox.sh/pyne/docs
 Repository: https://github.com/hoox-sh/pyne
 
@@ -1449,10 +1449,13 @@ Events and drawings are filtered to the window when they carry bar_index. Object
 Capacity, TTL, and the single-worker constraint
 | Property | Value |
 | --- | --- |
-| Idle TTL | 900 s (15 min), swept at most every 30 s |
-| Capacity | 64 concurrent sessions |
+| Idle TTL | 900 s (15 min), swept at most every 30 s (SESSION_TTL_SECONDS) |
+| Capacity | 64 concurrent sessions (SESSION_MAX_SESSIONS) |
 | Full | 503 SESSIONS_FULL — back off rather than retrying into a growing pile |
 Sessions live in a process-local SessionStore. They only resolve on the single gunicorn worker, which is why GUNICORN_WORKERS defaults to 1. /health still advertises the routes (they are part of the capability surface), and features.live_modes reports ["every-tick", "bar-close"] for AXIS capability detection.
+Restart recovery
+A worker recycle (--max-requests) or a container restart empties the process — but every mutation is also journaled to SQLite (backend/datastore/session_log.py, sessions + session_bars tables under PYNE_SESSION_DB, default /data/sessions.db when /data exists, memory-only otherwise). On the first access after a restart the store rebuilds the session with one create_session over the logged bars and registers it under its original id, so ticks continue O(1) after that single re-evaluation. Journal writes are best-effort: an unreachable db degrades to memory-only instead of failing the request.
+The rebuild is a rebase, not a byte-identical resume: indicators evaluate identically over the same bars, but stateful constructs that never roll back (strategy fills) may differ exactly as if the client had created a new session over the same window. GET /session/ on a journaled-but-unloaded session answers from the row without rebuilding, and lists persisted (journaled rows) next to sessions (live objects) in sessions stats blocks.
 For live data sourced from an exchange rather than the request body, see Data plane — POST /data/session binds a session to a stored series and advances it from the engine feed.
 Failure modes
 | Symptom | Cause | Fix |
@@ -1460,6 +1463,7 @@ Failure modes
 | MODE_UNSUPPORTED | mode: "compile" on /session | Drop mode; sessions are interpret only |
 | SESSIONS_FULL | 64 live sessions held | DELETE finished ones, or wait for TTL |
 | 404 on tick/append | Session swept (idle TTL) | Create a new session |
+| First tick after restart is slow | Session rebuilt (one full re-evaluation) | Expected; subsequent ticks are O(1) again |
 | 409 on /data/session//tick | Session bound to a different series | Release and rebind |
 | 503 CCXT_UNAVAILABLE | ccxt not installed on the host | pip install 'pyne[datafeed]' |
 Internals (map)
@@ -1467,6 +1471,7 @@ Internals (map)
 | --- | --- |
 | backend/app.py | /session routes, window application |
 | backend/middleware/sessions.py | TTL + capacity SessionStore (process-local) |
+| backend/datastore/session_log.py | SQLite session journal (restart recovery) |
 | backend/middleware/window.py | apply_window — serialization-boundary trim |
 | backend/datastore/live.py | Session stored-series binding + sync |
 | src/pynescript/runtime/host.py | InterpretSession, append_bars, update_last_bar` |
@@ -4236,14 +4241,6 @@ Build modes (approx. wall time)
 | --onefile | 10–30 min | Self-extracting single binary |
 | CI 8 cores | 5–15 min | High parallelism |
 Expected layout
-`text
-dist/
-├── lsp/
-│ └── pynescript-lsp # onefile (path may vary by script)
-├── vsix/
-│ └── pynescript-lsp.vsix # optional bundle
-└── pynescript-lsp # ci_build final move target (script-dependent)
-`
 Also see scripts/build/README.md.
 Internals
 Key Nuitka flags (compile.py)
@@ -6759,7 +6756,7 @@ Ensure the editor’s command matches the venv. For Neovim, confirm filetypes in
 pyne data AAPL --provider mock
 `
 12. Version / parity confusion
-PYNE is independent of TradingView. Behavioral gaps are expected for edge builtins, broker emulators, and UI-only calls. Use compatibility and implementation status.
+PYNE is independent of TradingView. Behavioral gaps are expected for edge builtins, broker emulators, and UI-only calls. Use compatibility.
 Failure modes (quick matrix)
 | Symptom | Layer | First check |
 | --- | --- | --- |
@@ -7284,7 +7281,7 @@ Run pyne-lsp (alias pynescript-lsp) — not a Click subcommand of pyne.
 Why is pynescript lsp missing?
 The registered entry point is the separate script pynescript-lsp. Some docs historically mentioned a lsp subcommand; trust pyproject.toml [project.scripts] and main.py for ground truth.
 Which Pine versions are supported?
-v6 is the recommended surface (declare //@version=6); v5 remains fully supported. See implementation status, missing features, and pine v6 surface.
+v6 is the recommended surface (declare //@version=6); v5 remains fully supported. See missing features and pine v6 surface.
 Does PYNE support the once keyword?
 Yes, as of hoox-pyne 0.4.4 (TradingView August 2026). once [cond] runs its block the first time the condition is true on a closed bar. It is not an expression — you cannot assign its result. See Expressions & statements.
 Is this affiliated with TradingView?
@@ -7323,7 +7320,7 @@ See Interpret compile parity. Pro API POST /run defaults to mode=auto. The libra
 What file extension should I use?
 Prefer .pyne for HOOX / PYNE stack sources. .pine / .pinev5 / .pinev6 remain supported by the VS Code extension and parsers.
 How complete is real-world script runtime?
-PYNE aims for practical fidelity on first-party fixtures and unit tests. It does not claim 100% TradingView platform parity (chart host, proprietary data, every edge-case builtin). See Compatibility and implementation status. Third-party script corpora are not shipped in this repository.
+PYNE aims for practical fidelity on first-party fixtures and unit tests. It does not claim 100% TradingView platform parity (chart host, proprietary data, every edge-case builtin). See Compatibility. Third-party script corpora are not shipped in this repository.
 How do I self-host the API?
 Install backend requirements, set API_KEY_STORE / ALLOWED_ORIGINS / optional ADMIN_TOKEN, run python -m backend.app or make run. See configuration and Pro API usage.
 What is AXIS?
@@ -7688,7 +7685,7 @@ pip install "hoox-pyne[lsp]"
 pyne --version
 aliases: pynescript / pynescript-lsp
 `
-The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyodide (via AXIS), and Cloudflare workers. Round-trip fidelity (parse → unparse) and interpretcompile plot parity are first-class invariants — see compatibility and implementation status. Local open-corpus set01–04 (2026-08-09): parse 99.96%, Runtime interpret 100% excl. intentional demos (set01 249/249). The repository does not ship third-party script corpora.
+The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyodide (via AXIS), and Cloudflare workers. Round-trip fidelity (parse → unparse) and interpretcompile plot parity are first-class invariants — see compatibility. Local open-corpus set01–04 (2026-08-09): parse 99.96%, Runtime interpret 100% excl. intentional demos (set01 249/249). The repository does not ship third-party script corpora.
 TypeScript consumers import PyneTS (@hoox-sh/pynets) — same public names; Python remains the oracle.
 What's new
 hoox-pyne 0.6.9 (2026-10-13) — three additions aimed at live and large workloads:
@@ -9985,12 +9982,12 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Compatibility guarantee"
-description: "Grouped map of what PYNE implements for Pine Script v5/v6 — working, partial, residual, and by-design out of scope. hoox-pyne 0.6.8."
+description: "Grouped map of what PYNE implements for Pine Script v5/v6 — working, partial, residual, and by-design out of scope. hoox-pyne 0.6.12."
 ---
 Compatibility guarantee
 Abstract
-PYNE implements Pine Script v5/v6 language core as an inspectable pipeline: parse → AST → bar-loop evaluate. The map below is the product-facing compatibility surface for hoox-pyne 0.6.8. It is not TradingView platform identity (chart host, proprietary data, editor-only UI) and not bit-identical results vs the hosted platform on every script or bar.
-Name-level dispatch lives in Pine v6 surface (docs/pine_v6_full_surface_inventory.md). Gaps: Missing features. Checkmarks: Implementation status.
+PYNE implements Pine Script v5/v6 language core as an inspectable pipeline: parse → AST → bar-loop evaluate. The map below is the product-facing compatibility surface for hoox-pyne 0.6.12. It is not TradingView platform identity (chart host, proprietary data, editor-only UI) and not bit-identical results vs the hosted platform on every script or bar.
+Name-level dispatch lives in Pine v6 surface (docs/pine_v6_full_surface_inventory.md). Gaps: Missing features.
 Conceptual model
 Legend
 | Mark | Meaning |
@@ -10155,7 +10152,6 @@ Failure modes
 | import unresolved | Library not in libraries= / registry |
 | /run 400 UNKNOWN_FIELDS | Extra key not in RUN_SCHEMA` |
 See also
-Implementation status
 Missing features
 Pine v6 surface inventory
 Numerical validation
@@ -10199,7 +10195,7 @@ Published versions (static snapshot; refresh manually with bun run docs:versions
 Checkouts (this repo vs sisters)
 | Checkout | What you open |
 | --- | --- |
-| hoox-sh/pyne | PYNE SoT (hoox-pyne 0.6.8) |
+| hoox-sh/pyne | PYNE SoT (hoox-pyne 0.6.12) |
 | hoox-sh/pynets | Standalone @hoox-sh/pynets 0.5.0 (JS compile + stream) |
 | hoox-sh/pyne-worker | Python edge /run |
 | hoox-sh/pyne-agent-worker | NL authoring (not in this tree) |
@@ -10249,111 +10245,6 @@ pyne-agent-worker
 Modes
 Evaluate contract
 AXIS
-HOOX
-HOOX live trading
-AXIS and HOOX
----
-FILE: docs/pyne/reference/implementation-status.mdx
-Copyright (C) 2024-2026 jango_blockchained
-This file is part of pynescript.
-pynescript is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-pynescript is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-You should have received a copy of the GNU Affero General Public License
-along with pynescript. If not, see .
-SPDX-License-Identifier: AGPL-3.0-or-later
----
-title: "Implementation status"
-description: "Checklist-style status of Pine Script series, strategy, builtins, and language constructs in PYNE."
----
-Implementation status
-Abstract
-This annex summarizes the feature matrix maintained in docs/pinescript_implementation_status.md: a large // inventory of series variables, strategy fields, and related surfaces. It is the human-readable twin of the full surface inventory (dispatch-oriented, auto-countable).
-Status here is implementation judgment, not marketing completion percentage.
-Conceptual model
-Interface surface
-Legend
-| Mark | Meaning |
-| --- | --- |
-| | Implemented and usable |
-| | Partial / stub / mock |
-| | Missing |
-| | By design out of scope |
-| | Editor/platform N/A |
-Component rollup
-| Component | Posture |
-| --- | --- |
-| Parser (ANTLR4) | Complete for v5/v6 core + multiline / export / once / square-bracket wrap |
-| Evaluator | Full bar-loop with var/varip, reassignment |
-| Builtins | 224+ historical count; 941 callables on live dispatch inventory (2026-10-08) |
-| TA | 150+ ta. keys in inventory |
-| Collections | array / matrix / map complete on exercised surface |
-| Strategy events | StrategyEvent, parity corpus, risk enforcement |
-| Drawing / plot | Registry effects; AXIS is external |
-| Linter | Present (pynescript lint) |
-| Data providers | Mock, Yahoo, AlphaVantage, CCXT + datafeed wiring |
-| LSP | Diagnostics, completion, hover, format, symbols, defs/refs, … |
-| PyneTS | @hoox-sh/pynets 0.5.0 on npm — interpret + JS compile. Python Runtime remains the oracle — see PyneTS |
-| pyne-worker | Python Cloudflare evaluate host (sister repo) — docs |
-| pyne-agent-worker | NL authoring host (sister repo) — docs |
-| Numba compile path | MVP + object-mode fallback with residual recovery (UDT/switch/matrix/drawing/round/color) |
-| Incremental ta. | Default on (PYNE_TA_INCREMENTAL); volume obv/wad/cmf/klinger, nvi/pvi, aroon/dpo/donchian/kst |
-| Interpret bar-loop | Dispatch inlining + unused derived-series skip |
-| Drawing export | Cell style/width/height/tooltip, force_overlay, merged_cells on both hosts; box/label text extras; polyline curve/fill; text.align_ constants |
-Series & context (illustrative families)
-Fully listed in the source doc; representative groups:
-Price: open/high/low/close/volume/hl2/ohlc4/…
-Time: year…second, time_close, timenow, …
-Barstate / chart: bar_index, barstate., last_bar_
-syminfo. ticker, mintick, session, fundamentals fields tracked as
-session. / dividends. / earnings. context fields tracked as
-strategy. position, trades, equity, risk, OCA, commission constants
-Notable capabilities
-Full strategy event emission with bar context
-strategy.long / strategy.short constants
-var / varip + := reassignment
-Parity fixtures for cross-implementation validation
-Risk helpers and performance series expansion
-table.new columns-then-rows (Pine order); table.cell reference positional order
-Disk IR cache meta v18
-Internals
-| Path | Role |
-| --- | --- |
-| docs/pinescript_implementation_status.md | Exhaustive checklist (do not paste wholesale here) |
-| docs/pine_v6_full_surface_inventory.md | Dispatch-centric inventory |
-| src/pynescript/ast/evaluator/builtins/ | Per-namespace implementations |
-| scripts/regenerate_inventory_summary.py | Inventory regeneration aid |
-Invariants & edge cases
-1. Checklist lag: a may trail a commit by a day; prefer tests when shipping.
-2. Context fields may be defaults rather than live exchange feeds.
-3. Partial stubs still appear callable — inventory marks when docstrings/heuristics say mock.
-4. Namespace counts ≠ quality. Many drawing setters are thin mutators; TA is heavier.
-Worked examples
-Smoke a strategy series field
-``python
-from pynescript.ast.helper import parse
-evaluate via Runtime / library API with OHLCV — see runtime docs
-`
-Regenerate inventory summary
-`bash
-python scripts/regenerate_inventory_summary.py
-``
-Failure modes
-| Symptom | Action |
-| --- | --- |
-| Doc says , runtime AttributeError | File bug; fix dispatcher or demote status |
-| Partial mock accepted silently | Assert data_feed wiring in tests |
-| Status doc conflicts inventory | Prefer live dispatch + tests |
-See also
-Compatibility map — grouped working / partial / residual / out of scope
-Missing features
-Pine v6 surface
-Roadmap
 ---
 FILE: docs/pyne/reference/missing-features.mdx
 Copyright (C) 2024-2026 jango_blockchained
@@ -10371,15 +10262,15 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Missing features"
-description: "Known gaps and closed Pine Script v6 items — what is implemented, what is partial by design, and what is out of scope."
+description: "Known gaps and closed Pine Script v6 items — what is implemented, what is partial by design, and what is out of scope. hoox-pyne 0.6.12."
 ---
 Missing features
 Abstract
-“Missing” in PYNE is a moving frontier. Core v6 support is ~99%+ for core language, with post-launch TV items closed (multiline strings, library export const, footprint mocks, risk enforcement, matrix LA, compile-mode strategy, drawing GC, bottom-panel table fields, square-bracket wrapping, …) plus open-source corpus parse/Runtime hardening, incremental bar-mode TA, alert engine + L2 webhooks, series caps, warm-compile, pending-fill averaging, timeframe.change (intraday buckets + D/W/M exchange calendar), package Runtime SoT (pynescript.runtime; backend.runtime is a shim), compile object-mode residual recovery (UDF locals, nopython None/unicode, matrix handles, UDT returns, x = switch, drawing copy, int(na), round() extras, import stubs, color type dispatch, nested UDT methods), type-aware intraday risk enforcement on both brokers, intrabar var rollback on realtime ticks, request.security barmerge on HTF resample paths, linter legacy-rule retirements, and drawing export parity (table/box/label/polyline style fields on both hosts). Remaining gaps cluster into optional set0x community-corpus plot parity (P1p official builtins closed), by-design platform differences, and editor-only features.
+"Missing" in PYNE is a moving frontier. Core v6 support is ~99%+ for core language, with post-launch TV items closed (multiline strings, library export const, footprint mocks, risk enforcement, matrix LA, compile-mode strategy, drawing GC, bottom-panel table fields, square-bracket wrapping) plus open-source corpus parse/Runtime hardening, incremental bar-mode TA, alert engine + L2 webhooks, series caps, warm-compile, pending-fill averaging, timeframe.change (intraday buckets + D/W/M exchange calendar), package Runtime SoT (pynescript.runtime; backend.runtime is a shim), compile object-mode residual recovery (UDF locals, nopython None/unicode, matrix handles, UDT returns, x = switch, drawing copy, int(na), round() extras, import stubs, color type dispatch, nested UDT methods), type-aware intraday risk enforcement on both brokers, intrabar var rollback on realtime ticks, request.security barmerge on HTF resample paths, linter legacy-rule retirements, and drawing export parity (table/box/label/polyline style fields on both hosts). 0.6.10-0.6.12: engine-owned live plane (WS /ws/live), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + PYNE_DATA_DIR, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests. Remaining gaps cluster into optional set0x community-corpus plot parity (P1p official builtins closed), by-design platform differences, and editor-only features.
 Authoritative narrative: docs/missing_features.md. Canonical IDs: docs/ROADMAP.md.
 Conceptual model
 Interface surface
-Recently completed (do not re-open as “missing”)
+Recently completed (do not re-open as "missing")
 Summarized — full prose in source doc:
 | Area | Notes |
 | --- | --- |
@@ -10395,8 +10286,8 @@ Summarized — full prose in source doc:
 | Drawing .all, plot registry, *max__count GC | Effects recorded; GC on package + Pro + AXIS |
 | Numba compile + object mode + warm-compile (H2) | Disk IR cache, prewarm API/CLI, deploy defaults |
 | Compile object-mode residuals | UDF locals / free-series, nopython None/timestamp, matrix handles, UDT returns, x = switch, drawing copy, pine_int(na), sanitize chrome, round() extras, import stubs as na, color type dispatch, nested UDT methods |
-| Official matrix LA & predicates | det/inv/eigen/… |
-| 0 missing* vs public TV v6 function reference list (434 symbols) |
+| Official matrix LA and predicates | det/inv/eigen/... |
+| 0 missing* vs public TV v6 function reference list (434 symbols) | |
 | Runtime _pine_defs_locked + append-only current_series | Host hygiene (backend + pyne-worker) |
 | Incremental ta. (MAs, oscillators, bb/kama/stochrsi, volume obv/wad/cmf/klinger/nvi/pvi) | Bar mode; PYNE_TA_INCREMENTAL=0 to disable |
 | Series caps (T1) | PYNE_SERIES_CAP default ON + goldens |
@@ -10418,9 +10309,9 @@ Still incomplete / by design
 | Editor word-wrap / UI-only release notes | N/A |
 | PyneTS full builtin parity (L3) | interpret + JS compile landed in @hoox-sh/pynets 0.5.0; Python remains oracle. Open rows: PyneTS missing features |
 | Bit-identical every recursive smoother vs TV | Numerical bounds, not bits |
-| Dual Runtime host copies (H1) | largely done — package pynescript.runtime SoT + backend. shims + pyne-worker thin wrap. Residual = worker-only extras (logs/profile, CF first-plot), not a forked bar loop |
+| Dual Runtime host copies (H1) | Largely done — package pynescript.runtime SoT + backend. shims + pyne-worker thin wrap. Residual = worker-only extras (logs/profile, CF first-plot), not a forked bar loop |
 | Warm-compile product path (H2) | SLOs / prewarm / deploy IR cache defaults |
-| Runtime residual (C1) | set01–04 Runtime interpret 100% excl. EXPECTED_FAIL; third-party corpus not shipped |
+| Runtime residual (C1) | set01-04 Runtime interpret 100% excl. EXPECTED_FAIL; third-party corpus not shipped |
 | Series cap (T1) | PYNE_SERIES_CAP default ON |
 | Residual TA inc (T2) | R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume obv/wad/cmf/klinger; nvi/pvi; aroon/dpo/donchian/kst |
 | Pending-fill (F2) | R7 interpret + compile goldens |
@@ -10429,10 +10320,10 @@ Still incomplete / by design
 | TV Wilder RMA-ATR / supertrend (F1) | interpret ATR is ta.rma(ta.tr); Supertrend mid±factor·ATR locked. TV ratchet is out of scope |
 | Alert webhooks (L2) | Pro API + pyne-worker; see Alerts |
 Post-v6 launch themes (historical gap list)
-v6 launch items (dynamic requests, strict bool, enums, polylines, log., negative indices, truediv, …) are largely supported or intentionally stubbed where platform-bound.
-2025–2026 monthly TV updates introduced footprint types, active inputs, multiline strings, export const, UDT sort fields — tracked and largely closed.
+v6 launch items (dynamic requests, strict bool, enums, polylines, log., negative indices, truediv, ...) are largely supported or intentionally stubbed where platform-bound.
+2025-2026 monthly TV updates introduced footprint types, active inputs, multiline strings, export const, UDT sort fields — tracked and largely closed.
 Corpus + performance snapshot
-Open-source set01–04 (2477 scripts; measured locally, not shipped in-repo):
+Open-source set01-04 (2477 scripts; measured locally, not shipped in-repo):
 | Metric | Value |
 | --- | --- |
 | Parse + unparse | 99.96% (2476 / 2477) — residual: 1 intentional invalid line-wrap docs demo |
@@ -10455,13 +10346,13 @@ Internals
 | scripts/compare_interp_compile.py | Plot parity harness (P1p) |
 | docs/pine_v6_full_surface_inventory.md | Full name-level inventory |
 | resource/.g4 + builder | Grammar-level feature work |
-| .../technical_submodules/core.py | _sma_inc_update, _macd_inc_update, _atr_inc_update, … |
+| .../technical_submodules/core.py | _sma_inc_update, _macd_inc_update, _atr_inc_update, ... |
 Invariants & edge cases
 1. Closing a syntax gap requires grammar + builder + unparser + tests, not only an evaluator stub.
 2. Mock data can green tests while production feeds differ — declare data source explicitly.
 3. Compile does not fill foreign request.security data — multi-asset plots stay na on compile unless same-symbol simple OHLCV; do not treat invent-as-close as a fix.
 4. Auto Fib needs pivots — without swing structure (or ZigZag library registration), expect structured insufficient-pivot errors, not fib lines.
-5. “0 missing vs reference list” ≠ identical semantics for every edge case.
+5. "0 missing vs reference list" ≠ identical semantics for every edge case.
 6. Perf changes must keep bar-by-bar semantics — no whole-script vectorization; prefer golden tests vs current oracle.
 7. Update this annex when missing_features.md changes major status lines.
 Worked examples
@@ -10491,11 +10382,10 @@ Failure modes
 | Lexer error on triple quotes | Stale generated lexer (should be fixed on main) |
 | Import member missing | Library export registration |
 | Empty footprint rows | Mock seed / data_feed not configured |
-| Risk not blocking entry | Old runtime path; ensure risk kwargs applied |
+| Risk not blocking entry | Old runtime path; ensure risk_kwargs applied |
 | Runtime TIMEOUT on method-heavy scripts | Missing _pine_defs_locked on host |
 | Corpus PARSE_FAIL mid-block | Truncated scrape — not a grammar hole |
 See also
-Implementation status
 Pine v6 surface
 Roadmap
 Compatibility
@@ -10609,7 +10499,6 @@ Failure modes
 See also
 Compatibility
 Runtime technical builtins
-Implementation status
 ---
 FILE: docs/pyne/reference/pine-v6-surface.mdx
 Copyright (C) 2024-2026 jango_blockchained
@@ -10627,7 +10516,7 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Pine v6 surface inventory"
-description: "Summary of the full Pine Script v6 surface inventory — dispatch counts, namespaces, status schema — with pointer to the large source document."
+description: "Summary of the full Pine Script v6 surface inventory — dispatch counts, namespaces, status schema — with pointer to the large source document. hoox-pyne 0.6.12."
 ---
 Pine v6 surface inventory
 Abstract
@@ -10640,15 +10529,15 @@ Interface surface
 Status schema
 | Status | Definition |
 | --- | --- |
-| implemented | Handler/parser path exists and is usable |
-| partial | Mock/stub, incomplete semantics, or metadata-only |
-| missing | Expected on TV v6; not resolving |
-| by design | Intentionally not full TV platform |
+| Implemented | Handler/parser path exists and is usable |
+| Partial | Mock/stub, incomplete semantics, or metadata-only |
+| Missing | Expected on TV v6; not resolving |
+| By design | Intentionally not full TV platform |
 | N/A | Editor/UI-only |
 Each inventory row also carries: Name, Namespace, Kind, Metadata (LSP JSON present?), Source (e.g. dispatch), Notes.
 Summary counts (2026-10-08)
 | Metric | Count |
-| ---: | ---: |
+| --- | ---: |
 | Dispatch builtins (callable) | 941 |
 | Dispatch partial-heuristic (stub/mock docstring) | 10 |
 | Dispatch namespaces | 255 |
@@ -10686,18 +10575,18 @@ Internals
 | scripts/generate_builtin_metadata.py | LSP metadata from live surface |
 | Evaluator _build_builtin_map() | Source of dispatch truth |
 How to use the full file
-1. Open docs/pine_v6_full_surface_inventory.md in the repo or Sphinx/site mirror.
-2. Search by namespace (## ta, strategy, …).
-3. Trust dispatch source rows for “is there a callable?”; read Notes for mock/feed caveats.
+1. Open docs/pine_v6_full_surface_inventory.md in the repo or Sphinx site mirror.
+2. Search by namespace (## ta, strategy, ...).
+3. Trust dispatch source rows for "is there a callable?"; read Notes for mock/feed caveats.
 4. After large builtin PRs, regenerate summary counts before quoting them publicly.
 Invariants & edge cases
-1. Inventory size is a feature — summarization must not drop rows when claiming coverage.
+1. Inventory size is a feature — summarization must not drop partial rows when claiming coverage.
 2. Metadata presence ≠ semantic completeness.
 3. Partial heuristic count (10) is docstring-based — real partials may be higher.
 4. Language constructs (control/export) may be parser-complete without every runtime edge.
 Worked examples
 Quote coverage honestly
-“Against the public Pine v6 function reference (434 symbols), pynescript registered 0 missing dispatch entries as of 2026-10-08; 941 total callables across 255 dispatch namespaces. See docs/pine_v6_full_surface_inventory.md.”
+"Against the public Pine v6 function reference (434 symbols), pynescript registered 0 missing dispatch entries as of 2026-10-08; 941 total callables across 255 dispatch namespaces. See docs/pine_v6_full_surface_inventory.md."
 Programmatic check (sketch)
 ``bash
 regenerate after evaluator changes
@@ -10710,7 +10599,6 @@ Failure modes
 | Citing counts without date | Stale marketing |
 | Equating dispatch hit with TV gold | False precision claims |
 See also
-Implementation status
 Missing features
 Compatibility
 Runtime builtins
@@ -10731,11 +10619,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Roadmap"
-description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed."
+description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed. hoox-pyne 0.6.12."
 ---
 Roadmap
 Abstract
-The roadmap is a living prioritization document, not a contract. Source: docs/ROADMAP.md. Core v6 language/builtins are essentially closed. Product warm-compile (H2), series caps (T1), pending-fill (F2), L2 webhooks, corpus Runtime residual (C1), package Runtime SoT (H1 largely done) and drawing export parity have landed (set01–04 parse 99.96%, Runtime interpret 100% excl. intentional demos). What remains: H1 worker-only extras. P1p official TV builtins are 0 MISMATCH (optional set0x community corpus unmeasured). Incremental TA and Supertrend goldens have landed.
+The roadmap is a living prioritization document, not a contract. Source: docs/ROADMAP.md. Core v6 language/builtins are essentially closed. Product warm-compile (H2), series caps (T1), pending-fill (F2), L2 webhooks, corpus Runtime residual (C1), package Runtime SoT (H1 largely done) and drawing export parity have landed (set01–04 parse 99.96%, Runtime interpret 100% excl. intentional demos). 0.6.10–0.6.12: engine-owned live plane (WS /ws/live), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching, live session persistence (SQLite journal), production profile + PYNE_DATA_DIR, Docker prod on VPS, Redis unpublished + opt-in auth. What remains: H1 worker-only extras. P1p official TV builtins are 0 MISMATCH (optional set0x community corpus unmeasured). Incremental TA and Supertrend goldens have landed.
 Conceptual model
 ``text
 P0 docs honesty → P1 dual-host H1 (package SoT + shims + worker thin wrap)
@@ -10754,7 +10642,7 @@ Status snapshot
 | Strategy events + broker (OCA, commission, risk) | |
 | Numba + object-mode compile | MVP+ (disk IR cache, mode=auto, time_arr, cache recovery; UDT/switch/matrix/drawing/round/color residuals) |
 | Pro API + auth + Docker | (mode default auto; targets api / api-dev / lsp / cli) |
-| PyPI hoox-pyne | live 0.6.8 (pypi.org/project/hoox-pyne); CLIs pyne / pyne-lsp |
+| PyPI hoox-pyne | live 0.6.12 (pypi.org/project/hoox-pyne); CLIs pyne / pyne-lsp |
 | CLI surface (check/format/compile/run/prewarm/…) | + Nuitka binaries + CLI Docker image |
 | Alert engine + L2 webhooks | dual-host export + outbound webhooks |
 | Drawing max__count GC | package + Pro API + AXIS Pyodide |
@@ -10776,6 +10664,10 @@ Status snapshot
 | PyneTS (@hoox-sh/pynets) | standalone TS library 0.5.0 — interpret + JS compile; Python remains oracle |
 | pyne-agent-worker | sister NL authoring host (POST /v1/chat) |
 | Full TV platform identity | out of scope |
+| Live plane (WS /ws/live) | engine-owned subscription plane with delta envelopes |
+| Shared sessions (F-29) | refcount-pooled by content hash; SQLite journal persistence |
+| Gevent WebSocket worker (F-30) | API default worker class |
+| Production profile | PYNE_DATA_DIR pinned; Docker prod on VPS; Redis unpublished + opt-in auth |
 Completed themes (do not re-plan as greenfield)
 Error message / typing hygiene
 %%pinescript Jupyter magic + sample data helpers
@@ -10789,15 +10681,15 @@ Interpret dispatch inlining, unused derived OHLCV skip, incremental volume TA
 Open backlog (IDs stable)
 | ID | Item | Pri | Status |
 | --- | --- | --- | --- |
-| H1 | Dual-host Runtime (package SoT + backend shims + pyne-worker thin wrap ; residual = worker-only extras) | P1 | largely done |
-| H2 | Product warm-compile (SLOs, prewarm API/CLI, IR cache on in deploy) | P1 | |
-| C1 | Corpus set01–04 residual (parse 99.96%; Runtime 100% excl. EXPECTED) | P1 | |
+| H1 | Dual-host Runtime (package SoT + backend shims + pyne-worker thin wrap; residual = worker-only extras) | P1 | largely done |
+| H2 | Product warm-compile (SLOs, prewarm API/CLI, IR cache on in deploy) | P1 | done |
+| C1 | Corpus set01–04 residual (parse 99.96%; Runtime 100% excl. EXPECTED) | P1 | done |
 | P1p | Compile/interpret plot parity residual | P1 | first-party + official TV builtins 0 MISMATCH; optional set0x unmeasured |
 | T1 | Cap current_series to max_bars_back / _SERIES_MAX | P2 | PYNE_SERIES_CAP default ON |
 | T2 | Incremental TA for remaining heavy kernels | P2 | volume, oscillator, and band kernels |
 | F1 | ATR Wilder / TV supertrend re-baseline only with dedicated goldens | P2 | mid±factor·ATR locked; TV ratchet out of scope |
-| F2 | Pending-fill averaging when pyramiding ≤ 0 | P2 | |
-| L1 | v5v6 converter maturity | P3 | open |
+| F2 | Pending-fill averaging when pyramiding ≤ 0 | P2 | done |
+| L1 | v5v6 converter maturity | P3 | done — source-level rewrites both ways (semantic bool/na out of scope) |
 | L2 | Webhook alerts productization | P3 | Pro + pyne-worker |
 | L3 | Legacy TS Worker builtin parity | P3 | sister hoox-sh/pine-worker only — not a product-docs target; new TS work is PyneTS |
 | B1 | Real (non-mock) request. market data | — | by design; foreign-na policy landed |
@@ -10807,11 +10699,12 @@ Priority recommendation
 | --- | --- |
 | Short | H1 worker extras (logs/profile); optional set0x P1p sweep |
 | Medium | Further nested incremental TA where profiled |
-| Long | L1 converter maturity; TypeScript library work is PyneTS (L2 ) |
+| Long | TypeScript library work is PyneTS (L2 done) |
 Landed residual notes
 Plot parity: Always-on smoke in tests/test_interp_compile_parity.py. Full corpus compare: python scripts/compare_interp_compile.py → .cache/interp_compile_parity.json. Flags --ignore-hline-keys / --ignore-fill-keys drop structural residuals.
 Corpus residual (C1): set01–04 parse 99.96% (2476/2477); Runtime interpret 100% excl. EXPECTED_FAIL (2466 OK + 11 intentional demos); set01 249/249. Third-party corpora are not shipped in git.
 Foreign-na: request.security on foreign/complex expressions → na both backends; ChartOHLCVProvider refuses non-chart symbols.
+Converter (L1): Source-level v3→v4→v5→v6 upgrades and v6→v5 downgrades via pynescript.util.pine_convert; exposed as pyne convert --to 5|6 and the pynescript.convertToV6 LSP command/code action. Comments and string literals are never touched; type-dependent bool/na migration stays out of scope.
 Internals
 | Path | Role |
 | --- | --- |
@@ -10825,10 +10718,10 @@ Internals
 | @hoox-sh/pynets | Published 0.5.0 (interpret + JS compile); Python remains oracle |
 Invariants & edge cases
 1. Roadmap dates lag code — always diff against missing_features.md and tests.
-2. Sister repos (pyne-worker, pyne-agent-worker) may absorb “integration” items.
+2. Sister repos (pyne-worker, pyne-agent-worker) may absorb "integration" items.
 3. AXIS is a separate product tree (docs/axis) — chart UX roadmap is not PYNE-core.
-4. Avoid reintroducing deleted backups (builder.py.bak, etc.) as “plan items.”
-5. Do not re-open H1 / H2 / T1 / T2 / F1 / F2 / L2 / C1 as greenfield — they are marked (H1 residual = worker extras only; P1p is corpus tail) in docs/ROADMAP.md.
+4. Avoid reintroducing deleted backups (builder.py.bak, etc.) as "plan items."
+5. Do not re-open H1 / H2 / T1 / T2 / F1 / F2 / L2 / C1 as greenfield — they are marked done (H1 residual = worker extras only; P1p is corpus tail) in docs/ROADMAP.md.
 Worked examples
 Track a roadmap item with a test
 `bash
@@ -10849,12 +10742,11 @@ See PyneTS.
 Failure modes
 | Anti-pattern | Why it hurts |
 | --- | --- |
-| Planning features already | Duplicated work (H2/T1/F2/L2 are done) |
-| Roadmap without tests | Unverifiable “done” |
+| Planning features already done | Duplicated work (H2/T1/F2/L2 are done) |
+| Roadmap without tests | Unverifiable "done" |
 | Ignoring by-design limits | Infinite platform chase |
 See also
 Missing features
-Implementation status
 Interpret compile parity
 Alerts
 pyne-worker
