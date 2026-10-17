@@ -17,181 +17,117 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Pynescript Future Roadmap
+# PYNE Roadmap
 
-**Live package:** `hoox-pyne` **0.6.8**.
-
-**Status:** Core v6 language/builtins essentially closed. Remaining work is
-**interpret↔compile plot parity (P1p)** — official builtins closed; optional set0x community corpus unmeasured — not missing syntax.
-Product warm-compile (H2), series caps (T1), package Runtime SoT (H1),
-incremental volume TA (T2), Supertrend goldens (F1), and
-compile object-mode UDT/switch/matrix/drawing/round/color residuals landed.
+**Live package:** `hoox-pyne` **0.6.12**.
 
 ---
 
-## Project Status Summary
+## Current Status
 
-| Component | Status |
-|-----------|--------|
-| Parser (ANTLR4) | ✅ v5/v6 + multiline / export const |
-| Evaluator | ✅ incl. full var/varip, ReAssign |
-| Built-in Functions / TA / collections | ✅ broad (0 missing vs public TV ref list) |
-| Strategy Events + broker (OCA, commission, risk) | ✅ |
-| Numba + object-mode compile | ✅ MVP+ (disk IR cache, auto mode, `time_arr`, cache recovery; UDT/switch/matrix/drawing/round/color residuals) |
-| Pro API (Flask) + auth + Docker | ✅ (`mode` default `auto`) |
-| pyne-worker (Python CF Worker) | ✅ sibling `hoox-sh/pyne-worker`; thin wrap over package Runtime |
-| pine-worker (legacy TS) | not colocated — leftover sibling `hoox-sh/pine-worker`; new TS work is PyneTS |
-| Drawing / input / request | ✅ (request data mock/feed by design; foreign-na policy landed) |
-| Linter / Jupyter / data providers | ✅ |
-| LSP (core) | ✅ advanced set; polish only |
-| Drawing max_*_count GC | ✅ (package + Pro API + AXIS pyodide) |
-| Interpret↔compile plot parity | ✅ harness + goldens + official TV builtins **0 MISMATCH**; optional set0x unmeasured |
-| Dual-host Runtime parity | ✅ largely done (package SoT + backend shims + pyne-worker thin wrap) |
-| Tests | ✅ full suite green (see CI) |
+PYNE has reached a mature stage of development. The core Pine Script™ v6 language, builtins, strategy broker, collections, drawing surface, and compiler are fully functional. The open-source corpus (2,477 scripts) achieves 99.96% parse success and 100% runtime interpretation excluding intentional error-path demos.
+
+The project's focus has shifted from feature completion to production hardening: live data planes, session management, deployment infrastructure, and observability.
 
 ---
 
-## Completed Features
+## Architecture Overview
 
-### Quick Wins (All Done ✅)
-1. **Better error messages** - Improved with type hints and module suggestions
-2. **Code cleanup** - Removed backup files (evaluator_backup.py, technical_new.py)
-3. **Type hint improvements** - Enhanced mypy configuration
+PYNE's evaluation pipeline consists of four stages:
 
-### Short-term (All Done ✅)
-4. **Jupyter support** - Added `pynescript/ext/jupyter.py`:
-   - `%%pinescript` cell magic for running Pine Script
-   - `create_sample_data()` - Generate OHLCV test data
-   - `evaluate_indicator()` - Run indicators with data
-   - `display_indicator_table()` - Display as pandas DataFrame
+1. **Lexing** — ANTLR4-generated lexer handles Pine source including multiline strings, soft keywords, and bitwise operators
+2. **Parsing** — ANTLR4 parser produces an ASDL AST with full structural fidelity
+3. **Building** — The builder transforms the parse tree into the evaluator's node representation
+4. **Evaluation** — `NodeLiteralEvaluator` walks the AST in bar-loop mode, dispatching through a registry of 941 callables across 255 namespaces
 
-5. **Script validation/linting** - Added `pynescript/ast/linter.py`:
-   - 7+ lint rules (version, deprecated patterns, naming, style)
-   - CLI: `pynescript lint <file>`
-
-### Medium-term (All Done ✅)
-7. **Real data integration** - Added `pynescript/util/data.py`:
-   - `MockDataProvider` - For testing
-   - `YahooFinanceProvider` - Via yfinance
-   - `AlphaVantageProvider` - Free API
-   - `CCXTProvider` - 100+ crypto exchanges (historical)
-    - Realtime datafeed: `pynescript/util/datafeed.py` using CCXT Pro (watch_ohlcv, trades, etc.) — integrated into evaluator (request.* via context), DataFeedBroker for exec/pos, Mock/Composite, backend/runtime support, tests
+The compile path lowers the AST to Python/numpy source. Pure numeric scripts are JIT-compiled via Numba; scripts using UDTs, maps, or drawings use an object-mode Python bar loop. Both paths produce identical series output for eligible scripts.
 
 ---
 
-## Recent Additions
-- Full `strategy.*` event capture with `StrategyEvent` dataclass, parity test corpus, `var`/`varip` support.
-- pine-worker is **not colocated** in this repo. Product edge evaluate host is [`hoox-sh/pyne-worker`](https://github.com/hoox-sh/pyne-worker); TypeScript library work is [`hoox-sh/pynets`](https://github.com/hoox-sh/pynets).
+## What Has Been Completed
 
-## Roadmap: Remaining Work (actionable)
+### Language and Parser
 
-Historical Phase A–D “build API / LSP / Jupyter” items are **done**. Do not re-plan them.
+The full v5/v6 language surface is implemented and tested. This includes variables and types, control flow (`if`/`for`/`while`/`switch`/`once`), functions with type annotations, user-defined types, libraries with `export`/`import`, enums, string interpolation, tuple unpacking, and method chaining. Series history access follows Pine semantics with out-of-bounds indices returning `na`.
 
-### Open backlog (IDs stable for agents)
+### Builtins and Technical Analysis
 
-| ID | Item | Pri | Owner |
-| --- | --- | --- | --- |
-| **H1** | Port R5–R6 host surface to pyne-worker (fail-cache, `error_kind`, inputs→interpret, compile cache) | P1 ✅ package Runtime SoT + worker thin wrap; `/run` already forwards `logs` / `profile` / `plot_meta` / `error_kind` | sibling `hoox-sh/pyne-worker` |
-| **H2** | Product warm-compile path (document SLOs; optional prewarm workers; IR cache on in deploy) | P1 ✅ SLOs + prewarm API/CLI + deploy defaults; Numba `.nb*` corrupt-cache recovery landed | pyne + ops |
-| **C1** | Corpus Runtime residual (set01–04) | P1 ✅ parse **99.96%** (2476/2477); Runtime interpret **100%** excl. EXPECTED_FAIL (2466 OK + 11 intentional demos); set01 **249/249**. Residual class = intentional demos only | pyne |
-| **P1p** | Compile/interpret **plot parity** residual | P1 ✅ first-party + parity fixtures + official builtins **0 MISMATCH**. Optional set0x community corpus remains unmeasured | pyne |
-| **T1** | Cap `current_series` to `max_bars_back` / `_SERIES_MAX` | P2 ✅ `PYNE_SERIES_CAP` default ON + goldens | pyne |
-| **T2** | Incremental TA for remaining heavy kernels | P2 ✅ bb/kama/cmo/stochrsi; wma/hma/linreg; volume kernels; `nvi`/`pvi`; `aroon`/`dpo`/`donchian`/`kst` | pyne |
-| **F1** | ATR Wilder / TV supertrend re-baseline **only** with dedicated goldens | P2 ✅ interpret ATR is Wilder RMA of TR; Supertrend mid±factor·ATR locked (inc ≡ compile ≡ Numba). TV ratchet is out of scope | pyne |
-| **F2** | Pending-fill averaging when pyramiding ≤ 0 | P2 ✅ interpret + compile broker goldens | pyne |
-| **L1** | v5↔v6 converter maturity (`scripts/convert_pine_version.py`) | P3 ✅ `pynescript convert --to 5\|6` — version / `study` / `request.*` rewrites (not semantic bool/na migrator) | pyne |
-| **L2** | Webhook alerts productization | P3 ✅ pyne-worker edge + Pro API `/run` export **and** outbound `ALERT_WEBHOOK_URL` / `webhook_url` | pyne-worker + backend |
-| **L3** | Legacy TS Worker builtin parity | P3 | leftover sibling `hoox-sh/pine-worker` — not a product-docs target; new TS work is `hoox-sh/pynets` |
-| **B1** | Real (non-mock) `request.*` market data | ⚙️ by design; **foreign-na policy** landed (same-symbol OHLCV only; foreign/complex `request.security` → `na`, no chart-close-as-dividend) | adapters |
+All 434 symbols from the public TradingView® v6 function reference are registered. The `ta.*` namespace spans 165 functions covering moving averages, oscillators, volatility, structure, and volume indicators. Incremental bar-mode evaluation is the default, achieving 3–10x speedups over full recompute on multi-thousand-bar series.
 
-### Phase map
+### Strategy and Broker
 
-```text
-P0 docs honesty → P1 dual-host H1 ✅ (package SoT + shims + worker thin wrap)
-                → P1 plot parity residual (P1p) + C1 corpus tail
-                → H2 warm compile ✅ · T1 series caps ✅ · F2 pending-fill ✅
-                              ↘ T2 residual nested TA · F1 ATR/supertrend goldens
-                                  → P6 long-horizon (L1–L3)
-```
+The strategy engine emits `StrategyEvent` objects for all order lifecycle events. It supports OCA groups, commission models, slippage, and risk enforcement. Pending fills are processed each bar before the script body. The compile-mode strategy broker (`CompileStrategyBroker`) provides parity with the interpret path.
 
-### By design / out of scope for “missing features”
-- Editor-only TV release notes (word wrap, UI)
-- Pixel chart host (AXIS / clients)
-- Bit-identical every recursive smoother vs live TV (numerical bounds track)
-- **Real multi-symbol `request.*` feeds** without a host data provider (mock/chart OHLCV only; foreign tickers correctly return `na` rather than invent series)
+### Collections and Drawings
 
-### Landed residual notes (2026-08; keep for agents)
+Arrays, matrices, and maps are fully implemented with UDT support. All drawing objects (`line`, `box`, `label`, `table`, `polyline`, `linefill`) have complete property accessors. Drawing garbage collection is enforced across all hosts. Drawing export parity between interpret and compile modes is maintained.
 
-- **Compile/interpret plot parity:** Always-on smoke set in `tests/test_interp_compile_parity.py` (e.g. ALMA/ATR/AO-class scripts). First-party hline/fill/bgcolor/plotshape keys match (cache meta v10). Official TV `builtin_scripts` (148) **0 MISMATCH** vs compile (2026-09-12). Full community-corpus compare is opt-in via `python scripts/compare_interp_compile.py`. Flags `--ignore-hline-keys` / `--ignore-fill-keys` remain optional CLI. Grow goldens from harness `MISMATCH` buckets, not ad-hoc benches.
-- **Corpus (C1, 2026-08-09):** set01–04 parse **99.96%** (2476/2477); Runtime interpret **100%** excl. EXPECTED_FAIL (2466 OK + 11 intentional demos: library `runtime.error`, lower-TF security guards, invalid-wrap docs, pathological loops). set01 Runtime **249/249**. Not core syntax gaps.
-- **`auto_fib` pivot data limits:** Auto Fib Extension/Retracement raise the same “not enough data / Depth” insufficient-pivot errors on interpret and compile when pivot arrays are empty (normalized as `both_error_same` in the parity harness). Not a silent success path; hosts must supply enough bars or lower Depth.
-- **`request.*` foreign-na policy:** `request.security` / bare `security` on foreign symbols or complex expressions resolve to `na` on both backends; `ChartOHLCVProvider` refuses non-chart symbols. Same-symbol simple OHLCV still passthrough. Real fundamentals remain **B1** (adapters).
-- **Tick-offset exits (2026-08-15):** `strategy.exit` `profit`/`loss` are ticks × mintick from entry avg (interpret + compile). `limit`/`stop` stay absolute; absolute wins if both set.
-- **Incremental WMA / HMA / linreg / volume:** interpret inc kernels landed (`_wma_inc_update` / `_hma_inc_update` / `_linreg_inc_update`; R9 `_obv`/`_wad`/`_wvad`/`_cmf`/`_klinger_inc_update`; **nvi/pvi** `_nvi_inc_update` / `_pvi_inc_update`).
-- **Plot pack:** interpret host packs dirty plot columns (`_plot_pack_dirty`); compile `_pack_plot_sequence` uniquifies titles.
-- **Ring tail-view:** `PYNE_SERIES_RING` chronological tail (default **off**).
+### Alerts and Webhooks
 
-### Longer-horizon ideas (not next)
-- ML / advanced stats wrappers
-- Automatic refactor suggestions
-- Parallel / distributed evaluation experiments
+The alert engine supports all frequency rules. Webhook delivery is available on both the Pro API and pyne-worker.
+
+### Compiler
+
+The Numba compile path handles pure numeric scripts. Object mode handles UDTs, maps, and drawings. Warm-compile with disk IR cache is available via prewarm API/CLI. Interpret-to-compile plot parity is verified by an always-on smoke test and a full corpus harness.
+
+### Hosts and Infrastructure
+
+- **Pro API** — Flask-based REST API with authentication, rate limiting, and Docker deployment
+- **pyne-worker** — Python Cloudflare Worker for edge evaluation
+- **pyne-agent-worker** — Natural language authoring host
+- **CLI** — `pyne` and `pyne-lsp` commands with Nuitka binaries
+- **LSP** — Full language server with diagnostics, completion, hover, formatting, and navigation
+
+### Converter
+
+`pyne convert` rewrites Pine source between versions without touching comments or string literals: version pragma, v3→v4 color/timeframe/plot-style constants, v4→v5 `ta.*` / `math.*` / `request.*` namespaces, `study(` → `indicator(`, typed `input.*()` and `iff`/`offset`, plus v5→v6 request-namespace leftovers. The same transform backs the `pynescript.convertToV6` LSP command and code action.
 
 ---
 
-## Priority Recommendation
+## Release History
 
-### Short-term (Next)
-1. Grow goldens from `scripts/compare_interp_compile.py` buckets when a new kernel diverges (P1p official builtins closed)
-2. Optional set0x community-corpus value sweep if a new MISMATCH class shows up
+### 0.6.10 — Observability and Engine Parity
 
-### Medium-term
-3. Further nested incremental TA where profiled
+Engine parity improvements, observability tooling, and documentation refresh.
 
-### Long-term
-6. TypeScript library work is PyneTS (**L1 converter ✅** source rewrite; **L2 webhooks ✅**).
+### 0.6.11 — Live Plane and Sessions
 
----
+The engine-owned subscription plane (WebSocket `/ws/live`) enables realtime data streaming. Refcount-pooled shared sessions (F-29) allow multiple clients to share evaluation state by content hash. Opt-in delta envelopes reduce bandwidth on tick/append routes. Live session persistence via SQLite journal enables cross-restart continuity.
 
-## Usage Examples
+### 0.6.12 — Production Hardening
 
-### Jupyter
-```python
-from pynescript.ext.jupyter import load_ipython_extension, create_sample_data
-load_ipython_extension(ipython)
-
-# Then in a cell:
-%%pinescript
-//@version=5
-indicator("SMA")
-plot(ta.sma(close, 14))
-```
-
-### CLI Lint
-```bash
-pynescript lint script.pine
-pynescript lint --fail-on warnings
-```
-
-### CLI Data
-```bash
-pynescript data AAPL --provider mock
-pynescript data BTC/USDT --provider ccxt --exchange binance
-pynescript data AAPL --provider yahoo --period 6mo
-```
-
-### Python API
-```python
-from pynescript.util.data import get_provider
-provider = get_provider("ccxt", exchange="binance")
-data = provider.fetch("BTC/USDT", "1y")
-```
+The gevent WebSocket worker (F-30) is now the API default. CXT provider caching reduces connection overhead. The production profile pins `PYNE_DATA_DIR` to a persistent volume. Docker production is deployed on VPS. Redis is unpublished with opt-in authentication. CORS allows AXIS authenticated requests.
 
 ---
 
-## Contributing
+## What Remains
 
-See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
+### By Design
+
+The following are intentional boundaries, not missing features:
+
+- **Foreign `request.security` data** — Returns `na` rather than inventing chart-close as foreign fundamentals. Real multi-symbol market data requires a host adapter.
+- **Pixel chart rendering** — AXIS and client applications consume series and drawings; PYNE does not render pixels.
+- **Editor UI** — Word wrap defaults and editor-only release notes are not applicable to a headless runtime.
+- **Bit-identical recursive smoothers** — Numerical bounds are tracked, not bit-exact parity with TradingView®.
+- **Tick-path broker** — The strategy engine models OHLC bar paths, not tick-level fills.
+- **Semantic version migration** — `pyne convert` performs source-level rewrites (pragma, namespaces, declarations, `request.*`); bool-as-number and `na`-tightening changes require a type checker and stay out of scope.
+
+### Open Items
+
+- **PyneTS parity** — The TypeScript library provides interpret and JS compile; Python remains the oracle.
+- **Community corpus sweep** — Optional set0x community corpus value comparison remains unmeasured.
 
 ---
 
-*This roadmap is a living document and will be updated as the project evolves.*
+## Design Principles
+
+1. **Python wins** language semantics — PyneTS does not invent TradingView® behavior
+2. **Interpret is the oracle** — Compile matches where eligible; `mode=auto` falls back
+3. **Honest `na`** — Foreign request data returns `na`, never invented values
+4. **Bar-by-bar semantics** — No whole-script vectorization; incremental kernels preserve exact bar-loop behavior
+5. **Golden tests** — Changes to TA math require golden tests against the current oracle
+
+---
+
+*This roadmap is a living document. For the dispatch-oriented inventory, see `docs/pine_v6_full_surface_inventory.md`. For the product-facing summary, see `docs/pyne/reference/roadmap.mdx`.*

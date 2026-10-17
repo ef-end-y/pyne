@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "missing_features.md"
-description: "Live package: hoox-pyne 0.6.8 (src/pynescript/about.py)."
+description: "Live package: hoox-pyne 0.6.12 (src/pynescript/about.py)."
 resource: "docs/missing_features.md"
 tags: [doc, docs, missing-features]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-08T18:28:09Z
+  at: 2026-10-17T03:22:02Z
 sources:
   - id: tree
     resource: "docs/missing_features.md"
@@ -22,41 +22,31 @@ Repo path `docs/missing_features.md`.
 
 # Outline
 
-* Latest Pine Script Releases & Gaps (2024-2026)
-  * v6 Launch Features (Dec 2024) - Mostly Supported
-  * 2025-2026 Monthly Updates - Significant Gaps
-* Current Missing / Incomplete Features List
-  * High Priority (Syntax / Core Language - Breaks 100% Parser)
-  * Medium Priority (Builtins / Recent Additions)
-  * Lower Priority / Platform Features
-  * Already Well Supported (from v6+)
-  * Matrix surface
-  * Full reference surface
-  * Corpus + Runtime performance
-* Recommendations
-* 🎉 Project Completion Status
-* 🚀 What's Implemented
-  * Parser & Language Features
-  * Built-in Functions (149+)
+* Summary
+* Architecture
+* What Is Implemented
+  * Language Core
+  * Builtins and Technical Analysis
+  * Strategy and Broker
   * Collections
-  * Advanced Features
-* 📊 Implementation Metrics
-* 🔄 Known Limitations
-  * Intentional Design Decisions
-  * Practical Constraints
-* 🎯 Future Enhancement Opportunities
-  * High Value (Nice to Have)
-  * Medium Value (Polish)
-  * Low Value (Research)
-* 📝 Recommendations
-  * For Users
-  * For Contributors
-  * For Production Deployment
-* 📚 Related Documents
+  * Drawing and Plotting
+  * Alerts and Webhooks
+  * Data and Requests
+  * Compiler
+* What Is Partial or by Design
+  * Request Data
+  * Auto Fib and Pivot-Heavy Scripts
+  * Platform-Specific Features
+  * PyneTS
+* Corpus Performance
+* Recent Releases (0.6.10–0.6.12)
+  * 0.6.10 — Observability and Engine Parity
+  * 0.6.11 — Live Plane and Sessions
+  * 0.6.12 — Production Hardening
+* Recommendations
 
 # Mentions
 
 * [scripts](/code/scripts.md)
 * [src/pynescript](/code/src/pynescript.md)
 * [src/pynescript/ast](/code/src/pynescript/ast.md)
-* [tests](/code/tests.md)

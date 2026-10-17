@@ -85,13 +85,15 @@ python scripts/build/ci_build.py --target cli --jobs=4 --skip-metadata --skip-vs
 
 ### Expected layout
 
-```text
-dist/
-├── lsp/
-│   └── pynescript-lsp          # onefile (path may vary by script)
-├── vsix/
-│   └── pynescript-lsp.vsix     # optional bundle
-└── pynescript-lsp              # ci_build final move target (script-dependent)
+```mermaid
+flowchart TD
+    dist["dist/"]
+    dist --> lsp["lsp/"]
+    dist --> vsix["vsix/"]
+    dist --> final["pynescript-lsp<br/>ci_build final move target (script-dependent)"]
+
+    lsp --> lspbin["pynescript-lsp<br/>onefile (path may vary by script)"]
+    vsix --> vsixbin["pynescript-lsp.vsix<br/>optional bundle"]
 ```
 
 Also see `scripts/build/README.md`.

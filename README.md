@@ -57,7 +57,7 @@ Source (.pyne / .pine)
 
 The same pipeline underlies the desk CLI, the Language Server Protocol (LSP) binary, the Pro API, browser Pyodide evaluation (via AXIS), and Cloudflare® Workers that share one evaluate contract.
 
-Coverage and known gaps are documented under [compatibility](https://hoox.sh/pyne/docs/reference/compatibility) and [implementation status](https://hoox.sh/pyne/docs/reference/implementation-status). This repository does **not** ship third-party script corpora or TradingView® builtin downloads.
+Coverage and known gaps are documented under [compatibility](https://hoox.sh/pyne/docs/reference/compatibility) and [missing features](https://hoox.sh/pyne/docs/reference/missing-features). This repository does **not** ship third-party script corpora or TradingView® builtin downloads.
 
 ### Corpus snapshot (set01–04 · local measurement · 2026-08-09 — snapshot, not live CI)
 
@@ -270,7 +270,7 @@ Canonical product documentation: **[hoox.sh/pyne/docs](https://hoox.sh/pyne/docs
 | Compiler & parity | [Compiler](https://hoox.sh/pyne/docs/runtime/compiler/overview) · [Parity](https://hoox.sh/pyne/docs/runtime/compiler/parity) |
 | Pro API | [API](https://hoox.sh/pyne/docs/api) · [Usage](https://hoox.sh/pyne/docs/enduser/guides/pro-api-usage) |
 | LSP | [LSP hub](https://hoox.sh/pyne/docs/lsp) · [VS Code](https://hoox.sh/pyne/docs/lsp/vscode-extension) |
-| Compatibility | [Compatibility](https://hoox.sh/pyne/docs/reference/compatibility) · [Status](https://hoox.sh/pyne/docs/reference/implementation-status) |
+| Compatibility | [Compatibility](https://hoox.sh/pyne/docs/reference/compatibility) · [Missing features](https://hoox.sh/pyne/docs/reference/missing-features) |
 
 In-repository notes: [Roadmap](./docs/ROADMAP.md) · [Missing features](./docs/missing_features.md) · [Changelog](./CHANGELOG.md)
 
@@ -282,7 +282,7 @@ PYNE targets practical runtime fidelity verified with first-party fixtures, unit
 - complete platform parity (chart host, data model, every edge-case builtin, or closed UI behaviour)  
 - that results will match the TradingView® platform on every script or bar  
 
-Prefer the published [compatibility](https://hoox.sh/pyne/docs/reference/compatibility) and [implementation status](https://hoox.sh/pyne/docs/reference/implementation-status) pages for current surface coverage.
+Prefer the published [compatibility](https://hoox.sh/pyne/docs/reference/compatibility) and [missing features](https://hoox.sh/pyne/docs/reference/missing-features) pages for current surface coverage.
 
 Results obtained with PYNE are for research, development, and self-hosted evaluation. They are **not** financial advice and are **not** provided by TradingView, Inc.
 
@@ -302,15 +302,14 @@ make lint      # ruff
 
 Everything under [github.com/hoox-sh](https://github.com/hoox-sh) — one open trading stack on [hoox.sh](https://hoox.sh):
 
-```text
-                    https://hoox.sh
-           ┌──────────────┼──────────────┐
-           ▼              ▼              ▼
-         HOOX            PYNE           AXIS
-    (edge execution)  (Pine engine)  (charting UI)
-           │              │              │
-           └──────────────┴──────────────┘
-                    trade signals / eval API
+```mermaid
+flowchart TB
+    HOOX["HOOX<br/>(edge execution)"]
+    PYNE["PYNE<br/>(Pine engine)"]
+    AXIS["AXIS<br/>(charting UI)"]
+
+    HOOX ---|"trade signals / eval API"| PYNE
+    PYNE ---|"trade signals / eval API"| AXIS
 ```
 
 **How they relate**

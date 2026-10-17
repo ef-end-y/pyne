@@ -19,14 +19,14 @@
 
 ---
 title: "Roadmap"
-description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed."
+description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed. hoox-pyne 0.6.12."
 ---
 
 # Roadmap
 
 ## Abstract
 
-The roadmap is a **living prioritization document**, not a contract. Source: `docs/ROADMAP.md`. Core v6 language/builtins are essentially closed. Product **warm-compile (H2)**, **series caps (T1)**, **pending-fill (F2)**, **L2 webhooks**, **corpus Runtime residual (C1)**, **package Runtime SoT (H1 largely done)** and **drawing export parity** have **landed** (set01–04 parse **99.96%**, Runtime interpret **100%** excl. intentional demos). What remains: **H1 worker-only extras**. **P1p** official TV builtins are **0 MISMATCH** (optional set0x community corpus unmeasured). Incremental TA and Supertrend goldens have landed.
+The roadmap is a **living prioritization document**, not a contract. Source: `docs/ROADMAP.md`. Core v6 language/builtins are essentially closed. Product **warm-compile (H2)**, **series caps (T1)**, **pending-fill (F2)**, **L2 webhooks**, **corpus Runtime residual (C1)**, **package Runtime SoT (H1 largely done)** and **drawing export parity** have **landed** (set01–04 parse **99.96%**, Runtime interpret **100%** excl. intentional demos). **0.6.10–0.6.12:** engine-owned live plane (WS `/ws/live`), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching, live session persistence (SQLite journal), production profile + `PYNE_DATA_DIR`, Docker prod on VPS, Redis unpublished + opt-in auth. What remains: **H1 worker-only extras**. **P1p** official TV builtins are **0 MISMATCH** (optional set0x community corpus unmeasured). Incremental TA and Supertrend goldens have landed.
 
 ## Conceptual model
 
@@ -54,34 +54,38 @@ flowchart LR
 
 | Component | Status |
 | --- | --- |
-| Parser ANTLR4 | ✅ v5/v6 + multiline / export const |
-| Evaluator | ✅ incl. full var/varip, ReAssign |
-| Builtins / TA / collections | ✅ broad (0 missing vs public TV ref list) |
-| Strategy events + broker (OCA, commission, risk) | ✅ |
-| Numba + object-mode compile | ✅ MVP+ (disk IR cache, `mode=auto`, `time_arr`, cache recovery; UDT/switch/matrix/drawing/round/color residuals) |
-| Pro API + auth + Docker | ✅ (`mode` default `auto`; targets api / api-dev / lsp / **cli**) |
-| PyPI **`hoox-pyne`** | ✅ live **0.6.8** ([pypi.org/project/hoox-pyne](https://pypi.org/project/hoox-pyne/)); CLIs `pyne` / `pyne-lsp` |
-| CLI surface (`check`/`format`/`compile`/`run`/`prewarm`/…) | ✅ + Nuitka binaries + CLI Docker image |
-| Alert engine + L2 webhooks | ✅ dual-host export + outbound webhooks |
-| Drawing `max_*_count` GC | ✅ package + Pro API + AXIS Pyodide |
-| Drawing export parity (table/box/label/polyline) | ✅ cell style, `force_overlay`, `merged_cells`, text extras, curve/fill, `text.align_*`; both hosts identical |
-| Package Runtime SoT (`pynescript.runtime`) | ✅ Pro API + worker thin wrap |
-| Strategy exits (`from_entry`, `qty_percent`, trail, risk cascade) | ✅ |
-| `request.security` HTF simple TA + foreign-na | ✅ same-symbol OHLCV/HTF allowlist; foreign → `na` |
-| Free-tier Pro API guards | ✅ bar/script caps, rate, concurrency, mock-only free data |
-| Dual-host TA goldens (ATR / Supertrend / Keltner) | ✅ first-party + `test_ta_incremental` CI |
-| Interpret dispatch + unused derived skip + volume inc | ✅ interpret dispatch inlining, unused derived OHLCV skip, incremental volume TA |
-| Series caps (`PYNE_SERIES_CAP`) | ✅ T1 |
-| Warm-compile product path | ✅ H2 (SLOs, prewarm, deploy IR cache) |
-| Pending-fill averaging (pyramiding ≤ 0) | ✅ F2 |
-| Interpret↔compile plot parity | ⚙️ harness + goldens landed; residual MISMATCH tail |
-| Runtime `timeout_seconds` | ✅ wall-clock circuit breaker on interpret |
-| UDT `array.binary_search*` `sort_field` | ✅ interpret + compile |
-| `Runtime.run(..., libraries=)` / `POST /run` `libraries` | ✅ AXIS `import ns/Name/ver` support; auto fallback keeps libs |
-| pyne-worker 0.6.0 | ✅ edge `/run`; vendored engine may lag PyPI — check versions |
-| PyneTS (`@hoox-sh/pynets`) | ✅ standalone TS library 0.5.0 — interpret + JS compile; Python remains oracle |
-| pyne-agent-worker | ✅ sister NL authoring host (`POST /v1/chat`) |
-| Full TV platform identity | ⚙️ out of scope |
+| Parser ANTLR4 | v5/v6 + multiline / export const |
+| Evaluator | incl. full var/varip, ReAssign |
+| Builtins / TA / collections | broad (0 missing vs public TV ref list) |
+| Strategy events + broker (OCA, commission, risk) | |
+| Numba + object-mode compile | MVP+ (disk IR cache, `mode=auto`, `time_arr`, cache recovery; UDT/switch/matrix/drawing/round/color residuals) |
+| Pro API + auth + Docker | (`mode` default `auto`; targets api / api-dev / lsp / **cli**) |
+| PyPI **`hoox-pyne`** | live **0.6.12** ([pypi.org/project/hoox-pyne](https://pypi.org/project/hoox-pyne/)); CLIs `pyne` / `pyne-lsp` |
+| CLI surface (`check`/`format`/`compile`/`run`/`prewarm`/…) | + Nuitka binaries + CLI Docker image |
+| Alert engine + L2 webhooks | dual-host export + outbound webhooks |
+| Drawing `max_*_count` GC | package + Pro API + AXIS Pyodide |
+| Drawing export parity (table/box/label/polyline) | cell style, `force_overlay`, `merged_cells`, text extras, curve/fill, `text.align_*`; both hosts identical |
+| Package Runtime SoT (`pynescript.runtime`) | Pro API + worker thin wrap |
+| Strategy exits (`from_entry`, `qty_percent`, trail, risk cascade) | |
+| `request.security` HTF simple TA + foreign-na | same-symbol OHLCV/HTF allowlist; foreign → `na` |
+| Free-tier Pro API guards | bar/script caps, rate, concurrency, mock-only free data |
+| Dual-host TA goldens (ATR / Supertrend / Keltner) | first-party + `test_ta_incremental` CI |
+| Interpret dispatch + unused derived skip + volume inc | interpret dispatch inlining, unused derived OHLCV skip, incremental volume TA |
+| Series caps (`PYNE_SERIES_CAP`) | T1 |
+| Warm-compile product path | H2 (SLOs, prewarm, deploy IR cache) |
+| Pending-fill averaging (pyramiding ≤ 0) | F2 |
+| Interpret↔compile plot parity | harness + goldens landed; residual MISMATCH tail |
+| Runtime `timeout_seconds` | wall-clock circuit breaker on interpret |
+| UDT `array.binary_search*` `sort_field` | interpret + compile |
+| `Runtime.run(..., libraries=)` / `POST /run` `libraries` | AXIS `import ns/Name/ver` support; auto fallback keeps libs |
+| pyne-worker 0.6.0 | edge `/run`; vendored engine may lag PyPI — check versions |
+| PyneTS (`@hoox-sh/pynets`) | standalone TS library 0.5.0 — interpret + JS compile; Python remains oracle |
+| pyne-agent-worker | sister NL authoring host (`POST /v1/chat`) |
+| Full TV platform identity | out of scope |
+| Live plane (WS `/ws/live`) | engine-owned subscription plane with delta envelopes |
+| Shared sessions (F-29) | refcount-pooled by content hash; SQLite journal persistence |
+| Gevent WebSocket worker (F-30) | API default worker class |
+| Production profile | `PYNE_DATA_DIR` pinned; Docker prod on VPS; Redis unpublished + opt-in auth |
 
 ### Completed themes (do not re-plan as greenfield)
 
@@ -99,18 +103,18 @@ flowchart LR
 
 | ID | Item | Pri | Status |
 | --- | --- | --- | --- |
-| **H1** | Dual-host Runtime (package SoT + backend shims + pyne-worker thin wrap ✅; residual = worker-only extras) | P1 | ✅ largely done |
-| **H2** | Product warm-compile (SLOs, prewarm API/CLI, IR cache on in deploy) | P1 | ✅ |
-| **C1** | Corpus set01–04 residual (parse 99.96%; Runtime 100% excl. EXPECTED) | P1 | ✅ |
-| **P1p** | Compile/interpret **plot parity** residual | P1 | ✅ first-party + official TV builtins **0 MISMATCH**; optional set0x unmeasured |
-| **T1** | Cap `current_series` to `max_bars_back` / `_SERIES_MAX` | P2 | ✅ `PYNE_SERIES_CAP` default ON |
-| **T2** | Incremental TA for remaining heavy kernels | P2 | ✅ volume, oscillator, and band kernels |
-| **F1** | ATR Wilder / TV supertrend re-baseline only with dedicated goldens | P2 | ✅ mid±factor·ATR locked; TV ratchet out of scope |
-| **F2** | Pending-fill averaging when pyramiding ≤ 0 | P2 | ✅ |
-| **L1** | v5↔v6 converter maturity | P3 | open |
-| **L2** | Webhook alerts productization | P3 | ✅ Pro + pyne-worker |
+| **H1** | Dual-host Runtime (package SoT + backend shims + pyne-worker thin wrap; residual = worker-only extras) | P1 | largely done |
+| **H2** | Product warm-compile (SLOs, prewarm API/CLI, IR cache on in deploy) | P1 | done |
+| **C1** | Corpus set01–04 residual (parse 99.96%; Runtime 100% excl. EXPECTED) | P1 | done |
+| **P1p** | Compile/interpret **plot parity** residual | P1 | first-party + official TV builtins **0 MISMATCH**; optional set0x unmeasured |
+| **T1** | Cap `current_series` to `max_bars_back` / `_SERIES_MAX` | P2 | `PYNE_SERIES_CAP` default ON |
+| **T2** | Incremental TA for remaining heavy kernels | P2 | volume, oscillator, and band kernels |
+| **F1** | ATR Wilder / TV supertrend re-baseline only with dedicated goldens | P2 | mid±factor·ATR locked; TV ratchet out of scope |
+| **F2** | Pending-fill averaging when pyramiding ≤ 0 | P2 | done |
+| **L1** | v5↔v6 converter maturity | P3 | done — source-level rewrites both ways (semantic bool/`na` out of scope) |
+| **L2** | Webhook alerts productization | P3 | Pro + pyne-worker |
 | **L3** | Legacy TS Worker builtin parity | P3 | sister `hoox-sh/pine-worker` only — not a product-docs target; new TS work is [PyneTS](/pyne/docs/pynets) |
-| **B1** | Real (non-mock) `request.*` market data | — | ⚙️ by design; **foreign-na policy landed** |
+| **B1** | Real (non-mock) `request.*` market data | — | by design; **foreign-na policy landed** |
 
 Longer horizon (not next): ML wrappers, automatic refactor, parallel/distributed eval experiments.
 
@@ -120,13 +124,14 @@ Longer horizon (not next): ML wrappers, automatic refactor, parallel/distributed
 | --- | --- |
 | Short | H1 worker extras (logs/profile); optional set0x P1p sweep |
 | Medium | Further nested incremental TA where profiled |
-| Long | **L1** converter maturity; TypeScript library work is PyneTS (**L2** ✅) |
+| Long | TypeScript library work is PyneTS (**L2** done) |
 
 ### Landed residual notes
 
 - **Plot parity:** Always-on smoke in `tests/test_interp_compile_parity.py`. Full corpus compare: `python scripts/compare_interp_compile.py` → `.cache/interp_compile_parity.json`. Flags `--ignore-hline-keys` / `--ignore-fill-keys` drop structural residuals.
 - **Corpus residual (C1):** set01–04 parse **99.96%** (2476/2477); Runtime interpret **100%** excl. EXPECTED_FAIL (2466 OK + 11 intentional demos); set01 **249/249**. Third-party corpora are not shipped in git.
 - **Foreign-na:** `request.security` on foreign/complex expressions → `na` both backends; `ChartOHLCVProvider` refuses non-chart symbols.
+- **Converter (L1):** Source-level v3→v4→v5→v6 upgrades and v6→v5 downgrades via `pynescript.util.pine_convert`; exposed as `pyne convert --to 5|6` and the `pynescript.convertToV6` LSP command/code action. Comments and string literals are never touched; type-dependent bool/`na` migration stays out of scope.
 
 ## Internals
 
@@ -144,10 +149,10 @@ Longer horizon (not next): ML wrappers, automatic refactor, parallel/distributed
 ## Invariants & edge cases
 
 1. **Roadmap dates lag code** — always diff against `missing_features.md` and tests.
-2. **Sister repos** (pyne-worker, pyne-agent-worker) may absorb “integration” items.
+2. **Sister repos** (pyne-worker, pyne-agent-worker) may absorb "integration" items.
 3. **AXIS is a separate product tree** (`docs/axis`) — chart UX roadmap is not PYNE-core.
-4. Avoid reintroducing deleted backups (`builder.py.bak`, etc.) as “plan items.”
-5. Do **not** re-open **H1 / H2 / T1 / T2 / F1 / F2 / L2 / C1** as greenfield — they are marked ✅ (H1 residual = worker extras only; P1p is corpus tail) in `docs/ROADMAP.md`.
+4. Avoid reintroducing deleted backups (`builder.py.bak`, etc.) as "plan items."
+5. Do **not** re-open **H1 / H2 / T1 / T2 / F1 / F2 / L2 / C1** as greenfield — they are marked done (H1 residual = worker extras only; P1p is corpus tail) in `docs/ROADMAP.md`.
 
 ## Worked examples
 
@@ -178,14 +183,13 @@ See [PyneTS](/pyne/docs/pynets).
 
 | Anti-pattern | Why it hurts |
 | --- | --- |
-| Planning features already ✅ | Duplicated work (H2/T1/F2/L2 are done) |
-| Roadmap without tests | Unverifiable “done” |
+| Planning features already done | Duplicated work (H2/T1/F2/L2 are done) |
+| Roadmap without tests | Unverifiable "done" |
 | Ignoring by-design limits | Infinite platform chase |
 
 ## See also
 
 - [Missing features](/pyne/docs/reference/missing-features)
-- [Implementation status](/pyne/docs/reference/implementation-status)
 - [Interpret ↔ compile parity](/pyne/docs/runtime/compiler/parity)
 - [Alerts](/pyne/docs/runtime/alerts)
 - [pyne-worker](/pyne/docs/pyne-worker)

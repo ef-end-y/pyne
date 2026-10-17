@@ -7,7 +7,7 @@ tags: [compiler-plan, doc, docs]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-17T03:22:02Z
 sources:
   - id: tree
     resource: "docs/COMPILER_PLAN.md"
@@ -22,23 +22,20 @@ Repo path `docs/COMPILER_PLAN.md`.
 
 # Outline
 
-* Implementation Status
-  * Landed correctness / host surface (2026-08 residual)
 * Architecture
-  * 1. CompilerVisitor (AST to executable Python)
-  * 2. Numba Built-ins Module
-  * 3. Data Structure Overhaul
-  * 4. Engine API and integration with backend/runtime.py
-* Benefits
-* Product warm-compile path (H2, 2026-08)
-  * Runtime modes
-  * Cache layers
-  * Prewarm hooks
-  * SLOs (indicative, workstation + Numba; see Round 6 benches)
-* Remaining Work
+  * Numeric Mode
+  * Object Mode
+  * Warm-Compile
+* Implementation Status
+  * Landed Correctness and Host Surface
+  * Performance
+  * Interpret-to-Compile Parity
+* Recent Releases (0.6.10–0.6.12)
+  * 0.6.10 — Observability and Engine Parity
+  * 0.6.11 — Live Plane and Sessions
+  * 0.6.12 — Production Hardening
 
 # Mentions
 
 * [scripts](/code/scripts.md)
-* [src/pynescript/compiler](/code/src/pynescript/compiler.md)
 * [tests](/code/tests.md)

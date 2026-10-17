@@ -7,7 +7,7 @@ tags: [code, pynescript, util]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-13T07:21:34Z
+  at: 2026-10-17T03:45:33Z
 sources:
   - id: tree
     resource: "src/pynescript/util"

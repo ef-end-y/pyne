@@ -35,16 +35,18 @@ python scripts/build/compile.py --target cli --standalone
 
 ## What Gets Built
 
-```
-dist/
-├── lsp/
-│   └── pynescript-lsp          # LSP onefile binary (self-extracting)
-├── cli/
-│   └── pynescript              # CLI onefile binary
-├── vsix/
-│   └── pynescript-lsp.vsix     # VS Code extension bundle
-├── pynescript-lsp              # LSP binary (CI moves to dist/)
-└── pynescript                  # CLI binary (CI moves to dist/)
+```mermaid
+flowchart TD
+    dist["dist/"]
+    dist --> lsp["lsp/"]
+    dist --> cli["cli/"]
+    dist --> vsix["vsix/"]
+    dist --> lspbin["pynescript-lsp<br/>LSP binary (CI moves to dist/)"]
+    dist --> clibin["pynescript<br/>CLI binary (CI moves to dist/)"]
+
+    lsp --> lspbin2["pynescript-lsp<br/>LSP onefile binary (self-extracting)"]
+    cli --> clibin2["pynescript<br/>CLI onefile binary"]
+    vsix --> vsixbin["pynescript-lsp.vsix<br/>VS Code extension bundle"]
 ```
 
 ### Target differences
@@ -63,12 +65,15 @@ the PyPI package with the `compile` extra.
 The `builtin_metadata.json` is encrypted with Fernet during the build so Nuitka
 binaries can ship metadata without plaintext on disk.
 
-```
-src/pynescript/langserver/providers/
-├── builtin_metadata.json          # Plaintext (git-tracked, open; preferred in dev)
-├── builtin_metadata.json.enc      # Encrypted (git-tracked)
-├── builtin_metadata.json.sha256   # Integrity hash (16-char SHA-256 prefix)
-scripts/build/.metadata.key         # Fernet key (gitignored — never commit)
+```mermaid
+flowchart TD
+    providers["src/pynescript/langserver/providers/"]
+    providers --> plain["builtin_metadata.json<br/>Plaintext (git-tracked, open; preferred in dev)"]
+    providers --> enc["builtin_metadata.json.enc<br/>Encrypted (git-tracked)"]
+    providers --> hash["builtin_metadata.json.sha256<br/>Integrity hash (16-char SHA-256 prefix)"]
+
+    buildscripts["scripts/build/"]
+    buildscripts --> key[".metadata.key<br/>Fernet key (gitignored — never commit)"]
 ```
 
 ### Key resolution (stable / reproducible)

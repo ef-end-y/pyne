@@ -19,7 +19,7 @@
 
 ---
 title: "Pine v6 surface inventory"
-description: "Summary of the full Pine Script™ v6 surface inventory — dispatch counts, namespaces, status schema — with pointer to the large source document."
+description: "Summary of the full Pine Script™ v6 surface inventory — dispatch counts, namespaces, status schema — with pointer to the large source document. hoox-pyne 0.6.12."
 ---
 
 # Pine v6 surface inventory
@@ -47,7 +47,7 @@ flowchart TB
   subgraph Eval
     AST --> VIS[NodeLiteralEvaluator]
     VIS --> BI[Builtin dispatch map]
-    BI --> NS[ta / strategy / array / …]
+    BI --> NS[ta / strategy / array / ...]
   end
   BI --> INV[Inventory rows]
 ```
@@ -58,18 +58,18 @@ flowchart TB
 
 | Status | Definition |
 | --- | --- |
-| ✅ implemented | Handler/parser path exists and is usable |
-| 🔄 partial | Mock/stub, incomplete semantics, or metadata-only |
-| ❌ missing | Expected on TV v6; not resolving |
-| ⚙️ by design | Intentionally not full TV platform |
-| ⬜ N/A | Editor/UI-only |
+| Implemented | Handler/parser path exists and is usable |
+| Partial | Mock/stub, incomplete semantics, or metadata-only |
+| Missing | Expected on TV v6; not resolving |
+| By design | Intentionally not full TV platform |
+| N/A | Editor/UI-only |
 
 Each inventory row also carries: **Name**, **Namespace**, **Kind**, **Metadata** (LSP JSON present?), **Source** (e.g. `dispatch`), **Notes**.
 
 ### Summary counts (2026-10-08)
 
 | Metric | Count |
-| ---: | ---: |
+| --- | ---: |
 | Dispatch builtins (callable) | **941** |
 | Dispatch partial-heuristic (stub/mock docstring) | 10 |
 | Dispatch namespaces | 255 |
@@ -115,14 +115,14 @@ Each inventory row also carries: **Name**, **Namespace**, **Kind**, **Metadata**
 
 ### How to use the full file
 
-1. Open `docs/pine_v6_full_surface_inventory.md` in the repo or Sphinx/site mirror.
-2. Search by namespace (`## ta`, `strategy`, …).
-3. Trust **dispatch** source rows for “is there a callable?”; read **Notes** for mock/feed caveats.
+1. Open `docs/pine_v6_full_surface_inventory.md` in the repo or Sphinx site mirror.
+2. Search by namespace (`## ta`, `strategy`, ...).
+3. Trust **dispatch** source rows for "is there a callable?"; read **Notes** for mock/feed caveats.
 4. After large builtin PRs, regenerate summary counts before quoting them publicly.
 
 ## Invariants & edge cases
 
-1. **Inventory size is a feature** — summarization must not drop 🔄 rows when claiming coverage.
+1. **Inventory size is a feature** — summarization must not drop partial rows when claiming coverage.
 2. **Metadata presence ≠ semantic completeness.**
 3. **Partial heuristic count (10)** is docstring-based — real partials may be higher.
 4. **Language constructs** (control/export) may be parser-complete without every runtime edge.
@@ -131,7 +131,7 @@ Each inventory row also carries: **Name**, **Namespace**, **Kind**, **Metadata**
 
 ### Quote coverage honestly
 
-> “Against the public Pine v6 function reference (434 symbols), pynescript registered **0 missing** dispatch entries as of 2026-10-08; 941 total callables across 255 dispatch namespaces. See `docs/pine_v6_full_surface_inventory.md`.”
+> "Against the public Pine v6 function reference (434 symbols), pynescript registered **0 missing** dispatch entries as of 2026-10-08; 941 total callables across 255 dispatch namespaces. See `docs/pine_v6_full_surface_inventory.md`."
 
 ### Programmatic check (sketch)
 
@@ -150,7 +150,6 @@ python scripts/regenerate_inventory_summary.py
 
 ## See also
 
-- [Implementation status](/pyne/docs/reference/implementation-status)
 - [Missing features](/pyne/docs/reference/missing-features)
 - [Compatibility](/pyne/docs/reference/compatibility)
 - [Runtime builtins](/pyne/docs/runtime/builtins)

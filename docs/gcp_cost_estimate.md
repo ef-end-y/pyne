@@ -27,15 +27,18 @@
 
 ## Architecture
 
-```
-Client (VS Code LSP) → Cloud Run (Flask API)
-                          ├── /run              — script execution
-                          ├── /preview/chart    — chart thumbnails
-                          ├── /backtest/quick   — quick backtest
-                          └── /auth/validate    — API key check
-                          ├── Cloud SQL (PostgreSQL) — user/API key DB
-                          ├── Memorystore (Redis)    — result cache
-                          └── Cloud Storage            — chart PNGs / thumbnails
+```mermaid
+flowchart LR
+    Client["Client<br/>(VS Code LSP)"] --> API["Cloud Run<br/>(Flask API)"]
+
+    API --> Run["/run<br/>script execution"]
+    API --> Preview["/preview/chart<br/>chart thumbnails"]
+    API --> Backtest["/backtest/quick<br/>quick backtest"]
+    API --> Auth["/auth/validate<br/>API key check"]
+
+    API --> SQL["Cloud SQL (PostgreSQL)<br/>user/API key DB"]
+    API --> Redis["Memorystore (Redis)<br/>result cache"]
+    API --> Storage["Cloud Storage<br/>chart PNGs / thumbnails"]
 ```
 
 CI/CD: Cloud Build → Artifact Registry → Cloud Run (already configured in `cloudbuild.yaml`)

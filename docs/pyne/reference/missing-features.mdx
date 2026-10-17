@@ -19,14 +19,14 @@
 
 ---
 title: "Missing features"
-description: "Known gaps and closed Pine Script™ v6 items — what is implemented, what is partial by design, and what is out of scope."
+description: "Known gaps and closed Pine Script™ v6 items — what is implemented, what is partial by design, and what is out of scope. hoox-pyne 0.6.12."
 ---
 
 # Missing features
 
 ## Abstract
 
-“Missing” in PYNE is a **moving frontier**. Core v6 support is ~99%+ for core language, with post-launch TV items closed (multiline strings, library `export const`, footprint mocks, risk enforcement, matrix LA, compile-mode strategy, drawing GC, bottom-panel table fields, square-bracket wrapping, …) **plus** open-source corpus parse/Runtime hardening, **incremental bar-mode TA**, **alert engine + L2 webhooks**, **series caps**, **warm-compile**, **pending-fill** averaging, **`timeframe.change`** (intraday buckets + D/W/M exchange calendar), **package Runtime SoT** (`pynescript.runtime`; `backend.runtime` is a shim), **compile object-mode residual recovery** (UDF locals, nopython `None`/unicode, matrix handles, UDT returns, `x = switch`, drawing copy, `int(na)`, `round()` extras, import stubs, color type dispatch, nested UDT methods), **type-aware intraday risk enforcement on both brokers**, **intrabar `var` rollback on realtime ticks**, **`request.security` barmerge on HTF resample paths**, **linter legacy-rule retirements**, and **drawing export parity** (table/box/label/polyline style fields on both hosts). Remaining gaps cluster into **optional set0x community-corpus plot parity (P1p official builtins closed)**, **by-design platform differences**, and **editor-only features**.
+"Missing" in PYNE is a **moving frontier**. Core v6 support is ~99%+ for core language, with post-launch TV items closed (multiline strings, library `export const`, footprint mocks, risk enforcement, matrix LA, compile-mode strategy, drawing GC, bottom-panel table fields, square-bracket wrapping) plus open-source corpus parse/Runtime hardening, incremental bar-mode TA, alert engine + L2 webhooks, series caps, warm-compile, pending-fill averaging, `timeframe.change` (intraday buckets + D/W/M exchange calendar), package Runtime SoT (`pynescript.runtime`; `backend.runtime` is a shim), compile object-mode residual recovery (UDF locals, nopython `None`/unicode, matrix handles, UDT returns, `x = switch`, drawing copy, `int(na)`, `round()` extras, import stubs, color type dispatch, nested UDT methods), type-aware intraday risk enforcement on both brokers, intrabar `var` rollback on realtime ticks, `request.security` barmerge on HTF resample paths, linter legacy-rule retirements, and drawing export parity (table/box/label/polyline style fields on both hosts). 0.6.10-0.6.12: engine-owned live plane (WS `/ws/live`), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + `PYNE_DATA_DIR`, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests. Remaining gaps cluster into optional set0x community-corpus plot parity (P1p official builtins closed), by-design platform differences, and editor-only features.
 
 Authoritative narrative: `docs/missing_features.md`. Canonical IDs: `docs/ROADMAP.md`.
 
@@ -38,8 +38,8 @@ flowchart TB
     ML[Multiline strings]
     EX[export const / types / enums]
     FP[request.footprint mocks]
-    MAT[matrix LA surface]
-    STR[strategy runtime depth]
+    MAT[Matrix LA surface]
+    STR[Strategy runtime depth]
     CORP[Corpus sanitize + grammar]
     PERF[Incremental bar-mode TA]
     ALERT[Alerts + L2 webhooks]
@@ -48,7 +48,7 @@ flowchart TB
   subgraph Remaining
     RD[Real multi-symbol request.* feeds]
     ED[Editor-only UX]
-    P1p[optional set0x community-corpus plot parity]
+    P1p[Optional set0x community-corpus plot parity]
   end
   TV[TV release notes] --> Closed_recently
   TV --> Remaining
@@ -57,7 +57,7 @@ flowchart TB
 
 ## Interface surface
 
-### Recently completed (do not re-open as “missing”)
+### Recently completed (do not re-open as "missing")
 
 Summarized — full prose in source doc:
 
@@ -75,8 +75,8 @@ Summarized — full prose in source doc:
 | Drawing `*.all`, plot registry, **`max_*_count` GC** | Effects recorded; GC on package + Pro + AXIS |
 | Numba compile + object mode + **warm-compile (H2)** | Disk IR cache, prewarm API/CLI, deploy defaults |
 | **Compile object-mode residuals** | UDF locals / free-series, nopython `None`/`timestamp`, matrix handles, UDT returns, `x = switch`, drawing copy, `pine_int(na)`, sanitize chrome, `round()` extras, import stubs as `na`, color type dispatch, nested UDT methods |
-| Official matrix LA & predicates | det/inv/eigen/… |
-| **0 missing** vs public TV v6 function reference list (434 symbols) |
+| Official matrix LA and predicates | det/inv/eigen/... |
+| **0 missing** vs public TV v6 function reference list (434 symbols) | |
 | Runtime `_pine_defs_locked` + append-only `current_series` | Host hygiene (backend + pyne-worker) |
 | Incremental `ta.*` (MAs, oscillators, `bb`/`kama`/`stochrsi`, volume `obv`/`wad`/`cmf`/`klinger`/`nvi`/`pvi`) | Bar mode; `PYNE_TA_INCREMENTAL=0` to disable |
 | **Series caps (T1)** | `PYNE_SERIES_CAP` default ON + goldens |
@@ -92,34 +92,34 @@ Summarized — full prose in source doc:
 
 | Item | Status posture |
 | --- | --- |
-| Real (non-mock) multi-symbol `request.*` market data (**B1**) | ⚙️ By design for library core; feeds optional. **Foreign-na policy landed** (no invent). |
-| **`request.security` foreign data** | ⚙️ **Not filled with real series** — emits `na` for foreign/complex (honest). Same-symbol simple OHLCV may lower. |
-| **Auto Fib / pivot-heavy scripts** | ⚙️ Need real pivot structure (or registered ZigZag lib). Flat synthetic bars → intentional `runtime.error` (insufficient pivots); both hosts should agree (`both_error_same` in parity harness). |
+| Real (non-mock) multi-symbol `request.*` market data (**B1**) | By design for library core; feeds optional. **Foreign-na policy landed** (no invent). |
+| **`request.security` foreign data** | **Not filled with real series** — emits `na` for foreign/complex (honest). Same-symbol simple OHLCV may lower. |
+| **Auto Fib / pivot-heavy scripts** | Need real pivot structure (or registered ZigZag lib). Flat synthetic bars → intentional `runtime.error` (insufficient pivots); both hosts should agree (`both_error_same` in parity harness). |
 | Pixel chart host | External (AXIS / clients) |
 | Some unlimited-history / trim edge cases | High-level support; exotic TV behaviors may differ |
-| Editor word-wrap / UI-only release notes | ⬜ N/A |
-| PyneTS full builtin parity (**L3**) | ⚙️ interpret + JS compile landed in `@hoox-sh/pynets` 0.5.0; Python remains oracle. Open rows: [PyneTS missing features](/pyne/docs/pynets/missing-features) |
+| Editor word-wrap / UI-only release notes | N/A |
+| PyneTS full builtin parity (**L3**) | interpret + JS compile landed in `@hoox-sh/pynets` 0.5.0; Python remains oracle. Open rows: [PyneTS missing features](/pyne/docs/pynets/missing-features) |
 | Bit-identical every recursive smoother vs TV | Numerical bounds, not bits |
-| Dual Runtime host copies (**H1**) | ✅ **largely done** — package `pynescript.runtime` SoT + `backend.*` shims + pyne-worker thin wrap. Residual = worker-only extras (logs/profile, CF first-plot), not a forked bar loop |
-| Warm-compile product path (**H2**) | ✅ SLOs / prewarm / deploy IR cache defaults |
-| Runtime residual (**C1**) | ✅ set01–04 Runtime interpret **100%** excl. EXPECTED_FAIL; third-party corpus not shipped |
-| Series cap (**T1**) | ✅ `PYNE_SERIES_CAP` default ON |
-| Residual TA inc (**T2**) | ✅ R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume `obv`/`wad`/`cmf`/`klinger`; `nvi`/`pvi`; `aroon`/`dpo`/`donchian`/`kst` |
-| Pending-fill (**F2**) | ✅ R7 interpret + compile goldens |
-| Plot parity residual (**P1p**) | ✅ Harness + first-party goldens + official TV builtins **0 MISMATCH**; optional set0x community corpus unmeasured |
-| Compile leftover library stubs | ⚙️ Some `float(None)` / UDF arity on missing `import` libraries; INV expected-fail fixtures stay fail |
-| TV Wilder RMA-ATR / supertrend (**F1**) | ✅ interpret ATR is `ta.rma(ta.tr)`; Supertrend mid±factor·ATR locked. TV ratchet is out of scope |
-| Alert webhooks (**L2**) | ✅ Pro API + pyne-worker; see [Alerts](/pyne/docs/runtime/alerts) |
+| Dual Runtime host copies (**H1**) | **Largely done** — package `pynescript.runtime` SoT + `backend.*` shims + pyne-worker thin wrap. Residual = worker-only extras (logs/profile, CF first-plot), not a forked bar loop |
+| Warm-compile product path (**H2**) | SLOs / prewarm / deploy IR cache defaults |
+| Runtime residual (**C1**) | set01-04 Runtime interpret **100%** excl. EXPECTED_FAIL; third-party corpus not shipped |
+| Series cap (**T1**) | `PYNE_SERIES_CAP` default ON |
+| Residual TA inc (**T2**) | R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume `obv`/`wad`/`cmf`/`klinger`; `nvi`/`pvi`; `aroon`/`dpo`/`donchian`/`kst` |
+| Pending-fill (**F2**) | R7 interpret + compile goldens |
+| Plot parity residual (**P1p**) | Harness + first-party goldens + official TV builtins **0 MISMATCH**; optional set0x community corpus unmeasured |
+| Compile leftover library stubs | Some `float(None)` / UDF arity on missing `import` libraries; INV expected-fail fixtures stay fail |
+| TV Wilder RMA-ATR / supertrend (**F1**) | interpret ATR is `ta.rma(ta.tr)`; Supertrend mid±factor·ATR locked. TV ratchet is out of scope |
+| Alert webhooks (**L2**) | Pro API + pyne-worker; see [Alerts](/pyne/docs/runtime/alerts) |
 
 ### Post-v6 launch themes (historical gap list)
 
-v6 launch items (dynamic requests, strict bool, enums, polylines, `log.*`, negative indices, truediv, …) are largely supported or intentionally stubbed where platform-bound.
+v6 launch items (dynamic requests, strict bool, enums, polylines, `log.*`, negative indices, truediv, ...) are largely supported or intentionally stubbed where platform-bound.
 
-2025–2026 monthly TV updates introduced footprint types, `active` inputs, multiline strings, `export const`, UDT sort fields — tracked and largely closed.
+2025-2026 monthly TV updates introduced footprint types, `active` inputs, multiline strings, `export const`, UDT sort fields — tracked and largely closed.
 
 ### Corpus + performance snapshot
 
-Open-source set01–04 (**2477** scripts; measured locally, **not shipped** in-repo):
+Open-source set01-04 (**2477** scripts; measured locally, **not shipped** in-repo):
 
 | Metric | Value |
 | --- | --- |
@@ -147,7 +147,7 @@ Golden: `tests/test_ta_incremental.py`, `tests/test_series_cap.py`.
 | `scripts/compare_interp_compile.py` | Plot parity harness (P1p) |
 | `docs/pine_v6_full_surface_inventory.md` | Full name-level inventory |
 | `resource/*.g4` + builder | Grammar-level feature work |
-| `.../technical_submodules/core.py` | `_sma_inc_update`, `_macd_inc_update`, `_atr_inc_update`, … |
+| `.../technical_submodules/core.py` | `_sma_inc_update`, `_macd_inc_update`, `_atr_inc_update`, ... |
 
 ## Invariants & edge cases
 
@@ -155,7 +155,7 @@ Golden: `tests/test_ta_incremental.py`, `tests/test_series_cap.py`.
 2. **Mock data can green tests while production feeds differ** — declare data source explicitly.
 3. **Compile does not fill foreign `request.security` data** — multi-asset plots stay `na` on compile unless same-symbol simple OHLCV; do not treat invent-as-close as a fix.
 4. **Auto Fib needs pivots** — without swing structure (or ZigZag library registration), expect structured insufficient-pivot errors, not fib lines.
-5. **“0 missing vs reference list” ≠ identical semantics for every edge case.**
+5. **"0 missing vs reference list" ≠ identical semantics for every edge case.**
 6. **Perf changes must keep bar-by-bar semantics** — no whole-script vectorization; prefer golden tests vs current oracle.
 7. Update this annex when `missing_features.md` changes major status lines.
 
@@ -194,13 +194,12 @@ PYNE_TA_INCREMENTAL=0 python -c "from pynescript.runtime import Runtime; ..."
 | Lexer error on triple quotes | Stale generated lexer (should be fixed on main) |
 | Import member missing | Library export registration |
 | Empty footprint rows | Mock seed / data_feed not configured |
-| Risk not blocking entry | Old runtime path; ensure risk kwargs applied |
+| Risk not blocking entry | Old runtime path; ensure risk_kwargs applied |
 | Runtime TIMEOUT on method-heavy scripts | Missing `_pine_defs_locked` on host |
 | Corpus PARSE_FAIL mid-block | Truncated scrape — not a grammar hole |
 
 ## See also
 
-- [Implementation status](/pyne/docs/reference/implementation-status)
 - [Pine v6 surface](/pyne/docs/reference/pine-v6-surface)
 - [Roadmap](/pyne/docs/reference/roadmap)
 - [Compatibility](/pyne/docs/reference/compatibility)
