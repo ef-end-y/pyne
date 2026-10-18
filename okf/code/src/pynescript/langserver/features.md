@@ -7,7 +7,7 @@ tags: [code, features, langserver, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:40:25Z
+  at: 2026-10-18T14:31:16Z
 sources:
   - id: tree
     resource: "src/pynescript/langserver/features"
@@ -28,4 +28,5 @@ okf_lock: generated
 * `inlay_hints.py` — handle_inlay_hints
 * `references.py` — ReferencesFinder, handle_references
 * `semantic_tokens.py` — handle_semantic_tokens
+* `signature_help.py` — handle_signature_help
 * `symbols.py` — DocumentSymbolCollector, handle_document_symbols

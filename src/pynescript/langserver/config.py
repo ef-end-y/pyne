@@ -21,8 +21,7 @@
 
 :func:`get_server_capabilities` is returned from the ``initialize`` handler in
 :mod:`pynescript.langserver.server`. Only declare providers that have working
-handlers — signature help is omitted until implemented; code actions
-expose Convert-to-v6.
+handlers. Code actions expose Convert-to-v6.
 
 Semantic token type/modifier order in :func:`semantic_token_types` /
 :func:`semantic_token_modifiers` **must** stay aligned with indices used by
@@ -60,6 +59,10 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
             resolve_provider=True,
         ),
         hover_provider=True,
+        signature_help_provider=lsp.SignatureHelpOptions(
+            trigger_characters=["(", ","],
+            retrigger_characters=[","],
+        ),
         definition_provider=True,
         references_provider=True,
         document_symbol_provider=lsp.DocumentSymbolOptions(
@@ -88,7 +91,6 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
             range=False,
             full=True,
         ),
-        # signatureHelp intentionally omitted until a handler exists.
     )
 
 

@@ -32,7 +32,7 @@
 
 **Feature handlers** (delegated to :mod:`pynescript.langserver.features`)
 
-- completion (+ resolve), hover, definition, references
+- completion (+ resolve), hover, signatureHelp, definition, references
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full
@@ -67,6 +67,7 @@ from pynescript.langserver.features import hover as hover_feature
 from pynescript.langserver.features import inlay_hints as inlay_hints_feature
 from pynescript.langserver.features import references as references_feature
 from pynescript.langserver.features import semantic_tokens as semantic_tokens_feature
+from pynescript.langserver.features import signature_help as signature_help_feature
 from pynescript.langserver.features import symbols as symbols_feature
 from pynescript.langserver.workspace import Workspace
 
@@ -324,6 +325,17 @@ class PynescriptLanguageServer(LanguageServer):
             if not doc:
                 return hover_feature.handle_hover(params, None)
             return hover_feature.handle_hover(params, doc.source, tree=doc.ast, cache=doc.feature_cache)
+
+        @self.feature(lsp.TEXT_DOCUMENT_SIGNATURE_HELP)
+        def text_signature_help(
+            params: lsp.SignatureHelpParams,
+        ) -> lsp.SignatureHelp | None:
+            """Handle textDocument/signatureHelp request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return signature_help_feature.handle_signature_help(params, None)
+            return signature_help_feature.handle_signature_help(params, doc.source, tree=doc.ast)
 
         @self.feature(lsp.TEXT_DOCUMENT_DEFINITION)
         def text_definition(

@@ -10,6 +10,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **LSP signature help** — `textDocument/signatureHelp` for Pine builtins (from `builtin_metadata.json` detail/snippet) and user `FunctionDef`. Trigger characters `(` and `,`; `activeParameter` is the top-level comma count inside the innermost enclosing call. Advertised via `signatureHelpProvider`.
+
 ### Changed
 
 - **Live P3 push shape.** Forming re-ticks ship last-value tails only and coalesce on the feed thread (75 ms); close/multi-slot batches flush immediately so `seq` and `close` frames stay ordered. Compact (`BNBUSDT`) and pair-form (`BNB/USDT`) series identities match on tick so journaled sessions survive the AXIS key unification.

@@ -32,6 +32,7 @@ from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
 from pynescript.langserver.features.hover import handle_hover
 from pynescript.langserver.features.references import handle_references
+from pynescript.langserver.features.signature_help import handle_signature_help
 from pynescript.langserver.features.symbols import handle_document_symbols
 from pynescript.langserver.providers.builtin_metadata import get_builtin
 from pynescript.langserver.providers.builtin_metadata import get_metadata
@@ -970,14 +971,95 @@ class TestConvertToV6:
         assert handle_code_action(params, src) == []
 
 
+def _position_after(source: str, prefix: str) -> lsp.Position:
+    """LSP position immediately after the first occurrence of *prefix*."""
+    idx = source.index(prefix) + len(prefix)
+    line = source.count("\n", 0, idx)
+    col = idx - (source.rfind("\n", 0, idx) + 1)
+    return lsp.Position(line=line, character=col)
+
+
+def _signature_params(source: str, prefix: str) -> lsp.SignatureHelpParams:
+    return lsp.SignatureHelpParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        position=_position_after(source, prefix),
+    )
+
+
+def _param_label(param: lsp.ParameterInformation) -> str:
+    label = param.label
+    return label if isinstance(label, str) else ""
+
+
+class TestSignatureHelpHandler:
+    """textDocument/signatureHelp for builtins and user FunctionDef."""
+
+    def test_builtin_plot_after_paren(self) -> None:
+        source = "//@version=6\nindicator('T')\nplot(close)\n"
+        result = handle_signature_help(_signature_params(source, "plot("), source)
+        assert result is not None
+        assert result.active_signature == 0
+        assert result.active_parameter == 0
+        assert result.signatures
+        assert "plot" in result.signatures[0].label
+
+    def test_builtin_ta_sma_after_comma(self) -> None:
+        source = "//@version=6\nindicator('T')\nta.sma(close, 14)\n"
+        result = handle_signature_help(_signature_params(source, "ta.sma(close,"), source)
+        assert result is not None
+        assert result.active_signature == 0
+        assert result.active_parameter == 1
+        labels = [_param_label(p) for p in (result.signatures[0].parameters or [])]
+        assert len(labels) >= 2
+
+    def test_nested_parens_innermost_callee(self) -> None:
+        source = "//@version=6\nindicator('T')\nplot(math.max(close, open))\n"
+        result = handle_signature_help(_signature_params(source, "math.max(close,"), source)
+        assert result is not None
+        label = result.signatures[0].label
+        assert "max" in label
+        assert not label.startswith("plot")
+
+    def test_user_function_active_parameter(self) -> None:
+        source = "//@version=6\nindicator('T')\nf(int x, int y) => x + y\nplot(f(1, 2))\n"
+        result = handle_signature_help(_signature_params(source, "plot(f(1,"), source)
+        assert result is not None
+        assert result.active_parameter == 1
+        labels = [_param_label(p) for p in (result.signatures[0].parameters or [])]
+        assert any("y" in lab for lab in labels)
+
+    def test_outside_call_returns_none(self) -> None:
+        source = "//@version=6\nindicator('T')\nlength = 14\n"
+        params = lsp.SignatureHelpParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=_position_after(source, "len"),
+        )
+        assert handle_signature_help(params, source) is None
+
+    def test_unknown_callee_returns_none(self) -> None:
+        source = "//@version=6\nindicator('T')\nzzz_unknown(1, 2)\n"
+        assert handle_signature_help(_signature_params(source, "zzz_unknown("), source) is None
+
+    def test_empty_source_returns_none(self) -> None:
+        params = lsp.SignatureHelpParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=0, character=0),
+        )
+        assert handle_signature_help(params, "") is None
+        assert handle_signature_help(params, None) is None
+
+
 class TestCapabilities:
     """Advertised capabilities must match implemented handlers only."""
 
-    def test_no_unimplemented_signature_help(self) -> None:
+    def test_signature_help_provider(self) -> None:
         from pynescript.langserver.config import get_server_capabilities
 
         caps = get_server_capabilities()
-        assert caps.signature_help_provider is None
+        assert caps.signature_help_provider is not None
+        triggers = list(caps.signature_help_provider.trigger_characters or [])
+        assert "(" in triggers
+        assert "," in triggers
         assert caps.code_action_provider is not None
         assert caps.execute_command_provider is not None
         assert "pynescript.convertToV6" in (caps.execute_command_provider.commands or [])

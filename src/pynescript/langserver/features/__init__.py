@@ -28,6 +28,7 @@ Modules:
 
 - :mod:`.completion` — ``textDocument/completion``, ``completionItem/resolve``
 - :mod:`.hover` — ``textDocument/hover``
+- :mod:`.signature_help` — ``textDocument/signatureHelp``
 - :mod:`.diagnostics` — lint → LSP diagnostic conversion helpers
 - :mod:`.formatting` — ``textDocument/formatting``, ``rangeFormatting``
 - :mod:`.definitions` — ``textDocument/definition``
@@ -44,5 +45,6 @@ imported by name from :mod:`pynescript.langserver.server`.
 from __future__ import annotations
 
 from pynescript.langserver.features import diagnostics
+
 
 __all__ = ["diagnostics"]
