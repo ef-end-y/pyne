@@ -20,7 +20,7 @@ when moving it between tables.
 | D-01 | Strategy exits | Trail stops (`trail_*`) are OHLC-path approximations — no tick path | [§ Strategy → exits](#sec-exit-brackets) |
 | D-02 | Strategy risk | No full reference risk engine: `max_position_size` is %-of-equity (reference: contracts); cash thresholds in account units without FX conversion; tick-accurate accounting | [§ Strategy → risk](#sec-risk-compile) |
 | D-03 | Trade queries | Per-trade `max_drawdown` / `max_runup` are OHLC-path approximations, not tick-accurate | [§ Strategy → trade queries](#sec-trade-queries) |
-| D-04 | Realtime `var` / `varip` | No live datafeed-driven ticks. Unconfirmed ticks roll back in-place array/matrix/map/UDT mutations and broker fills / pending-book / strategy events (confirmed tick commits). Compile object-mode honors the interpret realtime window (`var` / `varip` / `barstate` / `once` / broker); numeric nopython stays historical | [§ Evaluator → var/varip](#sec-varip) |
+| D-04 | Realtime `var` / `varip` | Compile does not poll the feed; `CCXTProDataFeed.poll_ohlcv` is still `None`. Unconfirmed ticks roll back in-place array/matrix/map/UDT mutations and broker fills. Interpret last-bar ticks pull forming OHLCV from `DataFeed.poll_ohlcv` when a feed is passed | [§ Evaluator → var/varip](#sec-varip) |
 | D-06 | `request.security` | No full HTF expression re-eval engine; `gaps` / `lookahead` still unused on passthrough / provider / complex-na paths and for LTF requests | [§ Request → security](#sec-security) |
 
 ### Fixed
@@ -149,7 +149,9 @@ Full-list `_ema` / `_ema_state_step` and incremental / Numba paths all use **SMA
 
 **Compile multi-pass (D-04):** object-mode `execute_script_compiled(..., rt_first=None, rt_ticks=1)` re-visits bars in `[rt_first, n_bars)` `rt_ticks` times with `__isrealtime` / `__isconfirmed` / `__ishistory` / `__isnew` per tick. Intermediate ticks overwrite the same plot cell (series length stays one sample per bar) and do not latch `once`. `varip` re-inits while `var` commits on the confirmed tick. List/dict locals are content-copied (`.copy()` / slice restore) so `array.push` / `map.put` on a `var` handle roll back; `varip` names are skipped. `__strategy.snapshot()` / `restore()` run on unconfirmed ticks; `begin_bar` stays outside the tick loop. Host `_run_compiled` forwards the same `Runtime.run` realtime kwargs; an active window re-emits object mode so numeric scripts can opt in without changing the historical nopython path. Disk IR cache v20.
 
-**Not yet:** live datafeed-driven ticks.
+**Feed-driven ticks (D-04):** when `Runtime.run(..., data_feed=)` is set and a realtime window is active, each last-bar interpret tick calls sync `DataFeed.poll_ohlcv` and evaluates against that forming OHLCV (`MockDataFeed` is deterministic / scriptable; a `None` poll is a no-op). Without a feed, ticks still re-visit the same historical last-bar OHLC. `InterpretSession.update_last_bar` is unchanged (host still pushes forming bars). Compile does not poll. `CCXTProDataFeed.poll_ohlcv` is still `None`.
+
+**Not yet:** compile-mode feed poll; `CCXTProDataFeed.poll_ohlcv` cached watch sample.
 
 **Track:** audit AGENT_02; host kwargs in `pynescript.runtime.host.Runtime.run`; dual-host tests in `tests/test_compiler_realtime.py`.
 

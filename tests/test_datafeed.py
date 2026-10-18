@@ -67,6 +67,32 @@ def test_get_datafeed_mock():
     assert isinstance(feed, MockDataFeed)
 
 
+def test_mock_poll_ohlcv_scripted_no_sleep():
+    candles = [
+        [1_700_000_000_000, 100.0, 101.0, 99.0, 100.5, 10.0],
+        [1_700_000_060_000, 100.5, 102.0, 100.0, 101.0, 11.0],
+    ]
+    feed = MockDataFeed(scripted=candles)
+    assert feed.poll_ohlcv("BTC/USDT") == candles[0]
+    assert feed.poll_ohlcv("BTC/USDT") == candles[1]
+    assert feed.poll_ohlcv("BTC/USDT") is None
+
+
+def test_mock_poll_ohlcv_synthetic_deterministic():
+    feed = MockDataFeed(start_price=100.0)
+    first = feed.poll_ohlcv("X")
+    second = feed.poll_ohlcv("X")
+    assert first is not None and second is not None
+    assert len(first) == 6 and len(second) == 6
+    assert first[1] == 100.0
+    assert first != second
+
+
+def test_ccxtpro_poll_ohlcv_none_without_cache():
+    feed = CCXTProDataFeed(exchange="binance")
+    assert feed.poll_ohlcv("BTC/USDT") is None
+
+
 def test_get_datafeed_unknown():
     with pytest.raises(DataFeedError):
         get_datafeed("nonexistent")

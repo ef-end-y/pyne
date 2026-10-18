@@ -143,6 +143,14 @@ class DataFeed(ABC):
         """Close the underlying connection(s)."""
         pass  # default no-op for subclasses that do not need explicit close
 
+    def poll_ohlcv(self, symbol: str, timeframe: str = "1m") -> list[Any] | None:
+        """Sync snapshot of the latest forming OHLCV, or ``None``.
+
+        Returns ``[ts_ms, open, high, low, close, volume]``. Default is
+        ``None`` (no-op) so async-only feeds do not block the bar loop.
+        """
+        return None
+
     async def __aenter__(self) -> DataFeed:
         return self
 
@@ -495,10 +503,17 @@ class MockDataFeed(DataFeed):
     Generates synthetic streaming data.
     """
 
-    def __init__(self, symbol: str = "BTC/USDT", start_price: float = 25000.0):
+    def __init__(
+        self,
+        symbol: str = "BTC/USDT",
+        start_price: float = 25000.0,
+        scripted: list[list[Any]] | None = None,
+    ):
         self.symbol = symbol
         self.price = start_price
         self._closed = False
+        self._scripted = [list(c) for c in scripted] if scripted is not None else None
+        self._poll_i = 0
         _dbg("MockDataFeed init symbol=%s start_price=%s", symbol, start_price)
         _stats.count("datafeed.feeds_created", dim="mock")
 
@@ -595,6 +610,31 @@ class MockDataFeed(DataFeed):
             out.append([ts + i * 60_000, o, h, lo, c, v])
         return out
 
+    def poll_ohlcv(self, symbol: str, timeframe: str = "1m") -> list[Any] | None:
+        """Next forming candle (sync, no sleep). ``scripted`` then ``None``."""
+        _ = symbol
+        _ = timeframe
+        if self._scripted is not None:
+            if self._poll_i >= len(self._scripted):
+                return None
+            candle = list(self._scripted[self._poll_i])
+            self._poll_i += 1
+            try:
+                self.price = float(candle[4])
+            except (TypeError, ValueError, IndexError):
+                pass
+            return candle
+        i = self._poll_i
+        self._poll_i += 1
+        o = float(self.price)
+        h = o + 1.0
+        lo = o - 1.0
+        c = o + 0.5
+        v = 100.0 + i
+        ts = 1_700_000_000_000 + i * 60_000
+        self.price = c
+        return [ts, o, h, lo, c, v]
+
 
 # Composite / unified feed example
 class CompositeDataFeed(DataFeed):
@@ -654,6 +694,21 @@ class CompositeDataFeed(DataFeed):
                 except Exception:  # noqa: S110
                     continue
         return []
+
+    def poll_ohlcv(self, symbol: str, timeframe: str = "1m") -> list[Any] | None:
+        for src in (self.primary, self.fallback):
+            if src is None:
+                continue
+            poll = getattr(src, "poll_ohlcv", None)
+            if not callable(poll):
+                continue
+            try:
+                candle = poll(symbol, timeframe)
+            except Exception:  # noqa: S110
+                continue
+            if candle:
+                return candle
+        return None
 
 
 # --- Order execution / position tracking on top of datafeed (point 3) ---

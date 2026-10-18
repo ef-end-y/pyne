@@ -1525,6 +1525,142 @@ def _restore_ta_state(evaluator: Any, snap: tuple[Any, Any] | None) -> None:
         pass
 
 
+def _apply_feed_forming_bar(
+    ohlcv_data: list,
+    bar_index: int,
+    evaluator: Any,
+    data_feed: Any,
+    symbol: str,
+) -> None:
+    """Overwrite the forming bar from ``DataFeed.poll_ohlcv`` (sync).
+
+    No-op when *data_feed* is missing, ``poll_ohlcv`` is absent, or the
+    poll returns ``None`` / a malformed candle. Never raises; does not
+    await (the bar loop stays sync).
+    """
+    if data_feed is None or not ohlcv_data:
+        return
+    poll = getattr(data_feed, "poll_ohlcv", None)
+    if not callable(poll):
+        return
+    tf = "1m"
+    ctx = getattr(evaluator, "context", None)
+    try:
+        period = ctx.get("timeframe.period") if ctx is not None else None
+        if period:
+            tf = str(period)
+    except Exception:
+        pass
+    try:
+        candle = poll(symbol or "", tf)
+    except Exception:
+        return
+    if not candle:
+        return
+    try:
+        if isinstance(candle[0], (list, tuple)):
+            candle = candle[-1]
+        ts = int(candle[0])
+        o = float(candle[1])
+        h = float(candle[2])
+        low = float(candle[3])
+        c = float(candle[4])
+        vol = float(candle[5]) if len(candle) > 5 else None
+    except (TypeError, ValueError, IndexError):
+        return
+    try:
+        bar = ohlcv_data[bar_index]
+        if isinstance(bar, dict):
+            bar["time"] = ts
+            bar["open"] = o
+            bar["high"] = h
+            bar["low"] = low
+            bar["close"] = c
+            if vol is not None:
+                bar["volume"] = vol
+        else:
+            ohlcv_data[bar_index] = {
+                "time": ts,
+                "open": o,
+                "high": h,
+                "low": low,
+                "close": c,
+                "volume": vol if vol is not None else 0.0,
+            }
+    except Exception:
+        return
+    if ctx is None:
+        return
+
+    def _set_current(name: str, value: Any) -> None:
+        series = ctx.get(name)
+        if series is None:
+            return
+        setter = getattr(series, "set_current", None)
+        if callable(setter):
+            try:
+                setter(value)
+                return
+            except Exception:
+                pass
+        try:
+            series.current = value
+            hist = getattr(series, "history", None)
+            if hist:
+                hist[0] = value
+        except Exception:
+            pass
+
+    _set_current("open", o)
+    _set_current("high", h)
+    _set_current("low", low)
+    _set_current("close", c)
+    if vol is not None:
+        _set_current("volume", vol)
+    _set_current("time", ts)
+    try:
+        if ctx.get("hl2") is not None:
+            _set_current("hl2", (h + low) * 0.5)
+        if ctx.get("hlc3") is not None:
+            _set_current("hlc3", (h + low + c) / 3.0)
+        if ctx.get("ohlc4") is not None:
+            _set_current("ohlc4", (o + h + low + c) * 0.25)
+    except Exception:
+        pass
+    try:
+        ctx.set_bar_time(ts)
+    except Exception:
+        pass
+    try:
+        ctx["last_bar_time"] = ts
+    except Exception:
+        pass
+    sl = getattr(evaluator, "current_series", None)
+    if isinstance(sl, dict):
+        pairs = [("open", o), ("high", h), ("low", low), ("close", c)]
+        if vol is not None:
+            pairs.append(("volume", vol))
+        for key, val in pairs:
+            col = sl.get(key)
+            try:
+                if col:
+                    col[-1] = val
+            except Exception:
+                pass
+    htf = getattr(evaluator, "_htf_full_ohlcv", None)
+    if isinstance(htf, dict):
+        packed = [("open", o), ("high", h), ("low", low), ("close", c), ("time", ts)]
+        if vol is not None:
+            packed.append(("volume", vol))
+        for key, val in packed:
+            col = htf.get(key)
+            try:
+                if col is not None:
+                    col[bar_index] = val
+            except Exception:
+                pass
+
+
 def _resolve_realtime_first(
     n_bars: int,
     *,
@@ -2191,6 +2327,9 @@ class InterpretSession:
                     pass
             for tick_i in range(n_ticks):
                 if bar_rt:
+                    _apply_feed_forming_bar(
+                        self._ohlcv_data, bar_index, ev, self._data_feed, self._runtime.symbol
+                    )
                     barstate.isrealtime = True
                     barstate.ishistory = False
                     barstate.isnew = tick_i == 0
@@ -2941,6 +3080,10 @@ class Runtime:
             source_code: Pine Script source to run.
             ohlcv_data: List of dicts with 'open', 'high', 'low', 'close', 'time'.
             data_feed: Optional realtime DataFeed for request.* live data.
+                When a realtime window is active, last-bar ticks also call
+                ``poll_ohlcv`` (sync) so each tick sees a forming candle.
+                Without a feed (or when poll returns None), ticks re-visit
+                the same OHLC.
             data_provider: Optional historical provider for request.* .
             mode:
                 ``"interpret"`` — AST walker.
@@ -3580,6 +3723,7 @@ class Runtime:
             for tick_i in range(n_ticks):
                 if bar_rt:
                     # Forming bar in realtime window: isrealtime drives varip RHS re-eval.
+                    _apply_feed_forming_bar(ohlcv_data, bar_index, evaluator, data_feed, self.symbol)
                     barstate.isrealtime = True
                     barstate.ishistory = False
                     barstate.isnew = tick_i == 0
