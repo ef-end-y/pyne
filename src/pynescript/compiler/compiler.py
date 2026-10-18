@@ -37,8 +37,8 @@ Host packing / contracts
   ``execute_script_compiled(open, high, low, close, vol, time)`` — the host
   is :mod:`pynescript.compiler.engine` (synthetic ``bar*60_000`` ms when time
   omitted; Runtime passes real OHLCV bar-open ms). Object-mode adds optional
-  ``rt_first=None, rt_ticks=1, data_feed=None, feed_symbol=""`` kwargs
-  (defaults keep 6-arg calls valid).
+  ``rt_first=None, rt_ticks=1, data_feed=None, feed_symbol="", data_provider=None``
+  kwargs (defaults keep 6-arg calls valid).
 - ``request.security`` / ``security``: same-symbol allowlisted HTF OHLCV /
   ``close[1]`` / simple ``ta.*`` resample in object mode (interpret helpers);
   same-TF / LTF simple OHLCV still passthrough. Foreign tickers and complex
@@ -1136,7 +1136,7 @@ class CompilerVisitor(NodeVisitor):
 
         lines.extend(
             [
-                "def execute_script_compiled(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, rt_first=None, rt_ticks=1, data_feed=None, feed_symbol=''):",
+                "def execute_script_compiled(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, rt_first=None, rt_ticks=1, data_feed=None, feed_symbol='', data_provider=None):",
                 "    n_bars = len(close_arr)",
                 "    open_arr = np.asarray(open_arr, dtype=np.float64)",
                 "    high_arr = np.asarray(high_arr, dtype=np.float64)",
@@ -8432,7 +8432,8 @@ class CompilerVisitor(NodeVisitor):
             f"{kind!r}, {field_s!r}, {offset_i}, {ta_name!r}, {ta_length}, "
             f"{tf_expr}, __bar_idx, "
             "open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, "
-            f"{_bool_arg(gaps_expr)}, {_bool_arg(lookahead_expr)}, chart_timezone())"
+            f"{_bool_arg(gaps_expr)}, {_bool_arg(lookahead_expr)}, chart_timezone(), "
+            "data_feed=data_feed, data_provider=data_provider)"
         )
 
     def _security_expr_is_udt(self, node: ast.Call, expr: str) -> bool:

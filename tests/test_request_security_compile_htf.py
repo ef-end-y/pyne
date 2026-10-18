@@ -32,9 +32,13 @@ from typing import Any
 
 from backend.runtime import Runtime
 from tests.test_request_data_feed import _aligned_1m_bars
+from tests.test_request_data_feed import _ChartLengthStubProvider
 from tests.test_request_data_feed import _daily_bars
+from tests.test_request_data_feed import _daily_provider_bars
+from tests.test_request_data_feed import _DailyHtfProvider
 from tests.test_request_data_feed import _day_aligned_hourly
 from tests.test_request_data_feed import _hour_bars
+from tests.test_request_data_feed import _utc_day0_ms
 
 
 def _is_na(v: object) -> bool:
@@ -48,10 +52,22 @@ def _is_na(v: object) -> bool:
         return False
 
 
-def _run_both(src: str, bars: list[dict], *, symbol: str = "AAPL") -> tuple[dict, dict]:
+def _run_both(
+    src: str,
+    bars: list[dict],
+    *,
+    symbol: str = "AAPL",
+    data_provider: Any = None,
+    data_feed: Any = None,
+) -> tuple[dict, dict]:
     rt = Runtime(symbol=symbol)
-    si = rt.run(src, bars, mode="interpret")
-    sc = rt.run(src, bars, mode="compile")
+    kw: dict[str, Any] = {}
+    if data_provider is not None:
+        kw["data_provider"] = data_provider
+    if data_feed is not None:
+        kw["data_feed"] = data_feed
+    si = rt.run(src, bars, mode="interpret", **kw)
+    sc = rt.run(src, bars, mode="compile", **kw)
     assert not si.get("error"), si.get("error")
     assert not sc.get("error"), sc.get("error")
     return si, sc
@@ -265,3 +281,130 @@ plot(close, title="c")
         _assert_series_match(si, sc, "sec")
         assert abs(float(sc["series"]["sec"][-1]) - float(sc["series"]["c"][-1])) < 1e-9
         assert abs(float(sc["series"]["sec"][-1]) - float(bars[-1]["close"])) < 1e-9
+
+
+class TestCompileProviderHtfBarmerge:
+    """Daily-on-1h provider/feed HTF: compile object-mode matches interpret (D-06)."""
+
+    def test_gaps_on_daily_provider_matches_interpret(self) -> None:
+        bars = _day_aligned_hourly(72)
+        prov = _DailyHtfProvider(_daily_provider_bars())
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_on, barmerge.lookahead_off)
+plot(v, title="sec")
+"""
+        si, sc = _run_both(src, bars, data_provider=prov)
+        _assert_series_match(si, sc, "sec")
+        sec = sc["series"]["sec"]
+        assert all(_is_na(v) for v in sec[0:24])
+        assert abs(float(sec[24]) - 111.0) < 1e-9
+        assert abs(float(sec[48]) - 222.0) < 1e-9
+        assert all(_is_na(v) for v in sec[25:48])
+        assert all(_is_na(v) for v in sec[49:])
+
+    def test_lookahead_on_daily_provider_matches_interpret(self) -> None:
+        bars = _day_aligned_hourly(72)
+        prov = _DailyHtfProvider(_daily_provider_bars())
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_off, barmerge.lookahead_on)
+plot(v, title="sec")
+"""
+        si, sc = _run_both(src, bars, data_provider=prov)
+        _assert_series_match(si, sc, "sec")
+        sec = sc["series"]["sec"]
+        for i in (0, 12, 23):
+            assert abs(float(sec[i]) - 111.0) < 1e-9
+        for i in (24, 36, 47):
+            assert abs(float(sec[i]) - 222.0) < 1e-9
+        for i in (48, 60, 71):
+            assert abs(float(sec[i]) - 333.0) < 1e-9
+
+    def test_gaps_and_lookahead_combined_daily_provider_matches_interpret(self) -> None:
+        bars = _day_aligned_hourly(72)
+        prov = _DailyHtfProvider(_daily_provider_bars())
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_on, barmerge.lookahead_on)
+plot(v, title="sec")
+"""
+        si, sc = _run_both(src, bars, data_provider=prov)
+        _assert_series_match(si, sc, "sec")
+        sec = sc["series"]["sec"]
+        assert abs(float(sec[0]) - 111.0) < 1e-9
+        assert abs(float(sec[24]) - 222.0) < 1e-9
+        assert abs(float(sec[48]) - 333.0) < 1e-9
+        assert all(_is_na(v) for v in sec[1:24])
+        assert all(_is_na(v) for v in sec[25:48])
+        assert all(_is_na(v) for v in sec[49:])
+
+    def test_daily_feed_ohlcv_lookahead_on_matches_interpret(self) -> None:
+        bars = _day_aligned_hourly(72)
+        day0 = _utc_day0_ms()
+        rows = []
+        for i, c in enumerate((111.0, 222.0, 333.0)):
+            ts = day0 + i * 86_400_000
+            rows.append([ts, c, c, c, c, 1.0])
+
+        class _DailyHtfFeed:
+            def fetch_latest_ohlcv(self, symbol, timeframe="D", limit=5):
+                _ = symbol, timeframe
+                n = int(limit) if limit is not None else len(rows)
+                return rows[-max(1, n) :] if n < len(rows) else list(rows)
+
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_off, barmerge.lookahead_on)
+plot(v, title="sec")
+"""
+        si, sc = _run_both(src, bars, data_feed=_DailyHtfFeed())
+        _assert_series_match(si, sc, "sec")
+        sec = sc["series"]["sec"]
+        assert abs(float(sec[0]) - 111.0) < 1e-9
+        assert abs(float(sec[24]) - 222.0) < 1e-9
+        assert abs(float(sec[48]) - 333.0) < 1e-9
+
+    def test_chart_length_provider_still_chart_htf_dual_host(self) -> None:
+        """ChartOHLCVProvider-like (ignores interval) stays chart HTF, unused provider merge."""
+        bars = _day_aligned_hourly(72)
+        stub = _ChartLengthStubProvider(bars, symbol="AAPL")
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", close), title="sec")
+plot(close, title="c")
+"""
+        si, sc = _run_both(src, bars, data_provider=stub)
+        _assert_series_match(si, sc, "sec")
+        assert abs(float(sc["series"]["sec"][-1]) - float(bars[47]["close"])) < 1e-9
+        assert abs(float(sc["series"]["sec"][-1]) - float(sc["series"]["c"][-1])) > 1e-6
+
+    def test_chart_length_foreign_stub_unused_merge_on_compile(self) -> None:
+        """Foreign ChartOHLCVProvider stub: compile gaps_on == gaps_off (unused merge)."""
+        bars = _day_aligned_hourly(48)
+        stub = _ChartLengthStubProvider(bars, symbol="AAPL")
+        src_on = """//@version=6
+indicator("t")
+v = request.security("MSFT", "D", "close", barmerge.gaps_on, barmerge.lookahead_off)
+plot(v, title="sec")
+"""
+        src_off = """//@version=6
+indicator("t")
+v = request.security("MSFT", "D", "close", barmerge.gaps_off, barmerge.lookahead_off)
+plot(v, title="sec")
+"""
+        rt = Runtime(symbol="AAPL")
+        on = rt.run(src_on, bars, mode="compile", data_provider=stub)
+        off = rt.run(src_off, bars, mode="compile", data_provider=stub)
+        assert not on.get("error"), on.get("error")
+        assert not off.get("error"), off.get("error")
+        sec_on = on["series"]["sec"]
+        sec_off = off["series"]["sec"]
+        assert len(sec_on) == len(sec_off) == len(bars)
+        for a, b in zip(sec_on, sec_off, strict=True):
+            na_a, na_b = _is_na(a), _is_na(b)
+            assert na_a == na_b
+            if not na_a:
+                assert abs(float(a) - float(b)) < 1e-9
+        # Foreign without a coarser provider series stays na (no LTF / stub invent).
+        assert all(_is_na(v) for v in sec_on)

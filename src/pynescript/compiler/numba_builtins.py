@@ -2257,6 +2257,8 @@ def compile_security_htf_value(
     gaps_on=False,
     lookahead_on=False,
     timezone="UTC",
+    data_feed=None,
+    data_provider=None,
 ):
     """Object-mode per-bar HTF ``request.security`` (interpret resample helpers)."""
     from pynescript.ast.evaluator.builtins.request import compile_htf_security_value
@@ -2278,6 +2280,9 @@ def compile_security_htf_value(
         gaps_on=gaps_on,
         lookahead_on=lookahead_on,
         timezone=timezone,
+        data_feed=data_feed,
+        data_provider=data_provider,
+        symbol=chart_tickerid() or chart_ticker(),
     )
 
 

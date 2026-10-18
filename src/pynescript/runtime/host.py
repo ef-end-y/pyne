@@ -3159,6 +3159,7 @@ class Runtime:
                 source_code,
                 ohlcv_data,
                 data_feed=data_feed,
+                data_provider=data_provider,
                 realtime_last_bar=realtime_last_bar,
                 realtime_ticks=realtime_ticks,
                 realtime_bars=realtime_bars,
@@ -4143,6 +4144,7 @@ class Runtime:
                 source_code,
                 ohlcv_data,
                 data_feed=data_feed,
+                data_provider=data_provider,
                 realtime_last_bar=realtime_last_bar,
                 realtime_ticks=realtime_ticks,
                 realtime_bars=realtime_bars,
@@ -4191,6 +4193,7 @@ class Runtime:
         ohlcv_data: list[dict],
         *,
         data_feed: Any = None,
+        data_provider: Any = None,
         realtime_last_bar: bool = False,
         realtime_ticks: int = 1,
         realtime_bars: int = 0,
@@ -4205,7 +4208,8 @@ class Runtime:
         Realtime window kwargs match :meth:`Runtime.run`. Numeric nopython
         stays historical; an active window re-emits object mode so the tick
         loop can honor ``var`` / ``varip`` / ``barstate`` / ``once`` and
-        ``DataFeed.poll_ohlcv`` when *data_feed* is set.
+        ``DataFeed.poll_ohlcv`` when *data_feed* is set. *data_provider* is
+        forwarded to object-mode HTF ``request.security`` (same as interpret).
         """
         t_total0 = time.perf_counter()
         _clear_pine_logger()
@@ -4341,6 +4345,7 @@ class Runtime:
                 rt_ticks=rt_ticks,
                 data_feed=data_feed,
                 feed_symbol=str(getattr(self, "symbol", "") or ""),
+                data_provider=data_provider,
             )
         except Exception as e:
             run_ms = (time.perf_counter() - t_run0) * 1000.0

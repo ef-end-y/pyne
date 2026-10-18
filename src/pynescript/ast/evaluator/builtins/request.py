@@ -3059,6 +3059,9 @@ def _compile_htf_host(
     vol_arr: Any,
     time_arr: Any,
     timezone: str = "UTC",
+    data_feed: Any = None,
+    data_provider: Any = None,
+    symbol: str = "",
 ) -> _CompileHtfHost:
     """Reuse one HTF host per compiled run (arrays + last-bar fingerprint)."""
     closes = _ohlcv_col_list(close_arr)
@@ -3081,22 +3084,36 @@ def _compile_htf_host(
         _at(low_arr, last) if n else 0.0,
         _at(close_arr, last) if n else 0.0,
         str(timezone or "UTC"),
+        id(data_feed) if data_feed is not None else 0,
+        id(data_provider) if data_provider is not None else 0,
+        str(symbol or ""),
     )
     host = _COMPILE_HTF_HOSTS.get(fp)
-    if host is not None:
-        return host
-    host = _CompileHtfHost(
-        _ohlcv_col_list(open_arr),
-        _ohlcv_col_list(high_arr),
-        _ohlcv_col_list(low_arr),
-        closes,
-        _ohlcv_col_list(vol_arr),
-        _ohlcv_col_list(time_arr),
-        timezone=str(timezone or "UTC"),
-    )
-    if len(_COMPILE_HTF_HOSTS) >= 4:  # noqa: PLR2004 - tiny run-local cache
-        _COMPILE_HTF_HOSTS.clear()
-    _COMPILE_HTF_HOSTS[fp] = host
+    if host is None:
+        host = _CompileHtfHost(
+            _ohlcv_col_list(open_arr),
+            _ohlcv_col_list(high_arr),
+            _ohlcv_col_list(low_arr),
+            closes,
+            _ohlcv_col_list(vol_arr),
+            _ohlcv_col_list(time_arr),
+            timezone=str(timezone or "UTC"),
+        )
+        if len(_COMPILE_HTF_HOSTS) >= 4:  # noqa: PLR2004 - tiny run-local cache
+            _COMPILE_HTF_HOSTS.clear()
+        _COMPILE_HTF_HOSTS[fp] = host
+    ctx = host.context
+    if data_feed is not None:
+        ctx["data_feed"] = data_feed
+    else:
+        ctx.pop("data_feed", None)
+    if data_provider is not None:
+        ctx["data_provider"] = data_provider
+    else:
+        ctx.pop("data_provider", None)
+    if symbol:
+        ctx["syminfo.tickerid"] = str(symbol)
+        ctx["symbol"] = str(symbol)
     return host
 
 
@@ -3117,15 +3134,31 @@ def compile_htf_security_value(  # noqa: PLR0913
     gaps_on: bool = False,
     lookahead_on: bool = False,
     timezone: str = "UTC",
+    data_feed: Any = None,
+    data_provider: Any = None,
+    symbol: str = "",
 ) -> float:
     """Per-bar compile helper: same allowlisted HTF resample as interpret.
 
     ``kind`` is ``ohlcv`` / ``offset`` / ``ta``. Same-TF / LTF simple OHLCV and
     history offsets fall back to chart passthrough; simple ``ta.*`` that is not
     coarser than the chart stays ``na`` (no LTF / unparseable-TF invention).
+
+    When *data_provider* / *data_feed* yield coarser timestamped OHLCV, reuse
+    interpret ``provider_htf_ohlcv`` align (``gaps_on`` / ``lookahead_on``).
+    Chart-length / no-timestamp payloads stay unused-merge (chart resample).
     """
     host = _compile_htf_host(
-        open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, timezone=str(timezone or "UTC")
+        open_arr,
+        high_arr,
+        low_arr,
+        close_arr,
+        vol_arr,
+        time_arr,
+        timezone=str(timezone or "UTC"),
+        data_feed=data_feed,
+        data_provider=data_provider,
+        symbol=str(symbol or ""),
     )
     try:
         host.set_bar_index(int(bar_idx))
@@ -3160,6 +3193,16 @@ def compile_htf_security_value(  # noqa: PLR0913
         return _as_htf_float(host._chart_ohlcv_at_offset(field_s, off))
 
     field_s = field_s or "close"
+    if data_feed is not None or data_provider is not None:
+        prov = host._try_provider_htf_ohlcv(
+            str(symbol or ""),
+            field_s,
+            timeframe,
+            gaps_on=gaps,
+            lookahead_on=lookahead,
+        )
+        if prov is not None:
+            return _as_htf_float(prov)
     val = host._try_htf_ohlcv_resample(field_s, timeframe, gaps_on=gaps, lookahead_on=lookahead)
     if val is not None:
         return _as_htf_float(val)
