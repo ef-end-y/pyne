@@ -7,7 +7,7 @@ tags: [devops, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-14T09:03:07Z
+  at: 2026-10-18T20:54:58Z
 sources:
   - id: tree
     resource: "docs/pyne/devops/observability.mdx"
@@ -37,7 +37,7 @@ Repo path `docs/pyne/devops/observability.mdx`.
 * Worked examples
   * Local health + stats loop
   * Explain a slow run
-  * Check why live updates cost what they cost
+  * Inspect live-session delta stats
   * Docker health
   * Tail Cloud Run (gcloud)
 * Failure modes

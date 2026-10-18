@@ -34,7 +34,7 @@ AXIS PWA/e2e CI lives in the sister [axis](https://github.com/hoox-sh/axis) repo
 | --- | --- | --- |
 | `ci.yml` | **CI** | Lint, test matrix, package, Docker api+cli, VSIX |
 | `release.yml` | **Build & Release** | Tag `v*` + dispatch: wheels, CLI/LSP Nuitka binaries, CLI image tarball, VSIX, GitHub Release |
-| `publish.yml` | **Publish** | Tag `v*` + dispatch: PyPI `hoox-pyne` (token or OIDC) |
+| `publish.yml` | **Publish** | Tag `v*` + dispatch: PyPI `hoox-pyne` |
 | `ghcr.yml` | **GHCR** | Tag `v*` + dispatch: `ghcr.io/hoox-sh/pyne/{api,cli,lsp}` multi-arch |
 | `docs-versions.yml` | **Docs versions** | Daily: refresh PyPI / npm / Open VSX / GitHub release stamps. Commits only on change. No docs pageload. |
 
@@ -89,18 +89,13 @@ Concurrency: `group: ci-${{ github.ref }}`, `cancel-in-progress: true`. Default 
 | --- | --- |
 | `.github/workflows/ci.yml` | PR/main fan-out (`name: CI`) |
 | `.github/workflows/release.yml` | Multi-artifact tag release (`name: Build & Release`) |
-| `.github/workflows/publish.yml` | PyPI (token preferred) (`name: Publish`) |
+| `.github/workflows/publish.yml` | PyPI `hoox-pyne` on `v*` tags (`name: Publish`) |
 | `.github/workflows/ghcr.yml` | Multi-arch image push (`name: GHCR`) |
 | `tests/test_cli.py` | CLI unit suite (CI-critical) |
 
 ### Secrets
 
-| Secret | Used by | Notes |
-| --- | --- | --- |
-| `PYPI_API_TOKEN` | `publish.yml` | Personal PyPI account (`jango-blockchained`) |
-| `METADATA_KEY` / `CRYPTO_KEY` | `release.yml` LSP encrypt | Fernet metadata |
-| `VSCE_PAT` | optional Marketplace | VSIX still attaches without it |
-| `GITHUB_TOKEN` | release upload | default |
+`publish.yml` uploads `hoox-pyne` to PyPI on `v*` tags. LSP binary encrypt uses `CRYPTO_KEY` from `METADATA_KEY` (see [Metadata crypto](/pyne/docs/devops/metadata-crypto)). `GITHUB_TOKEN` is the default Actions token for GitHub Release upload.
 
 ## Invariants
 
@@ -136,5 +131,5 @@ docker run --rm --network=none pynescript-cli:latest info
 ## See also
 
 - [Release](/pyne/docs/devops/release)
-- [PyPI publish](/pyne/docs/devops/pypi-publish)
+- [Contributing](/pyne/docs/contributing)
 - [Docker](/pyne/docs/devops/docker)

@@ -69,7 +69,6 @@ flowchart LR
 | `make docker-buildx` | multi-platform release bake (`api` + `cli` + `lsp`) |
 | `make docker-push-ghcr` | `gh workflow run ghcr.yml` |
 | `make docker-cli ARGS="…"` | compose profile cli (ephemeral) |
-| `make deploy-vps` | rsync + restart API; health **API :5002**, **AXIS :80** (VPS; local AXIS is :8081) |
 | `make docker-up` | compose API on `:5002` |
 | `make docker-up-full` | + redis profile |
 | `make docker-prod` | gunicorn overlay (`ADMIN_TOKEN` required) |

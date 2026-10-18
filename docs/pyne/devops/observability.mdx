@@ -234,7 +234,7 @@ curl -s -X POST http://127.0.0.1:5002/run -H 'Content-Type: application/json' \
 
 Read the trace bottom-up: eligibility → cache HIT/MISS → JIT warm duration → `run finished total=…`. A first run paying ~9 s in `prewarm: builtins warm` and `compile: MISS` is expected; the second identical request should be a `compile: HIT` in ~0 ms.
 
-### Check why live updates cost what they cost
+### Inspect live-session delta stats
 
 ```bash
 curl -s http://127.0.0.1:5002/stats \

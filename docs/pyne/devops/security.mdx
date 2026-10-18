@@ -26,7 +26,7 @@ description: "API keys, CORS, body limits, secrets hygiene, Fernet metadata keys
 
 ## Abstract
 
-PYNE security is layered: **transport/hosting** (Cloud Run, containers), **application** (API keys, admin tokens, CORS, body size caps), **build secrets** (Fernet metadata keys, VSCE PAT), and **supply chain** (CI dependency installs, extension packaging). This page documents controls that exist in code and workflows — not a full threat model certification.
+PYNE security is layered: **transport/hosting** (Cloud Run, containers), **application** (API keys, admin tokens, CORS, body size caps), **build secrets** (Fernet metadata keys), and **supply chain** (CI dependency installs, extension packaging). This page documents controls that exist in code and workflows — not a full threat model certification.
 
 ## Conceptual model
 
@@ -40,7 +40,6 @@ flowchart TB
   AUTH --> RUN[Evaluator /run]
   ADMIN[X-Admin-Token] --> KEYMGMT[key minting routes]
   BUILD[CI secrets] --> META[METADATA_KEY]
-  BUILD --> VSCE[VSCE_PAT]
 ```
 
 ## Interface surface
@@ -67,7 +66,6 @@ flowchart TB
 | Secret | Purpose |
 | --- | --- |
 | `METADATA_KEY` / `_METADATA_KEY` | Stable Fernet key for LSP metadata encrypt |
-| `VSCE_PAT` | VS Code Marketplace / vsce package |
 | `GITHUB_TOKEN` | Release asset upload |
 | `PYNESCRIPT_METADATA_KEY` | Runtime decrypt env fallback |
 
@@ -101,7 +99,7 @@ flowchart TB
 | `backend/middleware/key_store_redis.py` / `key_store_sqlite.py` | Hash-only shared stores |
 | `backend/middleware/schemas.py` | Request validation schemas |
 | `src/pynescript/langserver/providers/metadata_decrypt.py` | Encrypted metadata load |
-| `.github/workflows/*.yml` | Secret consumption (`METADATA_KEY`, `PYPI_API_TOKEN`, `VSCE_PAT`, `OVSX_PAT`) |
+| `.github/workflows/*.yml` | Secret consumption (`METADATA_KEY`) |
 | AXIS PWA security tests | Sister repo [hoox-sh/axis](https://github.com/hoox-sh/axis) — not in this tree |
 
 ### Audit notes encoded in source
@@ -111,7 +109,7 @@ Comments in `app.py` reference a **2026-07-05 audit** (findings S1 body size, S7
 ## Invariants & edge cases
 
 1. **Cloud Run `--allow-unauthenticated` does not mean open data.** It means IAM does not gate invoke; the Flask app must.
-2. **Free tier with `calls_limit=0` is special-cased** as unlimited remaining in some helpers — verify tier semantics before production billing.
+2. **Free tier with `calls_limit=0` is special-cased** as unlimited remaining in some helpers — verify tier semantics before relying on remaining-call counts.
 3. **Localhost CORS regex** permits any port on localhost/127.0.0.1 — fine for desk, wrong for prod `ALLOWED_ORIGINS`.
 4. **Fernet protects binary metadata packaging**, not user script confidentiality.
 5. **Admin token routes are high privilege** — rotate and store separately from user API keys.

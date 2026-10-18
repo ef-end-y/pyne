@@ -144,7 +144,7 @@ Production overlay (`docker-compose.prod.yml`): target `api`, **`volumes: !overr
 | `STORE_BACKEND` | `json` (prod overlay: `sqlite`) | `json` \| `sqlite` \| `redis` |
 | `API_KEY_STORE` | `/data/api_keys.json` | JSON key store path (`STORE_BACKEND=json`) |
 | `API_KEY_STORE_SQLITE` | `/data/api_keys.db` | SQLite path (`STORE_BACKEND=sqlite`) |
-| `ALLOWED_ORIGINS` | compose default includes `https://hoox.sh`, `https://hoox.sh/axis`, and **local AXIS `:8081`** | CORS allow-list. VPS AXIS is **:80** — do not copy 8081 into VPS env |
+| `ALLOWED_ORIGINS` | compose default includes `https://hoox.sh`, `https://hoox.sh/axis`, and **local AXIS `:8081`** | CORS allow-list |
 | `ADMIN_TOKEN` | unset | Required for `POST /auth/create_key` (`X-Admin-Token`) and prod compose |
 | `PYNE_RUNNER` | `0` | Optional hosted runner ([docs](/pyne/docs/api/endpoints/runner)). `1` enables `/scripts` + `/cron/*` |
 | `PYNE_RUNNER_SCHEDULER` | `0` | In-process bar-close poll. Prefer `GUNICORN_WORKERS=1` when on |
@@ -192,7 +192,7 @@ API: `curl -fsS http://127.0.0.1:8080/`. Redis: `redis-cli ping`.
 
 ## Invariants & edge cases
 
-1. **Host port 5002 vs container 8080.** Local compose publishes API on **:5002**. Cloud Run uses **:8080**. VPS deploy (`scripts/deploy_vps.sh`) health-checks **API :5002** and **AXIS :80**. Local AXIS PWA is **:8081** — do not treat 8081 as the VPS PWA port.
+1. **Host port 5002 vs container 8080.** Local compose publishes API on **:5002**. Cloud Run uses **:8080**. Local AXIS PWA is **:8081**.
 2. **Read-only mounts in compose** mean dependency changes need image rebuild; source edits are visible via `PYTHONPATH` precedence.
 3. **Production target is immutable** — no live mounts; use the prod overlay or Cloud Run.
 4. **Non-root `appuser`** cannot write arbitrary paths; keep `API_KEY_STORE` under `/data`.

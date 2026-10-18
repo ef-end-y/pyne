@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "GCP & Cloud Run"
-description: "Cloud Build pipeline, Cloud Run Pro API sizing, cost model, and substitution secrets for PYNE deployments."
+description: "Self-host the Pro API on Cloud Run with the checked-in Cloud Build pipeline — timeouts, memory, and app-layer API keys."
 resource: "docs/pyne/devops/gcp.mdx"
 tags: [devops, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-18T20:54:58Z
 sources:
   - id: tree
     resource: "docs/pyne/devops/gcp.mdx"
@@ -28,13 +28,11 @@ Repo path `docs/pyne/devops/gcp.mdx`.
   * Substitutions (cloudbuild.yaml)
   * Build steps
   * Cloud Run flags (as configured)
-  * Machine / budget knobs
+  * Build options
 * Internals
-  * Cost envelope (planning)
-  * Free-tier leverage (GCP)
 * Invariants & edge cases
 * Worked examples
-  * Manual deploy sketch (operator)
+  * Submit Cloud Build
   * Smoke health after deploy
 * Failure modes
 * See also

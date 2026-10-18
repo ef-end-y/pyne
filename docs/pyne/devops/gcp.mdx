@@ -19,16 +19,16 @@
 
 ---
 title: "GCP & Cloud Run"
-description: "Cloud Build pipeline, Cloud Run Pro API sizing, cost model, and substitution secrets for PYNE deployments."
+description: "Self-host the Pro API on Cloud Run with the checked-in Cloud Build pipeline — timeouts, memory, and app-layer API keys."
 ---
 
 # GCP & Cloud Run
 
 ## Abstract
 
-Production-shaped hosting for the Pro API targets **Google Cloud Run**, fed by **Cloud Build** (`cloudbuild.yaml`). The pipeline builds a container, pushes multi-tags to Container Registry, deploys a managed service, and can optionally compile the LSP binary in the same build graph.
+Self-host the Pro API on **Google Cloud Run**, fed by **Cloud Build** (`cloudbuild.yaml`). The pipeline builds a container, pushes multi-tags to Container Registry, deploys a managed service, and can optionally compile the LSP binary in the same build graph.
 
-This page codifies the as-checked-in config and the cost envelope from `docs/gcp_cost_estimate.md` — treat dollar figures as planning estimates, not invoices.
+This page matches the as-checked-in YAML: Cloud Run timeouts and memory, unauthenticated invoke at the platform, and **app-layer API keys** in Flask.
 
 ## Conceptual model
 
@@ -53,7 +53,7 @@ flowchart LR
 | `_SERVICE_NAME` | `pynescript-pro-api` | Cloud Run service |
 | `_REGION` | `us-central1` | Deploy region |
 | `_REPOSITORY` | `pynescript` | Image path segment |
-| `_METADATA_KEY` | (secret/subst) | Fernet key → `CRYPTO_KEY` for LSP stage |
+| `_METADATA_KEY` | (optional subst) | Passed to the LSP compile step as `CRYPTO_KEY=${_METADATA_KEY}` |
 | `_PYNESCRIPT_VERSION` | `"0.6.13"` | OCI label. Matches `src/pynescript/__about__.py`. |
 
 ### Build steps
@@ -69,14 +69,14 @@ flowchart LR
 | --- | --- | --- |
 | `--allow-unauthenticated` | on | Public HTTP API (auth via API keys at app layer) |
 | `--min-instances` | 0 | Scale to zero |
-| `--max-instances` | 10 | Cap spend / blast radius |
+| `--max-instances` | 10 | Upper bound on concurrent instances |
 | `--memory` | 512Mi | Evaluator headroom |
 | `--cpu` | 1 | Single vCPU per instance |
 | `--concurrency` | 10 | Parallel requests per instance |
 | `--timeout` | 60s | Platform kill. Entrypoint gunicorn default is **120s** (`GUNICORN_TIMEOUT`); set the env to **60** on Cloud Run or long evals die at the platform first. |
 | `--set-env-vars` | `FLASK_ENV=production` | App mode |
 
-### Machine / budget knobs
+### Build options
 
 ```yaml
 options:
@@ -92,40 +92,20 @@ timeout: 1200s
 | `cloudbuild.yaml` | Pipeline definition |
 | `Dockerfile` target `api` | Production image recipe used by Cloud Build |
 | `backend/app.py` | Health `/`, CORS, body size limit |
-| `docs/gcp_cost_estimate.md` | Scenario costs (April 2026 draft) |
-
-### Cost envelope (planning)
-
-| Scale | Rough monthly | Notes |
-| --- | --- | --- |
-| Free / hobby | ~$0 | Within Cloud Run free tier if tiny |
-| MVP (~10 pro users) | ~$50 | Cloud Run + micro SQL |
-| Growth (~50) | ~$120 | Add Redis caching |
-| Scale (~200) | ~$350 | Dominated by evaluator CPU-sec |
-
-Dominant cost driver: **script execution CPU time** (~2–5 CPU-sec per typical backtest over 1k bars). Memory ~200–400MB per concurrent Python worker.
-
-### Free-tier leverage (GCP)
-
-- Cloud Run: 2M requests, 400K CPU-sec, 200K GB-sec / month
-- Cloud Build: 120 build-minutes / day
-- Artifact Registry / GCS small free slices
 
 ## Invariants & edge cases
 
 1. **App-layer auth still required** when Cloud Run allows unauthenticated invoke — see [Security](/pyne/docs/devops/security).
-2. **Scale-to-zero cold starts** add latency; min-instances=1 trades money for snappiness.
+2. **Scale-to-zero cold starts** add latency; `min-instances=1` keeps a warm instance.
 3. **LSP build step does not deploy the binary** to Cloud Run; it is a release-adjacent compile in the same YAML.
 4. **512Mi may be tight** for large OHLCV payloads — watch OOM kills; raise memory before raising concurrency.
-5. **Cost estimate doc** also lists Railway / Render / Fly / self-host alternatives if GCP is overkill.
 
 ## Worked examples
 
-### Manual deploy sketch (operator)
+### Submit Cloud Build
 
 ```bash
-gcloud builds submit --config cloudbuild.yaml \
-  --substitutions=_METADATA_KEY="$METADATA_KEY"
+gcloud builds submit --config cloudbuild.yaml
 ```
 
 ### Smoke health after deploy
@@ -139,9 +119,8 @@ curl -s "https://SERVICE-URL/"
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Deploy timeout | Nuitka step + docker on 20 min budget | Split LSP compile to release pipeline |
+| Deploy timeout | Nuitka step + docker on 20 min Cloud Build timeout | Split LSP compile to release pipeline |
 | 429 / queue | max-instances or concurrency | Raise caps carefully; add queue |
-| High bill | No cache; chatty clients | Redis TTL; Cloud Tasks for backtests |
 | Auth bypass illusion | Unauthenticated Cloud Run | Enforce API keys in Flask |
 | Image pull errors | Wrong project / registry perms | IAM on GCR + Cloud Run service agent |
 

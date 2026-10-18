@@ -7,7 +7,7 @@ tags: [devops, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-18T20:54:58Z
 sources:
   - id: tree
     resource: "docs/pyne/devops/docker.mdx"
@@ -43,7 +43,3 @@ Repo path `docs/pyne/devops/docker.mdx`.
   * Production overlay
 * Failure modes
 * See also
-
-# Mentions
-
-* [scripts](/code/scripts.md)

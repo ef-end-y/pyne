@@ -34,7 +34,7 @@ A PYNE release is a **multi-artifact event**, not a single wheel upload. The pri
 - **CLI Docker image** tarball (`pynescript-cli-image.tar.gz`)
 - **VS Code** VSIX
 
-Assets attach to a GitHub Release; PyPI upload is handled by **Publish** (`publish.yml`). Multi-arch container images are a **separate** workflow (**GHCR** / `ghcr.yml`) — not attached as tarballs except the CLI image save in this workflow. Marketplace / Open VSX publish is optional via `VSCE_PAT` / `OVSX_PAT`.
+Assets attach to a GitHub Release; PyPI upload is handled by **Publish** (`publish.yml`). Multi-arch container images are a **separate** workflow (**GHCR** / `ghcr.yml`) — not attached as tarballs except the CLI image save in this workflow. Marketplace / Open VSX publish is optional when those jobs are configured.
 ## Conceptual model
 
 ```mermaid
@@ -82,7 +82,7 @@ sequenceDiagram
 | `build-docker-cli` | ubuntu-latest | `pynescript-cli-docker` (gzipped `docker save`) |
 | `build-vscode` | ubuntu-latest | `pynescript-vscode-extension` VSIX |
 | `release` | needs package + vscode success; tag **or** dispatch | GitHub Release body + staged assets (`name: pyne vX.Y.Z`) |
-| `publish-vscode` | needs VSIX; tag **or** dispatch | `vsce publish` if `VSCE_PAT`; `ovsx publish` if `OVSX_PAT` |
+| `publish-vscode` | needs VSIX; tag **or** dispatch | `vsce publish` / `ovsx publish` when configured |
 
 ### Environment
 
@@ -147,7 +147,7 @@ Artifacts land under `dist/`, `dist/lsp/`, `dist/cli/`, `dist/vsix/`, and `vscod
 
 1. **`CRYPTO_KEY` must be stable across builds** if you care about byte-identical `builtin_metadata.json.enc`. Supply `secrets.METADATA_KEY`.
 2. **Tag name is the version source** for the GitHub Release title (`v` prefix stripped).
-3. **Marketplace publish needs `VSCE_PAT`.** Without it, packaging may still succeed while publish fails.
+3. **Marketplace / Open VSX publish is optional.** GitHub Release still attaches the VSIX when those jobs are unconfigured.
 4. **Artifact retention is short** (5 days on build jobs) — releases must attach files immediately.
 5. **macOS artifact is ARM64** from `macos-latest` — Intel Mac users may need separate builds if required.
 6. **Draft vs prerelease:** workflow currently sets `draft: false`, `prerelease: false` for tag releases.
@@ -184,7 +184,7 @@ chmod +x pynescript-lsp-linux-x86_64
 | Binary not found after Nuitka | Path layout drift in `ci_build.py` | Inspect `dist/`; fix finder step |
 | Decrypt errors in field | Key mismatch between encrypt and runtime | Align `METADATA_KEY` with embedded key strategy |
 | Empty GitHub Release assets | Artifact download path mismatch | Match `files:` globs to download-artifact layout |
-| Marketplace 401 | Bad/expired `VSCE_PAT` | Rotate PAT with Marketplace scopes |
+| Marketplace 401 | Missing or expired marketplace credentials | Reconfigure the publish job |
 | Windows `.exe` not marked executable | Finder uses `-type f -executable` | Fallback non-executable find branch in workflow |
 
 ## See also
