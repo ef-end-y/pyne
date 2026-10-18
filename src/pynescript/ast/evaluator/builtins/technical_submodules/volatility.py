@@ -491,9 +491,16 @@ class VolatilityIndicators(TechnicalHelpers):
             msg = "ta.r_squared() requires 3 arguments: series1, series2, length"
             self._error(msg)
 
-        series1 = args[0] if isinstance(args[0], list) else [args[0]]
-        series2 = args[1] if isinstance(args[1], list) else [args[1]]
         length = self._expect_int(args[2], "length must be integer")
+        if self._use_incremental_ta():
+            return self._r_squared_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                length,
+            )
+
+        series1 = self._as_series(args[0])
+        series2 = self._as_series(args[1])
 
         if len(series1) < length or len(series2) < length:
             return None
@@ -526,9 +533,16 @@ class VolatilityIndicators(TechnicalHelpers):
             msg = "ta.comovement() requires 3 arguments: series1, series2, length"
             self._error(msg)
 
-        series1 = args[0] if isinstance(args[0], list) else [args[0]]
-        series2 = args[1] if isinstance(args[1], list) else [args[1]]
         length = self._expect_int(args[2], "length must be integer")
+        if self._use_incremental_ta():
+            return self._comovement_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                length,
+            )
+
+        series1 = self._as_series(args[0])
+        series2 = self._as_series(args[1])
 
         if len(series1) < length or len(series2) < length:
             return None

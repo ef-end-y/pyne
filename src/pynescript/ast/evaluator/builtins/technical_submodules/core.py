@@ -3785,6 +3785,112 @@ class TechnicalHelpers:
         st["value"] = beta_val
         return beta_val
 
+    def _r_squared_inc_update(
+        self,
+        series1: list[Any],
+        series2: list[Any],
+        length: int,
+    ) -> float | None:
+        """Incremental r_squared matching full ``ta.r_squared`` last window.
+
+        ``corr(s1,s2)^2`` clipped to [0, 1] over the last-N calendar samples.
+        Short window → na; ``var(s1)==0`` or ``var(s2)==0`` → 0.0. Non-numeric
+        slots yield na (full path would TypeError on ``sum``). One slot every
+        bar, including warmup / na.
+        """
+        if length < 1:
+            return None
+        n = int(length)
+        bucket, key = self._ta_key1("r_squared", n)
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "a": deque(maxlen=n),
+                "b": deque(maxlen=n),
+                "value": None,
+            }
+            bucket[key] = st
+        raw_a = self._series_last(series1)
+        raw_b = self._series_last(series2)
+        a_v: float | None = float(raw_a) if isinstance(raw_a, (int, float)) else None
+        b_v: float | None = float(raw_b) if isinstance(raw_b, (int, float)) else None
+        wa: deque[float | None] = st["a"]
+        wb: deque[float | None] = st["b"]
+        wa.append(a_v)
+        wb.append(b_v)
+        if len(wa) < n:
+            st["value"] = None
+            return None
+        s1 = list(wa)
+        s2 = list(wb)
+        if any(v is None for v in s1) or any(v is None for v in s2):
+            st["value"] = None
+            return None
+        mean1 = sum(s1) / n
+        mean2 = sum(s2) / n
+        covariance = sum((s1[i] - mean1) * (s2[i] - mean2) for i in range(n)) / n
+        var1 = sum((v - mean1) ** 2 for v in s1) / n
+        var2 = sum((v - mean2) ** 2 for v in s2) / n
+        if var1 == 0.0 or var2 == 0.0:
+            st["value"] = 0.0
+            return 0.0
+        correlation = covariance / ((var1 * var2) ** 0.5)
+        r_squared = correlation ** 2
+        r_sq_clipped = max(0.0, min(1.0, r_squared))
+        st["value"] = r_sq_clipped
+        return r_sq_clipped
+
+    def _comovement_inc_update(
+        self,
+        series1: list[Any],
+        series2: list[Any],
+        length: int,
+    ) -> float | None:
+        """Incremental comovement matching full ``ta.comovement`` last window.
+
+        Percent of bars ``1..N-1`` where Δs1 and Δs2 share sign
+        (product > 0). Short window → na; ``length==1`` → 0.0. Non-numeric
+        slots yield na (full path would TypeError on subtraction). One slot
+        every bar, including warmup / na.
+        """
+        if length < 1:
+            return None
+        n = int(length)
+        bucket, key = self._ta_key1("comovement", n)
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "a": deque(maxlen=n),
+                "b": deque(maxlen=n),
+                "value": None,
+            }
+            bucket[key] = st
+        raw_a = self._series_last(series1)
+        raw_b = self._series_last(series2)
+        a_v: float | None = float(raw_a) if isinstance(raw_a, (int, float)) else None
+        b_v: float | None = float(raw_b) if isinstance(raw_b, (int, float)) else None
+        wa: deque[float | None] = st["a"]
+        wb: deque[float | None] = st["b"]
+        wa.append(a_v)
+        wb.append(b_v)
+        if len(wa) < n:
+            st["value"] = None
+            return None
+        s1 = list(wa)
+        s2 = list(wb)
+        if any(v is None for v in s1) or any(v is None for v in s2):
+            st["value"] = None
+            return None
+        if n <= 1:
+            st["value"] = 0.0
+            return 0.0
+        same_direction = sum(
+            1 for i in range(1, n) if (s1[i] - s1[i - 1]) * (s2[i] - s2[i - 1]) > 0
+        )
+        como_val = (same_direction / (n - 1)) * 100.0
+        st["value"] = como_val
+        return como_val
+
     def _finalize_series(self, values: list[Any]) -> Any:
         """Return full series list, or current scalar in bar mode."""
         if not self._bar_mode():

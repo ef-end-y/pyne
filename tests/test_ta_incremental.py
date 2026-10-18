@@ -4258,3 +4258,218 @@ plot(ta.beta(close, high, 20), "beta")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: r_squared / comovement incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_r_squared(
+    s1: list[Any], s2: list[Any], length: int
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_r_squared([s1[: i + 1], s2[: i + 1], length])
+        for i in range(len(s1))
+    ]
+
+
+def _bar_walk_inc_r_squared(
+    s1: list[Any], s2: list[Any], length: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(s1)):
+        ev._ta_call_i = 0
+        out.append(ev._r_squared_inc_update(s1[: i + 1], s2[: i + 1], length))
+    return out
+
+
+def _bar_walk_full_comovement(
+    s1: list[Any], s2: list[Any], length: int
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_comovement([s1[: i + 1], s2[: i + 1], length])
+        for i in range(len(s1))
+    ]
+
+
+def _bar_walk_inc_comovement(
+    s1: list[Any], s2: list[Any], length: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(s1)):
+        ev._ta_call_i = 0
+        out.append(ev._comovement_inc_update(s1[: i + 1], s2[: i + 1], length))
+    return out
+
+
+def test_incremental_r_squared_matches_full() -> None:
+    s1 = _series(120)
+    s2 = [x * 2.0 + math.sin(i / 5.0) * 0.4 for i, x in enumerate(s1)]
+    for length in (10, 20):
+        _assert_series_close(
+            _bar_walk_inc_r_squared(s1, s2, length),
+            _bar_walk_full_r_squared(s1, s2, length),
+        )
+
+
+def test_incremental_comovement_matches_full() -> None:
+    s1 = _series(120)
+    s2 = [x * 1.5 + math.cos(i / 6.0) * 0.3 for i, x in enumerate(s1)]
+    for length in (10, 20):
+        _assert_series_close(
+            _bar_walk_inc_comovement(s1, s2, length),
+            _bar_walk_full_comovement(s1, s2, length),
+        )
+
+
+def test_incremental_r_squared_comovement_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    peer: list[float | None] = [x * 1.5 if x is not None else None for x in src]
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        peer_p = peer[: i + 1]
+        ev._ta_call_i = 0
+        ev._r_squared_inc_update(prefix, peer_p, 10)
+        assert ev._ta_call_i == 1, f"r_squared bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._comovement_inc_update(prefix, peer_p, 10)
+        assert ev._ta_call_i == 1, f"comovement bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_r_squared_comovement_na_in_window() -> None:
+    """NA in the last-N calendar window yields na (full path would TypeError)."""
+    src: list[float | None] = list(_series(80))
+    na_i = 15
+    length = 10
+    src[na_i] = None
+    peer: list[float | None] = [x * 1.5 if x is not None else None for x in src]
+    got_r = _bar_walk_inc_r_squared(src, peer, length)
+    got_c = _bar_walk_inc_comovement(src, peer, length)
+    for i in range(na_i, na_i + length):
+        assert got_r[i] is None, f"r_squared bar {i}: expected None while NA is in window"
+        assert got_c[i] is None, f"comovement bar {i}: expected None while NA is in window"
+    clean = list(_series(80))
+    clean_peer = [x * 1.5 for x in clean]
+    exp_r = _bar_walk_full_r_squared(clean, clean_peer, length)
+    exp_c = _bar_walk_full_comovement(clean, clean_peer, length)
+    for i in range(na_i):
+        _assert_series_close([got_r[i]], [exp_r[i]])
+        _assert_series_close([got_c[i]], [exp_c[i]])
+    for i in range(na_i + length, len(src)):
+        _assert_series_close([got_r[i]], [exp_r[i]])
+        _assert_series_close([got_c[i]], [exp_c[i]])
+
+
+def test_incremental_r_squared_zero_variance() -> None:
+    """var(series1)==0 or var(series2)==0 → 0.0, matching full path."""
+    s1 = _series(50)
+    s2 = [3.0] * 50
+    length = 14
+    got = _bar_walk_inc_r_squared(s1, s2, length)
+    _assert_series_close(got, _bar_walk_full_r_squared(s1, s2, length))
+    for i in range(length - 1, len(s1)):
+        assert got[i] == pytest.approx(0.0)
+    got_rev = _bar_walk_inc_r_squared(s2, s1, length)
+    _assert_series_close(got_rev, _bar_walk_full_r_squared(s2, s1, length))
+    for i in range(length - 1, len(s1)):
+        assert got_rev[i] == pytest.approx(0.0)
+
+
+def test_incremental_comovement_constant_series() -> None:
+    """Zero deltas never share sign (product is 0) → 0.0, matching full path."""
+    s1 = _series(50)
+    s2 = [3.0] * 50
+    length = 14
+    got = _bar_walk_inc_comovement(s1, s2, length)
+    _assert_series_close(got, _bar_walk_full_comovement(s1, s2, length))
+    for i in range(length - 1, len(s1)):
+        assert got[i] == pytest.approx(0.0)
+
+
+def test_incremental_r_squared_perfect_fit() -> None:
+    """Linearly related series → r_squared ≈ 1.0 once the window is full."""
+    s1 = _series(50)
+    s2 = [2.0 * x + 5.0 for x in s1]
+    length = 14
+    got = _bar_walk_inc_r_squared(s1, s2, length)
+    _assert_series_close(got, _bar_walk_full_r_squared(s1, s2, length))
+    for i in range(length - 1, len(s1)):
+        assert got[i] == pytest.approx(1.0)
+
+
+def test_incremental_comovement_same_direction() -> None:
+    """Monotone-up pair → 100% shared-sign deltas once the window is full."""
+    s1 = [float(i) for i in range(50)]
+    s2 = [float(i) * 2.0 + 1.0 for i in range(50)]
+    length = 14
+    got = _bar_walk_inc_comovement(s1, s2, length)
+    _assert_series_close(got, _bar_walk_full_comovement(s1, s2, length))
+    for i in range(length - 1, len(s1)):
+        assert got[i] == pytest.approx(100.0)
+
+
+def test_incremental_r_squared_comovement_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtins consume the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    peer = [x * 2.0 for x in src]
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_r_squared([prefix, peer[: i + 1], 10])
+        assert ev._ta_call_i == 1, f"r_squared builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_comovement([prefix, peer[: i + 1], 10])
+        assert ev._ta_call_i == 1, f"comovement builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_r_squared_comovement_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("rsq como")
+plot(ta.r_squared(close, high, 20), "rsq")
+plot(ta.comovement(close, high, 20), "como")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"rsq", "como"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
