@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import pytest  # noqa: E402
 
-from backend.api.live_push import HUB, PushHub, attach_feed  # noqa: E402
+from backend.api.live_push import HUB, PushHub  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
