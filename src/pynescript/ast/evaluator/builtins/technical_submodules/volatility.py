@@ -355,34 +355,25 @@ class VolatilityIndicators(TechnicalHelpers):
         # reference Pine endpoint at x = n-1 (offset=0): mean_y + slope * ((n-1) - mean_x)
         return mean_y + slope * ((n - 1) - mean_x)
 
-    def _builtin_ta_rci(self, args: list[Any]) -> float:
-        """Rank Correlation Index (Spearman's correlation)."""
-        if len(args) != BINARY:
-            self._error("ta.rci takes source series and length")
+    def _builtin_ta_rci(self, args: list[Any]) -> float | None:
+        """Rank Correlation Index (Spearman rho of time vs value ranks).
 
-        series = self._expect_list(args[0], "ta.rci takes source series and length")
-        length = self._expect_int(args[1], "ta.rci takes source series and length")
-
-        if length < BINARY:
+        Duplicate of ``BasicIndicators._builtin_ta_rci`` — keep in sync.
+        Bar-mode incremental last sample uses ``_rci_inc_update``.
+        """
+        series, length = self._expect_series(args, length=BINARY, last_sample_ok=True)
+        if length < 2:
             self._error("ta.rci length must be at least 2")
+        if self._use_incremental_ta():
+            return self._rci_inc_update(series, length)
+        # Bar-mode locals (input.source) are last-sample scalars.
+        if self._bar_mode() and (not isinstance(series, list) or len(series) < length):
+            return self._rci_inc_update(series, length)
+        if not isinstance(series, list):
+            series = self._as_series(series)
         if len(series) < length:
             return None
-
-        window = series[-length:]
-        valid_values = [(i, v) for i, v in enumerate(window) if v is not None]
-
-        if len(valid_values) < BINARY:
-            return None
-
-        ranks_idx = sorted(range(len(valid_values)), key=lambda i: i)
-        ranks_val = sorted(range(len(valid_values)), key=lambda i: valid_values[i][1])
-
-        rank_dict_idx = {idx: rank for rank, idx in enumerate(ranks_idx)}
-        rank_dict_val = {idx: rank for rank, idx in enumerate(ranks_val)}
-
-        d_squared = sum((rank_dict_idx[i] - rank_dict_val[i]) ** 2 for i in range(len(valid_values)))
-        n = len(valid_values)
-        return 1 - (6 * d_squared) / (n * (n * n - 1)) if n > 1 else None
+        return self._rci_spearman(series[-length:])
 
     def _builtin_ta_dpo(self, args: list[Any]) -> float | None:
         """Detrended Price Oscillator."""
@@ -424,6 +415,11 @@ class VolatilityIndicators(TechnicalHelpers):
 
         length = self._expect_int(args[0], "length must be integer")
         std_dev = float(args[1]) if isinstance(args[1], (int, float)) else 2.0
+
+        if self._use_incremental_ta():
+            return self._bb_pct_inc_update(
+                self._context_source("close"), length, std_dev
+            )
 
         closes = (getattr(self, "current_series", None) or {}).get("close", [])
         if not closes or len(closes) < length:
@@ -643,10 +639,18 @@ class VolatilityIndicators(TechnicalHelpers):
             msg = "ta.atr_normalized() requires 4 arguments: high, low, close, period"
             self._error(msg)
 
-        highs = args[0] if isinstance(args[0], list) else [args[0]]
-        lows = args[1] if isinstance(args[1], list) else [args[1]]
-        closes = args[2] if isinstance(args[2], list) else [args[2]]
         period = self._expect_int(args[3], "period must be integer")
+        if self._use_incremental_ta():
+            return self._atr_normalized_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                period,
+            )
+
+        highs = self._as_series(args[0])
+        lows = self._as_series(args[1])
+        closes = self._as_series(args[2])
 
         if len(closes) == 0 or not isinstance(closes[-1], (int, float)):
             return None

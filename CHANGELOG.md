@@ -10,6 +10,7 @@
 - **Bar-mode incremental `ta.skewness` / `ta.kurtosis` / `ta.beta` (T2).** Last-sample kernels match full recompute: population skew and excess kurtosis over the last-N calendar window (na while any slot is non-numeric; 0.0 when stdev is 0), beta as `cov(s1,s2)/var(s2)` (0.0 when var(s2) is 0).
 - **Bar-mode incremental `ta.r_squared` / `ta.comovement` (T2).** Last-sample kernels match full recompute: r_squared is corr² clipped to [0, 1] (0.0 when either variance is 0; na while the window is short or any slot is non-numeric), comovement is the percent of last-N-1 deltas that share sign.
 - **Bar-mode incremental `ta.volume_weighted_momentum` (T2).** Last-sample kernel matches full recompute: last-N `(Δprice * vol) / sum(vol)` (0.0 when volume_sum is 0; na while the window is short).
+- **Bar-mode incremental `ta.rci` / `ta.bb_pct` / `ta.atr_normalized` (T2).** Last-sample kernels match full recompute: rci is Spearman rho of time vs value ranks (volatility mixin gated), %B is `(close-lower)/(upper-lower)×100` clipped to [0, 100] (50.0 when bands collapse), atr_normalized is ATR/close×100 (na when close is 0).
 
 ### Changed
 

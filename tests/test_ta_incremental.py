@@ -4614,3 +4614,396 @@ plot(ta.volume_weighted_momentum(close, volume, 20), "vwm")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: rci (volatility mixin) / bb_pct / atr_normalized last-sample ≡ full
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_rci(src: list[Any], length: int) -> list[float | None]:
+    ev = _FullTA()
+    return [ev._builtin_ta_rci([src[: i + 1], length]) for i in range(len(src))]
+
+
+def _bar_walk_inc_rci(src: list[Any], length: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._rci_inc_update(src[: i + 1], length))
+    return out
+
+
+def _bar_walk_full_vol_rci(src: list[Any], length: int) -> list[float | None]:
+    """Full-recompute via the volatility mixin copy (not the MRO winner)."""
+    from pynescript.ast.evaluator.builtins.technical_submodules.volatility import (
+        VolatilityIndicators,
+    )
+
+    ev = _FullTA()
+    return [
+        VolatilityIndicators._builtin_ta_rci(ev, [src[: i + 1], length])
+        for i in range(len(src))
+    ]
+
+
+def _bar_walk_full_bb_pct(
+    src: list[Any], length: int, std_dev: float
+) -> list[float | None]:
+    ev = _FullTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev.current_series = {"close": src[: i + 1]}
+        out.append(ev._builtin_ta_bb_pct([length, std_dev]))
+    return out
+
+
+def _bar_walk_inc_bb_pct(
+    src: list[Any], length: int, std_dev: float
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._bb_pct_inc_update(src[: i + 1], length, std_dev))
+    return out
+
+
+def _bar_walk_full_atr_normalized(
+    highs: list[Any], lows: list[Any], closes: list[Any], period: int
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_atr_normalized(
+            [highs[: i + 1], lows[: i + 1], closes[: i + 1], period]
+        )
+        for i in range(len(closes))
+    ]
+
+
+def _bar_walk_inc_atr_normalized(
+    highs: list[Any], lows: list[Any], closes: list[Any], period: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(closes)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._atr_normalized_inc_update(
+                highs[: i + 1], lows[: i + 1], closes[: i + 1], period
+            )
+        )
+    return out
+
+
+def test_incremental_rci_matches_full() -> None:
+    src = _series(120)
+    for length in (5, 14, 20):
+        _assert_series_close(
+            _bar_walk_inc_rci(src, length),
+            _bar_walk_full_rci(src, length),
+        )
+
+
+def test_incremental_rci_volatility_mixin_matches_full() -> None:
+    """volatility.py ``_builtin_ta_rci`` last sample ≡ ``_rci_inc_update``."""
+    src = _series(80)
+    for length in (10, 14):
+        _assert_series_close(
+            _bar_walk_inc_rci(src, length),
+            _bar_walk_full_vol_rci(src, length),
+        )
+
+
+def test_incremental_rci_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._rci_inc_update(src[: i + 1], 10)
+        assert ev._ta_call_i == 1, f"rci bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_rci_na_in_window() -> None:
+    """Any na in the last-N window yields na (``_rci_spearman``)."""
+    src: list[float | None] = list(_series(80))
+    na_i = 15
+    length = 10
+    src[na_i] = None
+    got = _bar_walk_inc_rci(src, length)
+    for i in range(na_i, min(na_i + length, len(src))):
+        assert got[i] is None, f"rci bar {i}: expected None while NA is in window"
+    clean = list(_series(80))
+    exp = _bar_walk_full_rci(clean, length)
+    for i in range(na_i):
+        _assert_series_close([got[i]], [exp[i]])
+    for i in range(na_i + length, len(src)):
+        _assert_series_close([got[i]], [exp[i]])
+
+
+def test_incremental_rci_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtins (MRO + volatility mixin copy) consume the inc slot."""
+    from pynescript.ast.evaluator.builtins.technical_submodules.volatility import (
+        VolatilityIndicators,
+    )
+
+    src = _series(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_rci([prefix, 10])
+        assert ev._ta_call_i == 1, f"rci builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        VolatilityIndicators._builtin_ta_rci(ev, [prefix, 10])
+        assert ev._ta_call_i == 1, f"vol rci builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_rci_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("rci")
+plot(ta.rci(close, 14), "rci")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"rci"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+def test_incremental_bb_pct_matches_full() -> None:
+    src = _series(120)
+    for length, std_dev in ((20, 2.0), (10, 1.5), (5, 2.5)):
+        _assert_series_close(
+            _bar_walk_inc_bb_pct(src, length, std_dev),
+            _bar_walk_full_bb_pct(src, length, std_dev),
+        )
+
+
+def test_incremental_bb_pct_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._bb_pct_inc_update(src[: i + 1], 10, 2.0)
+        assert ev._ta_call_i == 1, f"bb_pct bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_bb_pct_constant_series() -> None:
+    """upper == lower (zero width) → 50.0 once the window is full."""
+    src = [42.0] * 50
+    got = _bar_walk_inc_bb_pct(src, 10, 2.0)
+    _assert_series_close(got, _bar_walk_full_bb_pct(src, 10, 2.0))
+    for i in range(10 - 1, len(src)):
+        assert got[i] == pytest.approx(50.0)
+
+
+def test_incremental_bb_pct_clips_to_unit_interval() -> None:
+    """%B is clipped to [0, 100], matching the full path."""
+    src = _series(40)
+    src = src + [src[-1] + 80.0, src[-1] - 80.0]
+    got = _bar_walk_inc_bb_pct(src, 10, 2.0)
+    _assert_series_close(got, _bar_walk_full_bb_pct(src, 10, 2.0))
+    for v in got:
+        if v is None:
+            continue
+        assert 0.0 <= v <= 100.0, v
+
+
+def test_incremental_bb_pct_na_in_window() -> None:
+    """NA in the last-N window yields na (full path would TypeError)."""
+    src: list[float | None] = list(_series(80))
+    na_i = 15
+    length = 10
+    src[na_i] = None
+    got = _bar_walk_inc_bb_pct(src, length, 2.0)
+    for i in range(na_i, min(na_i + length, len(src))):
+        assert got[i] is None, f"bb_pct bar {i}: expected None while NA is in window"
+    clean = list(_series(80))
+    exp = _bar_walk_full_bb_pct(clean, length, 2.0)
+    for i in range(na_i):
+        _assert_series_close([got[i]], [exp[i]])
+    for i in range(na_i + length, len(src)):
+        _assert_series_close([got[i]], [exp[i]])
+
+
+def test_incremental_bb_pct_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev.current_series = {"close": src[: i + 1]}
+        ev._builtin_ta_bb_pct([10, 2.0])
+        assert ev._ta_call_i == 1, f"bb_pct builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_bb_pct_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("bb_pct")
+plot(ta.bb_pct(20, 2), "bbp")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"bbp"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+def test_incremental_atr_normalized_matches_full() -> None:
+    highs, lows, closes = _ohlc(120)
+    for period in (7, 14):
+        _assert_series_close(
+            _bar_walk_inc_atr_normalized(highs, lows, closes, period),
+            _bar_walk_full_atr_normalized(highs, lows, closes, period),
+        )
+
+
+def test_incremental_atr_normalized_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    highs, lows, closes = _ohlc(40)
+    closes_na: list[float | None] = list(closes)
+    closes_na[4] = None
+    closes_na[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(closes_na)):
+        ev._ta_call_i = 0
+        ev._atr_normalized_inc_update(
+            highs[: i + 1], lows[: i + 1], closes_na[: i + 1], 10
+        )
+        assert ev._ta_call_i == 1, (
+            f"atr_normalized bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        )
+
+
+def test_incremental_atr_normalized_zero_close() -> None:
+    """close == 0 → na; ATR state still advances so later bars match full."""
+    highs, lows, closes = _ohlc(80)
+    closes = list(closes)
+    closes[20] = 0.0
+    got = _bar_walk_inc_atr_normalized(highs, lows, closes, 10)
+    _assert_series_close(
+        got, _bar_walk_full_atr_normalized(highs, lows, closes, 10)
+    )
+    assert got[20] is None
+
+
+def test_incremental_atr_normalized_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    highs, lows, closes = _ohlc(30)
+    ev = _IncTA()
+    for i in range(len(closes)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_atr_normalized(
+            [highs[: i + 1], lows[: i + 1], closes[: i + 1], 10]
+        )
+        assert ev._ta_call_i == 1, f"atr_normalized builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_atr_normalized_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("atrn")
+plot(ta.atr_normalized(high, low, close, 14), "atrn")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"atrn"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

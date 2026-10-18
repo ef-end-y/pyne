@@ -609,6 +609,33 @@ class TechnicalHelpers:
         st["value"] = self._rma_state_step(st["rma"], tr, period)
         return st.get("value")
 
+    def _atr_normalized_inc_update(
+        self,
+        highs: list[Any],
+        lows: list[Any],
+        closes: list[Any],
+        period: int,
+    ) -> float | None:
+        """Incremental ATR as a percent of close matching full ``ta.atr_normalized``.
+
+        Always steps ``_atr_inc_update`` (one slot) including warmup / na /
+        zero close so later bars stay aligned. ``close == 0`` or non-finite
+        close → na.
+        """
+        atr_val = self._atr_inc_update(highs, lows, closes, period)
+        c = self._finite_or_none(self._series_last(closes))
+        if c is None or c == 0.0:
+            return None
+        if atr_val is None:
+            return None
+        try:
+            af = float(atr_val)
+        except (TypeError, ValueError):
+            return None
+        if af != af:
+            return None
+        return (af / c) * 100.0
+
     def _stdev_inc_update(self, series: list[Any], period: int) -> float | None:
         """Incremental sample stdev matching full ``_stdev`` (last value).
 
@@ -3116,6 +3143,49 @@ class TechnicalHelpers:
         except (TypeError, ValueError):
             return None, None, None
         return mid_f + dev_f * mult, mid_f, mid_f - dev_f * mult
+
+    def _bb_pct_inc_update(
+        self,
+        series: list[Any],
+        period: int,
+        multiplier: float,
+    ) -> float | None:
+        """Incremental %B matching full ``ta.bb_pct`` (clip [0, 100]).
+
+        Derives ``(close - lower) / (upper - lower) * 100`` from the last
+        ``_bb_inc_update`` tuple. Full ``ta.bb_pct`` uses population stdev
+        (ddof=0); ``_bb_inc_update`` is sample (ddof=1), so bands are rescaled
+        by ``sqrt((n-1)/n)``. ``upper == lower`` → 50.0. ``period <= 1`` is a
+        collapsed window (50.0) because ``_bb_inc_update`` is na for stdev.
+        One slot every bar, including warmup / na.
+        """
+        n = int(period)
+        if n <= 1:
+            # ``_bb_inc_update`` returns without consuming a slot for period<=1.
+            self._ta_key1("bb_pct", n)
+            if n < 1:
+                return None
+            x = self._finite_or_none(self._series_last(series))
+            if x is None:
+                return None
+            return 50.0
+        upper, mid, lower = self._bb_inc_update(series, n, float(multiplier))
+        if upper is None or mid is None or lower is None:
+            return None
+        if upper == lower:
+            return 50.0
+        # sample stdev → population stdev used by the full ``ta.bb_pct`` path
+        scale = math.sqrt((n - 1) / n)
+        half = (upper - mid) * scale
+        upper_p = mid + half
+        lower_p = mid - half
+        if upper_p == lower_p:
+            return 50.0
+        x = self._finite_or_none(self._series_last(series))
+        if x is None:
+            return None
+        bb_pct = ((x - lower_p) / (upper_p - lower_p)) * 100.0
+        return max(0.0, min(100.0, bb_pct))
 
     def _kama_inc_update(
         self,
