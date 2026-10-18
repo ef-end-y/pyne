@@ -59,34 +59,7 @@ The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyod
 
 TypeScript consumers import **[PyneTS](/pyne/docs/pynets)** (`@hoox-sh/pynets`) — same public names; Python remains the oracle.
 
-## What's new
-
-**`hoox-pyne` 0.6.13** (live) — dual-host HTF, LSP signature help, host hardening:
-
-- **Compile HTF `request.security`** (D-06) — same-symbol simple OHLCV, `close[1]`, and allowlisted `ta.sma/ema/rsi/atr/wma/rma` on a coarser TF match interpret (`gaps_on` / `lookahead_on` on those paths). Nested `ta.*` and foreign tickers stay `na`.
-- **LSP signature help** — `textDocument/signatureHelp` for builtins and user `FunctionDef` (`(` / `,`).
-- **JSON key-store atomic save** and **webhook DNS pin** — flock + `os.replace`; POST connects to the resolved public IP with HTTPS SNI on the original hostname.
-- **Live P3 / P2** — forming last-value tails, pair-form tick identity, gthread pin, 100 threads.
-
-**`0.6.12`** — production hardening and live-surface additions (`GET /stats`, `PYNE_DEBUG=1`, engine-owned live plane 0.6.10–0.6.12).
-
-**Earlier on `main`** — prior releases are documented in [GitHub releases](https://github.com/hoox-sh/pyne/releases).
-
-**0.6.6** (2026-09-22) — last-sample TA (`ao`/`dmi`/`bb`/`cog`/`mode`), convert-to-v6 keeps UDF/`for n` names, webhook SSRF, LSP nested `strategy.risk` completion.
-
-**0.6.5** — convert-to-v6 leaves UDF definitions, parameters, and unpack names alone (set01–04 older scripts parse 323/323 after convert).
-
-**0.6.4** — convert any older Pine version to v6 from the editor, LSP code action, `pyne convert --to 6`, and `POST /lsp/convert`.
-
-**0.6.3** — optional Flask/VPS/container hosted runner (`PYNE_RUNNER`) plus CLI `pyne runner` (`deploy` / `tick` / `list`). Scripts keep evaluating after upload without AXIS holding the connection.
-
-**0.6.2** — interpret wraps subscripted UDF parameters (`s[1]`) per call site so `src = close; updown(src)` matches compile. Official TradingView® builtin scripts are **0 MISMATCH** vs compile.
-
-**0.6.1** — persistent `InterpretSession` (`Runtime.create_session`, delta `append_bars`, forming-bar `update_last_bar`). Dual-host `strategy.cash` qty-type, fill-time risk gates, session confirm-on-append, finalized-bucket HTF `lookahead_on`.
-
-**0.6.0** — type-aware intraday risk on both brokers, intrabar `var` rollback on realtime ticks, exchange-calendar `timeframe.change` D/W/M, `request.security` `gaps_on` / `lookahead_on` on HTF resample paths.
-
-Full notes: [GitHub releases](https://github.com/hoox-sh/pyne/releases) · [compatibility](/pyne/docs/reference/compatibility) · [evaluate scripts](/pyne/docs/enduser/guides/evaluate-scripts).
+Release notes: [GitHub releases](https://github.com/hoox-sh/pyne/releases) · [compatibility](/pyne/docs/reference/compatibility).
 
 ## How to use
 

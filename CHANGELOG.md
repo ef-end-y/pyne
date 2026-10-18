@@ -14,6 +14,7 @@
 ### Changed
 
 - **Public product docs are end-user and developer only.** Mintlify (`docs/pyne/**`) no longer carries operator shipping (personal PyPI account, Trusted Publishing / API-token how-to, GCP cost estimates, VPS deploy wiring). `/devops/pypi-publish` and `/devops/publish-checklist` redirect to Contributing. Audience rules live in `docs/WRITING.md`.
+- **PYNE docs overview** (`docs/pyne/index.mdx`) no longer dumps an in-page "What's new" changelog; it points at GitHub releases and compatibility.
 
 ### Fixed
 
