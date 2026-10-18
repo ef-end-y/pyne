@@ -2198,6 +2198,9 @@ class InterpretSession:
                     barstate.islastconfirmedhistory = False
                 tick_var_snap = _snapshot_realtime_scope(ev) if bar_rt and tick_i < n_ticks - 1 else None
                 tick_ta_snap = _snapshot_ta_state(ev) if bar_rt and tick_i < n_ticks - 1 else None
+                tick_broker_snap = (
+                    strategy_state.snapshot() if self._need_strategy and bar_rt and tick_i < n_ticks - 1 else None
+                )
                 reset_plots()
                 if self._need_strategy and strategy_events:
                     strategy_events.clear()
@@ -2235,6 +2238,8 @@ class InterpretSession:
                 if tick_i < n_ticks - 1:
                     _restore_realtime_scope(ev, tick_var_snap)
                     _restore_ta_state(ev, tick_ta_snap)
+                    if tick_broker_snap is not None:
+                        strategy_state.restore(tick_broker_snap)
                     _discard_realtime_plot_tick(ev)
                     continue
                 if snapshot_bar is not None:
@@ -3588,6 +3593,9 @@ class Runtime:
                 # one sample per call site, else the same bar counts N times.
                 rt_snap = _snapshot_realtime_scope(evaluator) if bar_rt and tick_i < n_ticks - 1 else None
                 ta_snap = _snapshot_ta_state(evaluator) if bar_rt and tick_i < n_ticks - 1 else None
+                broker_snap = (
+                    strategy_state.snapshot() if need_strategy and bar_rt and tick_i < n_ticks - 1 else None
+                )
 
                 # Reset per-bar/tick plot index; clear strategy event buffer
                 reset_plots()
@@ -3630,9 +3638,12 @@ class Runtime:
                 if tick_i < n_ticks - 1:
                     # Intermediate realtime tick: roll back var scope + TA
                     # windows to confirmed state (varip persists) and discard
-                    # plot cells so series length stays 1 per bar.
+                    # plot cells so series length stays 1 per bar. Broker
+                    # fills / pending-book / strategy events roll back too.
                     _restore_realtime_scope(evaluator, rt_snap)
                     _restore_ta_state(evaluator, ta_snap)
+                    if broker_snap is not None:
+                        strategy_state.restore(broker_snap)
                     _discard_realtime_plot_tick(evaluator)
                     continue
 

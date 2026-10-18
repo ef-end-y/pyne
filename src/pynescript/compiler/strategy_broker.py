@@ -56,7 +56,9 @@ Hot-path notes
 from __future__ import annotations
 
 import math
+
 from dataclasses import dataclass
+from dataclasses import replace
 from typing import Any
 
 
@@ -371,6 +373,41 @@ class CompileStrategyBroker:
         self._day_pnl: float = 0.0
         self._fills_day: int | None = None  # day bucket for fill counting
         self._day_filled_orders: int = 0
+
+    def snapshot(self) -> dict[str, Any]:
+        """Copy broker books for unconfirmed realtime tick rollback.
+
+        Pending orders and open/closed trade records are copied; event dicts
+        are copied by value. :meth:`restore` writes back onto this same
+        instance so generated ``__strategy`` aliases stay valid.
+        """
+        snap: dict[str, Any] = {}
+        for k, v in self.__dict__.items():
+            if k == "pending_orders":
+                snap[k] = {oid: replace(o) for oid, o in v.items()}
+            elif k in {"open_legs", "closed_trade_records"}:
+                snap[k] = [replace(x) for x in v]
+            elif k == "events":
+                snap[k] = [dict(e) for e in v]
+            else:
+                snap[k] = v
+        return snap
+
+    def restore(self, snap: dict[str, Any] | None) -> None:
+        """Replace in-place broker state from :meth:`snapshot` (same object)."""
+        if not snap:
+            return
+        for k, v in snap.items():
+            cur = getattr(self, k, None)
+            if k == "pending_orders" and isinstance(cur, dict):
+                cur.clear()
+                cur.update({oid: replace(o) for oid, o in v.items()})
+            elif k in {"open_legs", "closed_trade_records"} and isinstance(cur, list):
+                cur[:] = [replace(x) for x in v]
+            elif k == "events" and isinstance(cur, list):
+                cur[:] = [dict(e) for e in v]
+            else:
+                setattr(self, k, v)
 
     def begin_bar(
         self,

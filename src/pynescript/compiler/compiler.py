@@ -1437,6 +1437,8 @@ class CompilerVisitor(NodeVisitor):
         lines.append("            __isnew = (not __bar_rt) or (__tick_i == 0)")
         lines.append("            __isconfirmed = (not __bar_rt) or (__tick_i == __n_ticks - 1)")
         lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
+        if self.uses_strategy:
+            lines.append("                __st_snap = __strategy.snapshot()")
         self._emit_rt_tick_snapshot(lines, indent="                ")
         if not body_lines and not self.uses_strategy:
             lines.append("            pass")
@@ -1446,6 +1448,8 @@ class CompilerVisitor(NodeVisitor):
         if not body_lines and self.uses_strategy:
             lines.append("            pass")
         lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
+        if self.uses_strategy:
+            lines.append("                __strategy.restore(__st_snap)")
         self._emit_rt_tick_restore(lines, indent="                ")
         if self.uses_strategy:
             lines.append("        __strategy_position_size_arr[__bar_idx] = float(__strategy.position_size)")

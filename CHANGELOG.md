@@ -2,12 +2,13 @@
 
 ### Added
 
-- **Compile-mode realtime multi-pass (D-04).** Object-mode compile honors `Runtime.run` `realtime_ticks` / `realtime_bars` / `realtime_from_bar` / `realtime_last_bar`: last-bar `barstate.isrealtime`, intermediate ticks overwrite the same plot cell, `var` commits once, `varip` re-inits, `once` latches only when confirmed. Numeric nopython stays historical unless the script already forced object mode (an active realtime window re-emits object mode). Broker fill / pending-order rollback and live datafeed-driven ticks are still open.
+- **Compile-mode realtime multi-pass (D-04).** Object-mode compile honors `Runtime.run` `realtime_ticks` / `realtime_bars` / `realtime_from_bar` / `realtime_last_bar`: last-bar `barstate.isrealtime`, intermediate ticks overwrite the same plot cell, `var` commits once, `varip` re-inits, `once` latches only when confirmed. Numeric nopython stays historical unless the script already forced object mode (an active realtime window re-emits object mode). Live datafeed-driven ticks are still open.
 - **Bar-mode incremental `ta.ichimoku` / `ta.apo` / `ta.emv` (T2).** Last-sample kernels match full recompute: Ichimoku reuses highest/lowest windows (stable six-slot order), APO is `EMA(fast) - EMA(slow)`, EMV is the last-N mean of per-bar ease-of-movement (na on bar 0 / zero volume / flat range).
 
 ### Fixed
 
 - **In-place array / matrix / map / UDT mutations roll back on unconfirmed realtime ticks (D-04).** Intermediate interpret ticks restore container contents into the same objects (aliases keep identity); `varip` containers persist. Object-mode compile copies list/dict contents the same way.
+- **Unconfirmed realtime ticks roll back broker fills and pending orders (D-04).** Interpret and object-mode compile snapshot `StrategyState` / `CompileStrategyBroker` (pending book, open/closed trades, position, equity peaks, events, strategy hist) and restore after intermediate ticks, so last-bar `strategy.entry` with `realtime_ticks=N` fills once. Pending OHLC processing stays once per bar (`begin_bar` / `process_pending_orders` remain outside the tick loop). Historical `realtime_ticks=1` is unchanged. Trail stops stay OHLC-approx.
 - **Compile-mode `alert()` / `alertcondition()` firings are exported.** Object-mode compile records the same envelope as interpret (`message`, `freq`, `bar_index`, `time`, `source`); `/run` `mode=auto` no longer drops them when compile wins. Nopython numeric scripts still return `alerts: []`.
 
 ## [0.6.13] — 2026-10-18

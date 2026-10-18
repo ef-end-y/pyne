@@ -35,7 +35,9 @@ owns an isolated :class:`StrategyState` (not class-level shared state).
 from __future__ import annotations
 
 import math
+
 from dataclasses import dataclass
+from dataclasses import replace
 from typing import Any
 
 from pynescript.ast.evaluator.events import StrategyEvent
@@ -335,6 +337,41 @@ class StrategyState:
         self._size_hist: list[float] = []
         self._avg_price_hist: list[float] = []
         self._closed_trades_hist: list[float] = []
+
+    def snapshot(self) -> dict[str, Any]:
+        """Copy broker books for unconfirmed realtime tick rollback.
+
+        Pending orders and trade records are copied (dataclass instances);
+        events and hist lists are copied by value. :meth:`restore` writes back
+        onto this same state object so host aliases stay valid.
+        """
+        snap: dict[str, Any] = {}
+        for k, v in self.__dict__.items():
+            if k == "pending_orders":
+                snap[k] = {oid: replace(o) for oid, o in v.items()}
+            elif k in {"open_trades", "closed_trades"}:
+                snap[k] = [replace(x) for x in v]
+            elif k in {"_events", "_size_hist", "_avg_price_hist", "_closed_trades_hist"}:
+                snap[k] = list(v)
+            else:
+                snap[k] = v
+        return snap
+
+    def restore(self, snap: dict[str, Any] | None) -> None:
+        """Replace in-place broker state from :meth:`snapshot` (same object)."""
+        if not snap:
+            return
+        for k, v in snap.items():
+            cur = getattr(self, k, None)
+            if k == "pending_orders" and isinstance(cur, dict):
+                cur.clear()
+                cur.update({oid: replace(o) for oid, o in v.items()})
+            elif k in {"open_trades", "closed_trades"} and isinstance(cur, list):
+                cur[:] = [replace(x) for x in v]
+            elif k in {"_events", "_size_hist", "_avg_price_hist", "_closed_trades_hist"} and isinstance(cur, list):
+                cur[:] = list(v)
+            else:
+                setattr(self, k, v)
 
     def drain_events(self) -> list[StrategyEvent]:
         """Return all captured events and clear the internal buffer."""
