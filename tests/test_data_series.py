@@ -166,6 +166,12 @@ def store(tmp_path) -> SeriesStore:
 
 
 class TestSeriesStore:
+    def test_identity_matches_pair_and_compact_forms(self, store):
+        key = make_key("binance", "BNB/USDT", "1m", "spot")
+        assert key.identity_matches("Binance", "BNB/USDT")
+        assert key.identity_matches("binance", "BNBUSDT")
+        assert not key.identity_matches("binance", "ETH/USDT")
+
     def test_unknown_series_reports_zero(self, store):
         assert store.status(KEY) == {
             "key": "binance|spot|BTC/USDT|1h",

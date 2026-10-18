@@ -12,6 +12,7 @@
 
 ### Changed
 
+- **Live P3 push shape.** Forming re-ticks ship last-value tails only and coalesce on the feed thread (75 ms); close/multi-slot batches flush immediately so `seq` and `close` frames stay ordered. Compact (`BNBUSDT`) and pair-form (`BNB/USDT`) series identities match on tick so journaled sessions survive the AXIS key unification.
 - **Live gunicorn topology (P2).** Production compose now hard-pins `GUNICORN_WORKER_CLASS=gthread` (a leftover 0.6.11 `geventwebsocket` value in the host `.env` can no longer restore broken WS frames), defaults `GUNICORN_THREADS=100` and `GUNICORN_TIMEOUT=120`, and raises recycle to `GUNICORN_MAX_REQUESTS=5000` so a live `/ws/live` socket is not torn down every few hundred REST ticks. The retired systemd unit/drop-in match gthread. VPS nginx already upgrades `location /ws/` with a 3600s read timeout.
 
 ### Fixed

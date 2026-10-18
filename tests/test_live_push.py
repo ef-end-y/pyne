@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,6 +20,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 import pytest  # noqa: E402
 
 from backend.api.live_push import HUB, PushHub, attach_feed  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _disable_forming_conflate(monkeypatch):
+    monkeypatch.setattr("backend.api.live_push.CONFLATE_MS", 0)
 from backend.api.live_ws import LiveConnection, LiveRegistry  # noqa: E402
 
 
@@ -249,6 +255,42 @@ def test_series_push_forming_retick_does_not_grow_count():
     frames2 = push_mod.emit_series_push("sub-s", registry, record, batch, now_s)
     assert frames2[0]["payload"]["count"] == 10
     assert record["count"] == 10
+
+
+def test_forming_batches_conflate_on_the_feed_thread(monkeypatch):
+    import backend.api.live_push as push_mod
+
+    monkeypatch.setattr(push_mod, "CONFLATE_MS", 40)
+    registry = LiveRegistry()
+    registry.subscribe("sub-s", "series", KEY_TEXT, 10)
+    registry.attach("sub-s", None, _bars10())
+    sent: list[dict] = []
+    hub = PushHub()
+    hub.register("sub-s", sent.append)
+    monkeypatch.setattr(push_mod, "HUB", hub)
+
+    class _Mgr:
+        def subscribe(self, key_text, session_id, cb):
+            self.cb = cb
+            return True
+
+        def unsubscribe(self, *_a):
+            return None
+
+    mgr = _Mgr()
+    monkeypatch.setattr("backend.api.feed_manager.get_feed_manager", lambda: mgr)
+    monkeypatch.setattr(push_mod, "persist_feed_bars", lambda *_a, **_k: True)
+    assert push_mod.attach_feed(KEY_TEXT, "ses", "sub-s", registry, hub) is True
+    tip_time = 1_700_000_000 + 9 * 60
+    mgr.cb([{"time": tip_time, "open": 1.0, "high": 1.1, "low": 1.0, "close": 1.05, "volume": 1.0}])
+    mgr.cb([{"time": tip_time, "open": 1.0, "high": 1.2, "low": 1.0, "close": 1.15, "volume": 2.0}])
+    assert sent == []
+    deadline = time.time() + 1.0
+    while time.time() < deadline and not sent:
+        time.sleep(0.02)
+    deltas = [f for f in sent if f.get("type") == "delta"]
+    assert len(deltas) == 1
+    assert deltas[0]["payload"]["bars"][0]["close"] == 1.15
 
 
 # ---------------------------------------------------------------------------

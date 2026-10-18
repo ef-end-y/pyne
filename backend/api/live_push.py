@@ -57,6 +57,13 @@ class PushHub:
 
 HUB = PushHub()
 
+# Forming re-ticks (same bar slot) coalesce on the feed thread. Closes and
+# multi-slot batches flush immediately so seq / close frames stay ordered.
+CONFLATE_MS = 75
+_conflate_lock = threading.Lock()
+_conflate_latest: dict[str, list[dict[str, Any]]] = {}
+_conflate_timers: dict[str, threading.Timer] = {}
+
 
 # A kline stream pushes the forming bar on every trade, so a feed batch can
 # arrive several times a second. The stored bounds only need to track the slot
@@ -139,6 +146,9 @@ def emit_push_frames(
     if not isinstance(result, dict) or "error" in result:
         return []
     tail_len = int(getattr(outcome, "grown", 0) or 0) + int(getattr(outcome, "reticked", 0) or 0)
+    # Forming re-ticks ship last-value only — never the full plot window.
+    if bool(getattr(outcome, "forming", False)) and int(getattr(outcome, "appended", 0) or 0) == 0:
+        tail_len = 1
     if tail_len <= 0:
         return []
     from backend.app import _delta_envelope
@@ -286,11 +296,8 @@ def attach_feed(
     hub = hub or HUB
     manager = get_feed_manager()
 
-    def on_candles(candles: list[dict[str, Any]]) -> None:
+    def _push_batch(candles: list[dict[str, Any]]) -> None:
         now_s = now_seconds()
-        # A series subscription renders straight from the store, and so does
-        # every /data/series reader: keep the stored bounds advancing with the
-        # feed instead of leaving them at the ensure-time snapshot.
         persist_feed_bars(key_text, candles)
         record = registry.get(client_id)
         if record is not None and str(record.get("kind") or "") == "series":
@@ -316,6 +323,40 @@ def attach_feed(
             client_id, registry, session, engine_session_id, binding, outcome, candles, now_s
         ):
             hub.send(client_id, frame)
+
+    def _flush_conflate() -> None:
+        with _conflate_lock:
+            batch = _conflate_latest.pop(client_id, None)
+            _conflate_timers.pop(client_id, None)
+        if batch:
+            _push_batch(batch)
+
+    def on_candles(candles: list[dict[str, Any]]) -> None:
+        times: set[int] = set()
+        for candle in candles or []:
+            try:
+                times.add(int(candle["time"]))
+            except (TypeError, ValueError, KeyError):
+                continue
+        forming_only = len(times) == 1 and CONFLATE_MS > 0
+        if forming_only:
+            with _conflate_lock:
+                _conflate_latest[client_id] = list(candles)
+                timer = _conflate_timers.get(client_id)
+                if timer is None or not timer.is_alive():
+                    timer = threading.Timer(CONFLATE_MS / 1000.0, _flush_conflate)
+                    timer.daemon = True
+                    _conflate_timers[client_id] = timer
+                    timer.start()
+            return
+        with _conflate_lock:
+            pending = _conflate_latest.pop(client_id, None)
+            timer = _conflate_timers.pop(client_id, None)
+        if timer is not None:
+            timer.cancel()
+        if pending:
+            _push_batch(pending)
+        _push_batch(candles)
 
     subscribed = manager.subscribe(key_text, engine_session_id, on_candles)
     return subscribed is not None

@@ -169,8 +169,18 @@ class SeriesKey:
         return interval_seconds(self.interval)
 
     def identity_matches(self, exchange: Any, symbol: Any) -> bool:
-        """Whether a caller's exchange + symbol name this series (case-insensitive)."""
-        return self.exchange == _text(exchange).lower() and self.symbol == _text(symbol).upper()
+        """Whether a caller's exchange + symbol name this series (case-insensitive).
+
+        Compact load-form (``BNBUSDT``) and pair-form (``BNB/USDT``) match so a
+        journaled session created before AXIS unified keys still ticks.
+        """
+        if self.exchange != _text(exchange).lower():
+            return False
+        stored = _text(self.symbol).upper()
+        incoming = _text(symbol).upper()
+        if not stored or not incoming:
+            return False
+        return stored == incoming or stored.replace("/", "") == incoming.replace("/", "")
 
 
 def make_key(exchange: Any, symbol: Any, interval: Any, market: Any = None) -> SeriesKey:
