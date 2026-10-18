@@ -35,7 +35,8 @@ def test_normalize_candles_sorts_dedups_and_converts():
 
 
 def test_split_key():
-    assert FeedManager.split_key("binance|spot|BTC/USDT|1m") == ("binance", "BTC/USDT", "1m")
+    assert FeedManager.split_key("binance|spot|BTC/USDT|1m") == ("binance", "spot", "BTC/USDT", "1m")
+    assert FeedManager.split_key("binance|swap|BTC/USDT|1m") == ("binance", "swap", "BTC/USDT", "1m")
     assert FeedManager.split_key("junk") is None
 
 

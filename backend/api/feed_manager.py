@@ -72,10 +72,12 @@ class ExchangeFeed:
         self,
         exchange: str,
         *,
+        market: str = "spot",
         feed_factory: Callable[[str], Any] | None = None,
         poll_interval_s: float = POLL_INTERVAL_S,
     ) -> None:
         self.exchange = exchange.lower()
+        self.market = (market or "spot").lower()
         self._feed_factory = feed_factory
         self._poll_interval_s = poll_interval_s
         self._lock = threading.Lock()
@@ -272,7 +274,12 @@ class ExchangeFeed:
             return self._feed_factory(self.exchange)
         from src.pynescript.util.datafeed import CCXTProDataFeed
 
-        return CCXTProDataFeed(exchange=self.exchange, enableRateLimit=True)
+        default = self.market if self.market in ("spot", "swap", "future") else "spot"
+        return CCXTProDataFeed(
+            exchange=self.exchange,
+            enableRateLimit=True,
+            options={"defaultType": default, "fetchMarkets": [default]},
+        )
 
 
 class FeedManager:
@@ -284,19 +291,21 @@ class FeedManager:
         self._feeds: dict[str, ExchangeFeed] = {}
 
     @staticmethod
-    def split_key(key_text: str) -> tuple[str, str, str] | None:
-        """``exchange|market|SYMBOL|interval`` → ``(exchange, SYMBOL, interval)``."""
+    def split_key(key_text: str) -> tuple[str, str, str, str] | None:
+        """``exchange|market|SYMBOL|interval`` → ``(exchange, market, SYMBOL, interval)``."""
         parts = (key_text or "").split("|")
         if len(parts) != 4 or not parts[0] or not parts[2] or not parts[3]:
             return None
-        return parts[0], parts[2], parts[3]
+        market = parts[1] or "spot"
+        return parts[0], market, parts[2], parts[3]
 
-    def _feed_for(self, exchange: str) -> ExchangeFeed:
+    def _feed_for(self, exchange: str, market: str) -> ExchangeFeed:
+        bucket = f"{exchange}|{market or 'spot'}"
         with self._lock:
-            feed = self._feeds.get(exchange)
+            feed = self._feeds.get(bucket)
             if feed is None:
-                feed = ExchangeFeed(exchange, feed_factory=self._feed_factory)
-                self._feeds[exchange] = feed
+                feed = ExchangeFeed(exchange, market=market, feed_factory=self._feed_factory)
+                self._feeds[bucket] = feed
         feed.start()
         return feed
 
@@ -306,8 +315,8 @@ class FeedManager:
         split = self.split_key(key_text)
         if split is None:
             return None
-        exchange, symbol, timeframe = split
-        feed = self._feed_for(exchange)
+        exchange, market, symbol, timeframe = split
+        feed = self._feed_for(exchange, market)
         feed.add_listener(symbol, timeframe, session_id, callback)
         return feed
 
@@ -315,9 +324,9 @@ class FeedManager:
         split = self.split_key(key_text)
         if split is None:
             return
-        exchange, symbol, timeframe = split
+        exchange, market, symbol, timeframe = split
         with self._lock:
-            feed = self._feeds.get(exchange)
+            feed = self._feeds.get(f"{exchange}|{market}")
         if feed is not None:
             feed.remove_listener(symbol, timeframe, session_id)
 

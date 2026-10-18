@@ -96,7 +96,7 @@ def _isolated(tmp_path, monkeypatch):
 @pytest.fixture
 def exchange(monkeypatch) -> FakeExchange:
     fake = FakeExchange()
-    monkeypatch.setattr(datafeed_mod, "_make_provider", lambda _exchange, _credentials=None: fake)
+    monkeypatch.setattr(datafeed_mod, "_make_provider", lambda _exchange, _credentials=None, _market="spot": fake)
     return fake
 
 
@@ -130,6 +130,8 @@ class TestCanonicalKey:
     def test_market_defaults_to_spot_and_is_normalized(self):
         assert make_key("binance", "BTC/USDT", "1h").market == "spot"
         assert make_key("binance", "BTC/USDT:USDT", "1h", "SWAP").text == "binance|swap|BTC/USDT:USDT|1h"
+        assert make_key("binance", "BTC/USDT", "1h", "linear").text == "binance|swap|BTC/USDT|1h"
+        assert make_key("binance", "BTCUSD_PERP", "1h", "inverse").text == "binance|future|BTCUSD_PERP|1h"
 
     def test_interval_unit_case_is_canonical_and_month_stays_distinct(self):
         assert make_key("binance", "BTC/USDT", "1H").interval == "1h"
@@ -314,7 +316,7 @@ class TestFetch:
         assert client.get("/data/series?exchange=binance&symbol=BTC/USDT&interval=1m").get_json()["count"] == 0
 
     def test_fetch_without_ccxt_is_503(self, client, monkeypatch):
-        monkeypatch.setattr(datafeed_mod, "_make_provider", lambda _exchange, _credentials=None: None)
+        monkeypatch.setattr(datafeed_mod, "_make_provider", lambda _exchange, _credentials=None, _market="spot": None)
         res = client.post("/data/series/fetch", json={**KEY_BODY, "history_bars": 50})
         assert res.status_code == 503
         assert res.get_json()["code"] == "CCXT_UNAVAILABLE"

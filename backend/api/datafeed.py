@@ -178,19 +178,25 @@ def _resolve_session(exchange: str, cred: str) -> tuple[str, dict[str, str] | No
     return exchange, creds
 
 
-def _make_provider(exchange: str, credentials: dict[str, str] | None = None):
+def _make_provider(
+    exchange: str,
+    credentials: dict[str, str] | None = None,
+    market: str = "spot",
+):
     """Create a CCXTProvider for *exchange* (public if credentials are empty)."""
     try:
         from pynescript.util.data import CCXTProvider  # noqa: PLC0415
     except ImportError:
         return None
     creds = credentials or {}
+    default_type = market if market in ("spot", "swap", "future") else "spot"
     return CCXTProvider(
         exchange=exchange,
         api_key=creds.get("api_key", ""),
         secret=creds.get("secret", ""),
         password=creds.get("password", ""),
         uid=creds.get("uid", ""),
+        default_type=default_type,
     )
 
 

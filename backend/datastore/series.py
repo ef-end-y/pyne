@@ -43,6 +43,20 @@ DEFAULT_DATA_DIR = "data"
 DB_FILENAME = "ohlcv.sqlite3"
 DEFAULT_MARKET = "spot"
 MARKETS = ("spot", "swap", "future")
+# AXIS UI uses linear/inverse; CCXT and this store use swap/future.
+MARKET_ALIASES = {
+    "spot": "spot",
+    "swap": "swap",
+    "future": "future",
+    "linear": "swap",
+    "usdt-m": "swap",
+    "usdm": "swap",
+    "futures": "swap",
+    "inverse": "future",
+    "coin-m": "future",
+    "coinm": "future",
+    "delivery": "future",
+}
 MAX_PROVIDE_BARS = 5000
 DEFAULT_HISTORY_BARS = 5000
 MAX_HISTORY_BARS = 100000
@@ -195,8 +209,8 @@ def make_key(exchange: Any, symbol: Any, interval: Any, market: Any = None) -> S
         raise DataError("INVALID_KEY", "symbol is required")
     if _SYMBOL_RE.match(sym) is None:
         raise DataError("INVALID_KEY", "symbol must be a pair such as BTC/USDT")
-    mkt = (_text(market) or DEFAULT_MARKET).lower()
-    if mkt not in MARKETS:
+    mkt = MARKET_ALIASES.get((_text(market) or DEFAULT_MARKET).lower())
+    if mkt is None:
         raise DataError("INVALID_MARKET", f"market must be one of {', '.join(MARKETS)}")
     if not _text(interval):
         raise DataError("INVALID_KEY", "interval is required")

@@ -277,7 +277,8 @@ class CCXTProDataFeed(DataFeed):
                 params["sandbox"] = True
             if self._exchange_name == "binance":
                 opts = params.get("options") if isinstance(params.get("options"), dict) else {}
-                opts = {**opts, "defaultType": "spot", "fetchMarkets": ["spot"]}
+                default = str(opts.get("defaultType") or "spot")
+                opts = {**opts, "defaultType": default, "fetchMarkets": [default]}
                 params["options"] = opts
 
             self._exchange = exchange_class(params)

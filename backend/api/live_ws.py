@@ -55,15 +55,16 @@ MAX_HISTORY_BARS = 100000
 def canonical_series_key(meta: dict[str, Any]) -> str | None:
     """``exchange|market|SYMBOL|interval`` or ``None`` when malformed."""
     try:
-        exchange = str(meta.get("exchange", "")).strip().lower()
-        market = str(meta.get("market", "spot") or "spot").strip().lower()
-        symbol = str(meta.get("symbol", "")).strip().upper()
-        interval = str(meta.get("interval", "")).strip()
+        from backend.datastore.series import make_key
+
+        return make_key(
+            meta.get("exchange"),
+            meta.get("symbol"),
+            meta.get("interval"),
+            meta.get("market"),
+        ).text
     except Exception:  # noqa: BLE001
         return None
-    if not exchange or not symbol or not interval:
-        return None
-    return f"{exchange}|{market}|{symbol}|{interval}"
 
 
 def clamp_history_bars(value: Any) -> int:

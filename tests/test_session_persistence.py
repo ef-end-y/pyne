@@ -217,7 +217,7 @@ def dclient(tmp_path, monkeypatch):
 @pytest.fixture
 def dexchange(monkeypatch) -> DFakeExchange:
     fake = DFakeExchange()
-    monkeypatch.setattr(datafeed_mod, "_make_provider", lambda _exchange, _credentials=None: fake)
+    monkeypatch.setattr(datafeed_mod, "_make_provider", lambda _exchange, _credentials=None, _market="spot": fake)
     return fake
 
 

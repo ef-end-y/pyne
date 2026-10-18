@@ -511,6 +511,9 @@ def tune_ccxt_public_urls(exchange: Any, exchange_name: str) -> None:
     opts = getattr(exchange, "options", None)
     if not isinstance(opts, dict):
         opts = {}
+    default = str(opts.get("defaultType") or "spot")
+    if default != "spot":
+        return
     opts["defaultType"] = "spot"
     opts["fetchMarkets"] = ["spot"]
     exchange.options = opts
@@ -546,6 +549,7 @@ class CCXTProvider(DataProvider):
         secret: str = "",
         password: str = "",
         uid: str = "",
+        default_type: str = "spot",
     ):
         """Initialize CCXT provider.
 
@@ -561,6 +565,7 @@ class CCXTProvider(DataProvider):
         self._secret = secret
         self._password = password
         self._uid = uid
+        self._default_type = (default_type or "spot").lower()
         self._exchange: Any | None = None
         _dbg("CCXTProvider init exchange=%s has_key=%s", exchange, bool(api_key and secret))
         _stats.count("provider.created", dim="ccxt")
@@ -587,8 +592,9 @@ class CCXTProvider(DataProvider):
                     params["password"] = self._password
                 if self._uid:
                     params["uid"] = self._uid
-                if self._exchange_name.lower() == "binance":
-                    params["options"] = {"defaultType": "spot", "fetchMarkets": ["spot"]}
+                default = self._default_type if self._default_type in ("spot", "swap", "future") else "spot"
+                if self._exchange_name.lower() == "binance" or default != "spot":
+                    params["options"] = {"defaultType": default, "fetchMarkets": [default]}
 
                 self._exchange = exchange_class(params)
                 tune_ccxt_public_urls(self._exchange, self._exchange_name)

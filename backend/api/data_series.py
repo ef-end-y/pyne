@@ -196,10 +196,10 @@ def data_error_response(exc: DataError) -> tuple[Any, int]:
     return jsonify(exc.body()), exc.status
 
 
-def provider_for(exchange: str) -> Any | None:
-    """Cached CCXT provider for *exchange*, or ``None`` when CCXT is missing.
+def provider_for(exchange: str, market: str = "spot") -> Any | None:
+    """Cached CCXT provider for *exchange* + market type, or ``None`` when CCXT is missing.
 
-    One provider (one ccxt exchange object) per (exchange, credentials): the
+    One provider (one ccxt exchange object) per (exchange, market, credentials): the
     first ``fetch_ohlcv`` on a fresh object pays ``loadMarkets`` (multi-MB
     ``exchangeInfo`` + rate-limit init, ~3s observed), so building a new
     provider per tick put a 3s floor under every cache-missing tick. Cached
@@ -208,13 +208,13 @@ def provider_for(exchange: str) -> Any | None:
     later tests/process states that install it.
     """
     _, credentials = datafeed._resolve_session(exchange, "")
-    key = _provider_cache_key(exchange, credentials)
+    key = _provider_cache_key(exchange, credentials, market)
     now = time.monotonic()
     with _provider_guard:
         provider = _providers.get(key)
         if provider is not None and now - _provider_at.get(key, 0.0) < _PROVIDER_TTL_S:
             return provider
-        provider = datafeed._make_provider(exchange, credentials)
+        provider = datafeed._make_provider(exchange, credentials, market)
         if provider is None:
             return None
         _providers[key] = provider
@@ -223,13 +223,14 @@ def provider_for(exchange: str) -> Any | None:
         return provider
 
 
-def _provider_cache_key(exchange: str, credentials: dict[str, str] | None) -> str:
+def _provider_cache_key(exchange: str, credentials: dict[str, str] | None, market: str = "spot") -> str:
     """Cache key that separates credential sets without storing secrets."""
     try:
         fp = hashlib.sha256(json.dumps(credentials or {}, sort_keys=True, default=str).encode()).hexdigest()[:12]
     except Exception:  # noqa: BLE001 — unserializable creds still need a key
         fp = "nofp"
-    return f"{str(exchange or '').strip().lower()}|{fp}"
+    mkt = str(market or "spot").strip().lower() or "spot"
+    return f"{str(exchange or '').strip().lower()}|{mkt}|{fp}"
 
 
 _providers: dict[str, Any] = {}
@@ -244,10 +245,10 @@ _provider_guard = threading.Lock()
 _PROVIDER_TTL_S = 1800.0
 
 
-def _fetch_lock_for_exchange(exchange: str) -> threading.Lock:
+def _fetch_lock_for_exchange(exchange: str, market: str = "spot") -> threading.Lock:
     """Fetch-serialization lock for the cached provider of *exchange*."""
     _, credentials = datafeed._resolve_session(exchange, "")
-    key = _provider_cache_key(exchange, credentials)
+    key = _provider_cache_key(exchange, credentials, market)
     with _provider_guard:
         return _fetch_locks.setdefault(key, threading.Lock())
 
@@ -311,7 +312,7 @@ def _collect_or_raise(
         # Serialize walks per cached provider: ccxt sync exchange objects
         # mutate rate-limit state per call. The walk itself runs outside the
         # per-series lock (no nesting — this is a leaf lock).
-        with _fetch_lock_for_exchange(key.exchange):
+        with _fetch_lock_for_exchange(key.exchange, key.market):
             return collect_candles(provider, key, since_ms=since_ms, now_ms=now_ms, max_bars=max_bars)
     except DataError:
         raise
@@ -324,7 +325,7 @@ def _collect_or_raise(
 
 def fetch_history(key: SeriesKey, history_bars: int) -> dict[str, Any]:
     """Fetch the newest ``history_bars`` bars for *key* and persist them."""
-    provider = provider_for(key.exchange)
+    provider = provider_for(key.exchange, key.market)
     if provider is None:
         raise _ccxt_unavailable()
     store = series_store.get_store()
@@ -361,7 +362,7 @@ def sync_data_session(
     """
     key = binding.key
     interval_s = key.interval_seconds
-    provider = provider_for(key.exchange)
+    provider = provider_for(key.exchange, key.market)
     if provider is None:
         raise _ccxt_unavailable()
     store = series_store.get_store()

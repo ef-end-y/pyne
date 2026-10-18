@@ -40,6 +40,7 @@ def _conn(**kw):
 
 def test_canonical_key_normalizes_casing():
     assert canonical_series_key(META) == "binance|spot|BTC/USDT|1m"
+    assert canonical_series_key({**META, "market": "linear"}) == "binance|swap|BTC/USDT|1m"
     assert canonical_series_key({"exchange": "x"}) is None
     assert canonical_series_key("nope") is None
 
