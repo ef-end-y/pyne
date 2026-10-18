@@ -355,11 +355,11 @@ class LiveConnection:
         self, client_id: str, kind: str, series_key: str, ensured: dict[str, Any] | None
     ) -> list[dict[str, Any]]:
         """status(datafeed-ready) → [status(calculating)] → full → status(live)."""
-        from backend.api.live_ensure import ensure_live_session, parse_live_key
+        from backend.api.live_ensure import parse_live_key
 
         if ensured is None:
             record = self._registry.get(client_id) or {}
-            ensured = ensure_live_session(kind, series_key, int(record.get("history_bars") or DEFAULT_HISTORY_BARS))
+            ensured = self._ensure(kind, series_key, int(record.get("history_bars") or DEFAULT_HISTORY_BARS))
             if ensured.get("outcome") != "ready":
                 return [self._status_loading(client_id, ensured)]
         session = self._registry.subscribe(
@@ -516,6 +516,8 @@ class LiveConnection:
 
 def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
     """flask-sock loop for ``WS /ws/live`` (handshake pre-auth + frames)."""
+    import queue as _queue
+
     from flask import request as flask_request
 
     from backend.api.live_push import HUB
@@ -528,14 +530,44 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
         _, code = validate_ws_key(raw)
         authed = code is None
 
+    sock_thread = threading.current_thread()
+    outbound: _queue.Queue[dict[str, Any]] = _queue.Queue()
+
     def sender(frame: dict[str, Any]) -> None:
-        ws.send(json.dumps(frame))
+        # flask-sock is not safe from the feed thread; only this loop sends.
+        if threading.current_thread() is sock_thread:
+            ws.send(json.dumps(frame))
+            return
+        outbound.put(frame)
+
+    def drain_outbound() -> None:
+        while True:
+            try:
+                frame = outbound.get_nowait()
+            except _queue.Empty:
+                return
+            try:
+                ws.send(json.dumps(frame))
+            except Exception:  # noqa: BLE001
+                return
 
     conn = LiveConnection(registry, authed=authed, hub=HUB, sender=sender)
     while True:
-        incoming = ws.receive()
+        try:
+            incoming = ws.receive(timeout=0.05)
+        except TypeError:
+            incoming = ws.receive()
+        except Exception as exc:  # noqa: BLE001 — timeout classes differ by transport
+            name = type(exc).__name__.lower()
+            if "timeout" in name:
+                incoming = ""
+            else:
+                break
+        drain_outbound()
         if incoming is None:
             break
+        if incoming == "":
+            continue
         try:
             msg = json.loads(incoming) if isinstance(incoming, str) else json.loads(incoming.decode("utf-8"))
         except Exception:  # noqa: BLE001
@@ -543,6 +575,7 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
             continue
         for reply in conn.handle_dict(msg):
             ws.send(json.dumps(reply))
+        drain_outbound()
 
 
 def register_live_route(sock: Any, registry: LiveRegistry | None = None) -> None:

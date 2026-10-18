@@ -154,6 +154,8 @@ class ExchangeFeed:
             return list(self._series.keys())
 
     async def _watch(self) -> None:
+        from src.pynescript.util.datafeed import DataFeedError
+
         feed = self._make_feed()
         streaming = False
         try:
@@ -163,9 +165,12 @@ class ExchangeFeed:
                         with self._lock:
                             self._fan_in = True
                         await self._watch_fan_in(feed)
+                        streaming = True
                     else:
                         await self._watch_per_series(feed)
-                    streaming = True
+                        streaming = True
+                except DataFeedError:
+                    streaming = False
                 except (NotImplementedError, AttributeError):
                     pass
         finally:
@@ -177,19 +182,33 @@ class ExchangeFeed:
             await self._poll_loop()
 
     async def _watch_fan_in(self, feed: Any) -> None:
-        """One socket for every series on this exchange (preferred)."""
+        """One socket for every series on this exchange (preferred).
+
+        Membership is re-read whenever the generator ends or the bound
+        series set changes, so a late subscribe joins the fan-in.
+        """
+        from src.pynescript.util.datafeed import DataFeedError
+
         while not self._stop.is_set():
-            series = self._snapshot_series() or [(None, None)]  # type: ignore[list-item]
+            series = self._snapshot_series()
             pairs = [(s, tf) for s, tf in series if s]
             if not pairs:
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.2)
                 continue
-            async for symbol, timeframe, candles in feed.watch_ohlcv_for_symbols(pairs):
-                if self._stop.is_set():
-                    return
-                batch = normalize_candles(candles)
-                if batch:
-                    self.dispatch(symbol, timeframe or pairs[0][1], batch)
+            try:
+                async for symbol, timeframe, candles in feed.watch_ohlcv_for_symbols(pairs):
+                    if self._stop.is_set():
+                        return
+                    if set(self._snapshot_series()) != set(series):
+                        break
+                    batch = normalize_candles(candles)
+                    if batch:
+                        self.dispatch(symbol, timeframe or pairs[0][1], batch)
+            except DataFeedError:
+                raise
+            except (NotImplementedError, AttributeError):
+                return
+            await asyncio.sleep(0.05)
 
     async def _watch_per_series(self, feed: Any) -> None:
         """One ``watch_ohlcv`` task per series (venues without fan-in)."""

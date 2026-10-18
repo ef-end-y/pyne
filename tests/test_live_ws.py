@@ -121,11 +121,16 @@ def test_repair_unknown_is_gone():
 
 
 def test_repair_of_a_live_sub_resumes():
-    conn = _conn()
+    bar = {"time": 1, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+    conn = _conn(
+        ensurer=lambda *_a, **_k: {"outcome": "ready", "session_id": None, "count": 1, "newest": 1},
+        store_window=lambda *_a, **_k: [bar],
+        attacher=lambda *_a, **_k: None,
+    )
     conn.handle_dict({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
     replies = conn.handle_dict({"type": "repair", "id": "s", "payload": {"from_time": 1}})
     assert replies[0].get("code") != "REPAIR_UNAVAILABLE"
-    assert replies[0]["type"] in ("status", "full", "error")
+    assert "full" in {r.get("type") for r in replies}
 
 
 def test_subscribe_emits_loading_before_ensure():

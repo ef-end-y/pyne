@@ -437,9 +437,9 @@ class TestDataSessionTick:
         assert body["status"] == "success"
         assert body["session_id"] == bound
         assert (body["appended"], body["forming"], body["unchanged"]) == (2, True, False)
-        # Only closed bars are persisted; the forming bar stays in the session.
+        # Forming tip is persisted with the closed bars (same as persist_feed_bars).
         status = client.get("/data/series?exchange=binance&symbol=BTC/USDT&interval=1m").get_json()
-        assert (status["count"], status["newest"]) == (60, NOW - MIN)
+        assert (status["count"], status["newest"]) == (61, NOW)
         # Overlap: two bars before the stored newest (NOW-180).
         assert exchange.calls[-1]["since"] == (NOW - 3 * MIN - 2 * MIN) * 1000
 

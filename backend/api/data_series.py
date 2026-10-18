@@ -349,7 +349,7 @@ def sync_data_session(
     The network walk runs **outside** ``key_lock`` so a slow upstream cannot
     hold up every other request for the same series (head-of-line blocking);
     the lock only guards the fast local commit: the status read, the liveness
-    check, the closed-bar persist and the session advance.
+    check, the persist (closed + forming tip) and the session advance.
 
     When the stored anchor is staler than :data:`TICK_MAX_BARS`, the walk is
     clamped to a bounded recent window and the outcome is flagged ``stale`` so
@@ -396,9 +396,10 @@ def sync_data_session(
     with store.key_lock(key.text):
         if is_alive is not None and not is_alive():
             raise DataError("SESSION_GONE", "Session was released while the tick was in flight.", 404)
-        closed = [c for c in candles if c["time"] + interval_s <= now_s]
-        if closed:
-            store.provide(key, closed, source=SOURCE_TICK)
+        # Persist closed bars and the forming tip (same as persist_feed_bars):
+        # GET /data/series readers otherwise sit one bar behind the venue.
+        if candles:
+            store.provide(key, candles, source=SOURCE_TICK)
         return live.sync_session(session, binding, candles, now_s, stale=stale, on_apply=on_apply)
 
 

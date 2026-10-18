@@ -74,5 +74,15 @@ def test_script_kind_creates_bound_session(_isolated):
     assert resumed["count"] == 10
 
 
+def test_identical_script_subs_share_one_session(_isolated):
+    _provide(_bars10())
+    a = ensure_live_session("script", KEY, 10, script="indicator()", symbol="BTCUSDT")
+    b = ensure_live_session("script", KEY, 10, script="indicator()", symbol="BTCUSDT")
+    assert a["outcome"] == b["outcome"] == "ready"
+    assert a["session_id"] == b["session_id"]
+    other = ensure_live_session("script", KEY, 10, script='indicator("x")', symbol="BTCUSDT")
+    assert other["session_id"] != a["session_id"]
+
+
 def test_resume_unknown_is_gone(_isolated):
     assert resume_live_session("nope") == {"outcome": "gone"}

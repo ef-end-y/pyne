@@ -149,3 +149,62 @@ def test_per_series_fallback_without_fan_in():
     asyncio.run(asyncio.wait_for(feed._watch(), timeout=10))
     assert feed.fan_in is False
     assert [b["time"] for b in seen[0]] == [12]
+
+
+def test_fan_in_refreshes_when_membership_changes():
+    batches = [("BTC/USDT", "1m", _candles(10)), ("ETH/USDT", "1m", _candles(11))]
+
+    class _PairAware(_FakeStreamFeed):
+        async def watch_ohlcv_for_symbols(self, pairs):
+            self.calls.append([p[0] for p in pairs])
+            wanted = {(s, tf) for s, tf in pairs}
+            for symbol, timeframe, rows in self._batches:
+                if (symbol, timeframe) in wanted:
+                    yield (symbol, timeframe, rows)
+
+    feed = ExchangeFeed("binance", feed_factory=lambda _e: _PairAware(batches))
+    seen: dict = {}
+
+    def on_btc(b):
+        seen.setdefault("btc", []).append(b)
+
+    def on_eth(b):
+        seen.setdefault("eth", []).append(b)
+        feed.stop()
+
+    async def run() -> None:
+        feed.add_listener("BTC/USDT", "1m", "s-1", on_btc)
+        task = asyncio.create_task(feed._watch())
+        for _ in range(100):
+            if "btc" in seen:
+                break
+            await asyncio.sleep(0.01)
+        feed.add_listener("ETH/USDT", "1m", "s-2", on_eth)
+        await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(run())
+    assert "btc" in seen
+    assert "eth" in seen
+
+
+def test_datafeed_error_falls_back_to_poll():
+    from src.pynescript.util.datafeed import DataFeedError
+
+    feed_holder: list = []
+
+    class _Boom(_FakeStreamFeed):
+        async def watch_ohlcv_for_symbols(self, pairs):
+            raise DataFeedError("stream died")
+            yield  # noqa: RET501 — async generator so `async for` can start
+
+        async def fetch_ohlcv(self, symbol, timeframe, limit=2):
+            feed_holder[0].stop()
+            return _candles(99)
+
+    feed = ExchangeFeed("binance", feed_factory=lambda _e: _Boom([]), poll_interval_s=0.01)
+    feed_holder.append(feed)
+    seen: list = []
+    feed.add_listener("BTC/USDT", "1m", "s-1", seen.append)
+    asyncio.run(asyncio.wait_for(feed._watch(), timeout=5))
+    assert seen
+    assert [b["time"] for b in seen[0]] == [99]

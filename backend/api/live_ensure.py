@@ -93,9 +93,18 @@ def ensure_live_session(
 
     from src.pynescript.runtime.host import Runtime
 
-    try:
-        runtime = Runtime(symbol=symbol or str(key_text_symbol(series_key_text)))
-        session = runtime.create_session(
+    ticker = symbol or str(key_text_symbol(series_key_text))
+    fingerprint = SESSIONS.shared_fingerprint(
+        script=script or "",
+        symbol=f"{series_key_text}|{ticker}",
+        inputs=inputs or {},
+        libraries=libraries or [],
+        profiler=bool(profiler),
+    )
+
+    def _factory() -> Any:
+        runtime = Runtime(symbol=ticker)
+        return runtime.create_session(
             script or "",
             bars,
             inputs=inputs or None,
@@ -103,29 +112,34 @@ def ensure_live_session(
             profiler=bool(profiler),
             mode="interpret",
         )
-    except Exception as exc:  # noqa: BLE001
-        return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": str(exc)[:500]}
+
     try:
-        session_id = SESSIONS.put(session)
+        session_id, created = SESSIONS.acquire_shared(fingerprint, _factory)
     except RuntimeError:
         return {"outcome": "error", "code": "SESSIONS_FULL", "message": "Session capacity reached."}
+    except Exception as exc:  # noqa: BLE001
+        return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": str(exc)[:500]}
 
-    data_live.bind_session(session, key, bars[-1])
-    binding = data_live.binding_of(session)
-    SESSIONS.track(
-        session_id,
-        script=script or "",
-        symbol=symbol,
-        inputs=inputs or {},
-        libraries=libraries or [],
-        profiler=bool(profiler),
-        bars=list(bars),
-        binding=(
-            {"key": binding.key.text, "last_time": binding.last_time, "last_bar": dict(binding.last_bar)}
-            if binding is not None
-            else None
-        ),
-    )
+    session = SESSIONS.get(session_id)
+    if session is None:
+        return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": "Shared session vanished."}
+    if created:
+        data_live.bind_session(session, key, bars[-1])
+        binding = data_live.binding_of(session)
+        SESSIONS.track(
+            session_id,
+            script=script or "",
+            symbol=symbol,
+            inputs=inputs or {},
+            libraries=libraries or [],
+            profiler=bool(profiler),
+            bars=list(bars),
+            binding=(
+                {"key": binding.key.text, "last_time": binding.last_time, "last_bar": dict(binding.last_bar)}
+                if binding is not None
+                else None
+            ),
+        )
     return {"outcome": "ready", "session_id": session_id, "count": len(bars), "newest": int(bars[-1]["time"])}
 
 
