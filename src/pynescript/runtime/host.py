@@ -4150,11 +4150,14 @@ class Runtime:
 
         drawings: list[Any] = []
         events: list[Any] = []
+        alerts: list[Any] = []
         json_series: dict[str, list[Any]] = {}
+        raw_alerts: Any = None
         if isinstance(series_map, dict):
             # Read meta keys without mutating the map (safe if engine reuses dicts).
             drawings = series_map.get("__drawings", []) or []
             events = series_map.get("__events", []) or []
+            raw_alerts = series_map.get("__alerts")
 
             # JSON-safe series map (numpy NaN → null). Dominant host wrap cost after pack.
             _to_json = _series_values_jsonable
@@ -4165,6 +4168,25 @@ class Runtime:
                 if type(ks) is str:
                     ks = intern(ks)
                 json_series[ks] = _to_json(v)
+        elif series_map is not None:
+            raw_alerts = getattr(series_map, "__alerts", None)
+        if isinstance(raw_alerts, list):
+            alerts = [a for a in raw_alerts if isinstance(a, dict)]
+        elif isinstance(raw_alerts, dict):
+            if "message" in raw_alerts:
+                alerts = [raw_alerts]
+            else:
+                inner = raw_alerts.get("alerts") or raw_alerts.get("items") or raw_alerts.get("__alerts") or []
+                alerts = [a for a in inner if isinstance(a, dict)] if isinstance(inner, list) else []
+        elif raw_alerts is not None:
+            inner = getattr(raw_alerts, "alerts", None)
+            if inner is None:
+                inner = getattr(raw_alerts, "__alerts", None)
+            try:
+                seq = inner if inner is not None else raw_alerts
+                alerts = [a for a in seq if isinstance(a, dict)]
+            except TypeError:
+                alerts = []
 
         # Compile-path GC: __drawings is append-only; trim by declaration caps
         # parsed from source (defaults 50). Interpret path GCs in DrawingRegistry.
@@ -4238,6 +4260,12 @@ class Runtime:
                 if isinstance(ev, dict):
                     ev.setdefault("script_id", script_id)
                     ev.setdefault("run_id", rid)
+        if alerts:
+            rid = self._run_id
+            for a in alerts:
+                if isinstance(a, dict):
+                    a.setdefault("script_id", script_id)
+                    a.setdefault("run_id", rid)
 
         # Series envelope parity with interpret: declaration fields.
         # Style/color for compile is best-effort (engine does not export per-plot meta).
@@ -4254,14 +4282,13 @@ class Runtime:
         # Do NOT return generated_code by default — large scripts + cold Numba make
         # JSON responses multi-MB and can trip AXIS/gunicorn timeouts. Opt-in via
         # PYNESCRIPT_RETURN_GENERATED_CODE=1 for debugging.
-        # Compile path does not execute interpret-only alert() side effects yet
         out: dict[str, Any] = {
             "plots": final_series,
             "series": json_series,
             "plot_meta": plot_meta,
             "drawings": drawings if isinstance(drawings, list) else list(drawings or []),
             "events": events if isinstance(events, list) else list(events or []),
-            "alerts": [],
+            "alerts": alerts if isinstance(alerts, list) else list(alerts or []),
             "inputs": input_defs,
             "count": len(ohlcv_data),
             "script_id": script_id,

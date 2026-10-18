@@ -57,7 +57,7 @@ EXPECTED_FAIL scripts are path-listed intentional demos — not silent suppressi
 | Class | Scope | Examples |
 |-------|-------|----------|
 | **Working** | Implemented, usable, covered by first-party tests | Language core, series, TA hot path, collections, strategy broker, drawings, alerts, libraries, interpret Runtime |
-| **Partial** | Callable but mock, host-bound, or incomplete vs hosted Pine | `request.*` feeds (honest `na`), compile eligibility, compile alerts, PyneTS vs Python oracle |
+| **Partial** | Callable but mock, host-bound, or incomplete vs hosted Pine | `request.*` feeds (honest `na`), compile eligibility, nopython compile alerts (`[]`; object-mode compile exports firings), PyneTS vs Python oracle |
 | **Residual** | Known open hole on an otherwise landed surface | Plot MISMATCH corpus tail (P1p official builtins closed), `PYNE_SERIES_RING` default off |
 | **Out of scope** | Intentionally not a TV platform clone | Pixel chart, editor UX, foreign live fundamentals, bit-identical TV bars |
 

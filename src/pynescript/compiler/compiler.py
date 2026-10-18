@@ -615,6 +615,7 @@ class CompilerVisitor(NodeVisitor):
         self.force_object_mode = bool(force_object_mode)
         self.object_mode = bool(force_object_mode)
         self.uses_strategy = False
+        self.uses_alerts = False
         self.strategy_kwargs: dict[str, str] = {}
         # Name → const-like Python expr for strategy() ctor kwargs (literals / input defvals).
         # reference requires const for most strategy() params; pyne compile mirrors that by folding
@@ -1118,6 +1119,12 @@ class CompilerVisitor(NodeVisitor):
         if self.uses_strategy:
             lines.append("from pynescript.compiler.strategy_broker import CompileStrategyBroker")
             lines.append("")
+        if self.uses_alerts:
+            lines.append("from pynescript.ast.evaluator.builtins.alerts import AlertEvent")
+            lines.append("from pynescript.ast.evaluator.builtins.alerts import FREQ_ALL")
+            lines.append("from pynescript.ast.evaluator.builtins.alerts import FREQ_ONCE_PER_BAR_CLOSE")
+            lines.append("from pynescript.ast.evaluator.builtins.alerts import normalize_alert_freq")
+            lines.append("")
         self._emit_once_module_globals(lines)
         for func in self.functions:
             # strip @numba.njit for object-mode user functions
@@ -1136,8 +1143,12 @@ class CompilerVisitor(NodeVisitor):
                 "    vol_arr = np.asarray(vol_arr, dtype=np.float64)",
                 "    time_arr = np.asarray(time_arr, dtype=np.float64)",
                 "    __drawings = []",
+                "    __alerts = []",
+                "    __alert_fire_bars = {}",
             ]
         )
+        if self.uses_alerts:
+            self._emit_object_alert_helpers(lines)
         self._emit_time_close_init(lines, indent="    ")
         if self.uses_strategy:
             # Broker ctor kwargs from strategy() declaration when present.
@@ -1207,7 +1218,7 @@ class CompilerVisitor(NodeVisitor):
 
         # Use repr so titles with apostrophes (Spearman's Rho) stay valid Python.
         dict_items = [f"{p['title']!r}: plot_{i}" for i, p in enumerate(self.plots)]
-        extras = ["'__drawings': __drawings"]
+        extras = ["'__drawings': __drawings", "'__alerts': __alerts"]
         if self.uses_strategy:
             extras.append("'__events': __strategy.to_events()")
             extras.append("'__position_size': __strategy.position_size")
@@ -1216,6 +1227,72 @@ class CompilerVisitor(NodeVisitor):
         ret_parts = dict_items + extras
         lines.append("    return {" + ", ".join(ret_parts) + "}")
         return "\n".join(lines)
+
+    def _emit_object_alert_helpers(self, lines: list[str]) -> None:
+        """Nested object-mode helpers: frequency-gated ``AlertEvent`` append."""
+        lines.extend(
+            [
+                "    def __alert_truthy(cond):",
+                "        if cond is None:",
+                "            return False",
+                "        try:",
+                "            if cond != cond:",
+                "                return False",
+                "        except Exception:",
+                "            pass",
+                "        try:",
+                "            return bool(cond)",
+                "        except Exception:",
+                "            return False",
+                "    def __emit_alert(message, freq='once_per_bar', title=None, source='alert', bar_idx=0, time_ms=None, confirmed=True):",
+                "        freq_n = normalize_alert_freq(freq)",
+                "        if freq_n == FREQ_ONCE_PER_BAR_CLOSE and not confirmed:",
+                "            return",
+                "        try:",
+                "            bar_index = int(bar_idx)",
+                "        except (TypeError, ValueError):",
+                "            bar_index = None",
+                "        if freq_n != FREQ_ALL and bar_index is not None:",
+                "            key = (str(source or 'alert'), str(title or ''), str('' if message is None else message), freq_n)",
+                "            last = __alert_fire_bars.get(key)",
+                "            if last is not None and last == bar_index:",
+                "                return",
+                "            __alert_fire_bars[key] = bar_index",
+                "        try:",
+                "            time_val = int(time_ms) if time_ms is not None and time_ms == time_ms else None",
+                "        except (TypeError, ValueError):",
+                "            time_val = None",
+                "        title_s = None if title is None else str(title)",
+                "        __alerts.append(AlertEvent(message='' if message is None else str(message), freq=freq_n, bar_index=bar_index, time=time_val, title=title_s, source=str(source or 'alert')).to_dict())",
+            ]
+        )
+
+    def _emit_alert_call(self, func_name: str, args: list[str], kwargs: dict[str, str]) -> str:
+        """Lower ``alert()`` / ``alertcondition()``; force object mode."""
+        self.object_mode = True
+        self.uses_alerts = True
+        loc = '__bar_idx, time_arr[__bar_idx], locals().get("__isconfirmed", True)'
+        if func_name == "alert":
+            message = kwargs.get("message")
+            if message is None:
+                message = args[0] if args else None
+            if message is None:
+                return ""
+            freq = kwargs.get("freq")
+            if freq is None:
+                freq = args[1] if len(args) > 1 else repr("once_per_bar")
+            return f"__emit_alert({message}, {freq}, None, 'alert', {loc})"
+        cond = kwargs.get("condition")
+        if cond is None:
+            cond = args[0] if args else "False"
+        title = kwargs.get("title")
+        if title is None:
+            title = args[1] if len(args) > 1 else repr("Alert")
+        message = kwargs.get("message")
+        if message is None:
+            message = args[2] if len(args) > 2 else repr("Alert")
+        fire = f"__emit_alert({message}, 'once_per_bar', {title}, 'alertcondition', {loc})"
+        return f"({fire} if __alert_truthy({cond}) else None)"
 
     def _emit_series_local_state(self, lines: list[str], *, indent: str = "    ") -> None:
         """Preallocate persistent arrays for UDF series locals (history across bars)."""
@@ -5027,7 +5104,7 @@ class CompilerVisitor(NodeVisitor):
         if func_name in ("max_bars_back", "max_bars_back_all"):
             return ""
         if func_name == "alert":
-            return ""
+            return self._emit_alert_call(func_name, args, kwargs)
 
         if func_name in ("indicator", "study"):
             return ""
@@ -5443,7 +5520,7 @@ class CompilerVisitor(NodeVisitor):
             return "np.nan"
 
         if func_name in ("alertcondition", "alert"):
-            return ""
+            return self._emit_alert_call(func_name, args, kwargs)
 
         # UDF calls win over bare TA aliases (sma, …) and bare math (max/min/abs).
         # ``round`` / ``int`` / ``len`` are also Python builtins — the def is

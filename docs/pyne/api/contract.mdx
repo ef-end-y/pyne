@@ -93,7 +93,7 @@ flowchart LR
 | `plot_meta` | `Record<string, PlotMeta>` | Display metadata |
 | `events` | `StrategyEvent[]` | Strategy / trade-like events |
 | `drawings` | `Drawing[]` | line/label/box export |
-| `alerts` | `AlertEvent[]` | `alert()` / true `alertcondition()` firings (interpret; `[]` on compile) |
+| `alerts` | `AlertEvent[]` | `alert()` / true `alertcondition()` firings (interpret and object-mode compile; nopython stays `[]`) |
 | `alert_conditions` | object[] | optional condition evaluations |
 | `alert_forward` | object | optional L2 webhook delivery summary |
 | `count` | number | Bars evaluated |
@@ -198,7 +198,7 @@ Workers may implement batch as N single evaluates; AXIS should not assume batch 
 | `plots` / `series` / `plot_meta` | `pynescript.runtime.host.Runtime.run` packing loop |
 | `events` | `evaluator._strategy_state.drain_events()` → `to_dict()` (compile: `__events`) |
 | `drawings` | `DrawingRegistry.export_for_api` (compile: `__drawings`) |
-| `alerts` | `export_alerts_from_evaluator` (interpret; compile returns `[]`) |
+| `alerts` | `export_alerts_from_evaluator` (interpret); object-mode compile `__alerts` (nopython `[]`) |
 | `alert_forward` | `backend/alert_forwarder.maybe_forward_run_alerts` |
 | `script_id` | `sha256(source)[:16]` |
 | `run_id` | `Runtime._run_id` |

@@ -33,6 +33,7 @@ okf_lock: generated
 * `test_cli_util_coverage.py` — bad_file, get_provider_default_mock, pine_file, runner, test_alias_help, test_alphavantage_missing_dependency, test_alphavantage_stub_client, test_bad_flag, test_bind_ta_stubs, test_broker_insufficient_balance_and_sell_with_position, test_broker_market_and_limit_fills, test_broker_run_with_finite_feed
 * `test_collections.py` — TestArrayEdgeCorrectness, TestMapEvaluatorIntegration, TestMatrixEvaluatorIntegration, TestRound8SoftNaAndV6Indices
 * `test_compile_drawings_extras.py` — TestCompileBoxExtras, TestCompileLabelExtras, TestCompilePolylineExtras, TestExtrasDualHost
+* `test_compiler_alerts.py` — TestCompileAlertTranspile, TestCompileAlertsDualHost, TestCompileAlertsNumericEligible
 * `test_compiler_engine_r8.py` — TestEndToEndDuplicateTitles, TestIrShareMetadataGate, TestLegacyArityAndCache, TestNormalizeAndCoerce, TestTranspileTitlesMatchRun, TestUniquifyAndPack
 * `test_compiler_numba.py` — TestAdxDmiBuiltinScriptPlotParity, TestCompileAndRun, TestCompileCoverageSprint, TestCompileCoverageSprint3, TestCompileCoverageSprint4, TestCompileCoverageSprint5, TestCompileCoverageSprint6Materialize, TestCompileCoverageSprint6TaBuiltins, TestCompileEngineRound6, TestCompileRound4IncKernels, TestCompileRound5IncKernels, TestCompileRound6DmiSupertrendAlma
 * `test_compiler_objects.py` — TestCollectionObjectModeParity, TestDrawingCompile, TestMapCompile, TestNumericStillNumba, TestObjectModeNaArithmetic, TestSet05MissingNames, TestUDTCompile
