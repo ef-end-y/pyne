@@ -552,6 +552,11 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
                 return
 
     conn = LiveConnection(registry, authed=authed, hub=HUB, sender=sender)
+    if authed:
+        try:
+            ws.send(json.dumps({"type": "auth.ok"}))
+        except Exception:  # noqa: BLE001
+            return
     while True:
         try:
             incoming = ws.receive(timeout=0.05)

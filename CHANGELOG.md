@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- **`WS /ws/live` sends `auth.ok` as soon as the upgrade handshake authenticates.** AXIS was blocking connect on that frame while the engine hashed the key; a handshake-authed socket now greets immediately so subscribe is not UNAUTHORIZED.
 - **In-place array / matrix / map / UDT mutations roll back on unconfirmed realtime ticks (D-04).** Intermediate interpret ticks restore container contents into the same objects (aliases keep identity); `varip` containers persist. Object-mode compile copies list/dict contents the same way.
 - **Unconfirmed realtime ticks roll back broker fills and pending orders (D-04).** Interpret and object-mode compile snapshot `StrategyState` / `CompileStrategyBroker` (pending book, open/closed trades, position, equity peaks, events, strategy hist) and restore after intermediate ticks, so last-bar `strategy.entry` with `realtime_ticks=N` fills once. Pending OHLC processing stays once per bar (`begin_bar` / `process_pending_orders` remain outside the tick loop). Historical `realtime_ticks=1` is unchanged. Trail stops stay OHLC-approx.
 - **Compile-mode `alert()` / `alertcondition()` firings are exported.** Object-mode compile records the same envelope as interpret (`message`, `freq`, `bar_index`, `time`, `source`); `/run` `mode=auto` no longer drops them when compile wins. Nopython numeric scripts still return `alerts: []`.
