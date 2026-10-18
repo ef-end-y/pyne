@@ -3666,6 +3666,125 @@ class TechnicalHelpers:
         st["value"] = emv_sma
         return emv_sma
 
+    def _skewness_inc_update(self, series: list[Any], period: int) -> float | None:
+        """Incremental skewness matching full ``ta.skewness`` last window.
+
+        Population third central moment / std^3 over the last ``period``
+        calendar samples. Any non-numeric slot yields na (same as
+        ``len(valid_data) < period``). Zero stdev → 0.0. One slot every bar,
+        including warmup / na.
+        """
+        if period < 1:
+            return None
+        n = int(period)
+        bucket, key = self._ta_key1("skewness", n)
+        st = bucket.get(key)
+        if st is None:
+            st = {"window": deque(maxlen=n), "value": None}
+            bucket[key] = st
+        raw = self._series_last(series)
+        x: float | None = float(raw) if isinstance(raw, (int, float)) else None
+        window: deque[float | None] = st["window"]
+        window.append(x)
+        vals = [v for v in window if v is not None]
+        if len(window) < n or len(vals) < n:
+            st["value"] = None
+            return None
+        mean = sum(vals) / n
+        variance = sum((v - mean) ** 2 for v in vals) / n
+        std_dev = variance ** 0.5
+        if std_dev == 0.0:
+            st["value"] = 0.0
+            return 0.0
+        skewness_val = sum((v - mean) ** 3 for v in vals) / (n * (std_dev ** 3))
+        st["value"] = skewness_val
+        return skewness_val
+
+    def _kurtosis_inc_update(self, series: list[Any], period: int) -> float | None:
+        """Incremental excess kurtosis matching full ``ta.kurtosis`` last window.
+
+        ``E[(x-mean)^4] / std^4 - 3`` over the last ``period`` calendar samples.
+        Any non-numeric slot yields na. Zero stdev → 0.0. One slot every bar,
+        including warmup / na.
+        """
+        if period < 1:
+            return None
+        n = int(period)
+        bucket, key = self._ta_key1("kurtosis", n)
+        st = bucket.get(key)
+        if st is None:
+            st = {"window": deque(maxlen=n), "value": None}
+            bucket[key] = st
+        raw = self._series_last(series)
+        x: float | None = float(raw) if isinstance(raw, (int, float)) else None
+        window: deque[float | None] = st["window"]
+        window.append(x)
+        vals = [v for v in window if v is not None]
+        if len(window) < n or len(vals) < n:
+            st["value"] = None
+            return None
+        mean = sum(vals) / n
+        variance = sum((v - mean) ** 2 for v in vals) / n
+        std_dev = variance ** 0.5
+        if std_dev == 0.0:
+            st["value"] = 0.0
+            return 0.0
+        fourth_moment = sum((v - mean) ** 4 for v in vals) / n
+        kurtosis_val = (fourth_moment / (std_dev ** 4)) - 3.0
+        st["value"] = kurtosis_val
+        return kurtosis_val
+
+    def _beta_inc_update(
+        self,
+        series1: list[Any],
+        series2: list[Any],
+        length: int,
+    ) -> float | None:
+        """Incremental beta matching full ``ta.beta``: cov(s1,s2)/var(s2).
+
+        Two last-N calendar windows. Short window → na; ``var(s2)==0`` → 0.0.
+        Non-numeric slots yield na (full path would TypeError on ``sum``).
+        One slot every bar, including warmup / na.
+        """
+        if length < 1:
+            return None
+        n = int(length)
+        bucket, key = self._ta_key1("beta", n)
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "a": deque(maxlen=n),
+                "b": deque(maxlen=n),
+                "value": None,
+            }
+            bucket[key] = st
+        raw_a = self._series_last(series1)
+        raw_b = self._series_last(series2)
+        a_v: float | None = float(raw_a) if isinstance(raw_a, (int, float)) else None
+        b_v: float | None = float(raw_b) if isinstance(raw_b, (int, float)) else None
+        wa: deque[float | None] = st["a"]
+        wb: deque[float | None] = st["b"]
+        wa.append(a_v)
+        wb.append(b_v)
+        if len(wa) < n:
+            st["value"] = None
+            return None
+        s1 = list(wa)
+        s2 = list(wb)
+        if any(v is None for v in s1) or any(v is None for v in s2):
+            st["value"] = None
+            return None
+        mean1 = sum(s1) / n
+        mean2 = sum(s2) / n
+        covariance = sum((s1[i] - mean1) * (s2[i] - mean2) for i in range(n)) / n
+        variance2 = sum((v - mean2) ** 2 for v in s2) / n
+        if variance2 == 0.0:
+            st["value"] = 0.0
+            return 0.0
+        beta_val = covariance / variance2
+        st["value"] = beta_val
+        return beta_val
+
     def _finalize_series(self, values: list[Any]) -> Any:
         """Return full series list, or current scalar in bar mode."""
         if not self._bar_mode():

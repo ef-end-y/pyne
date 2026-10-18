@@ -4059,3 +4059,202 @@ plot(ta.emv(14), "emv")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: skewness / kurtosis / beta incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_skewness(src: list[Any], period: int) -> list[float | None]:
+    ev = _FullTA()
+    return [ev._builtin_ta_skewness([src[: i + 1], period]) for i in range(len(src))]
+
+
+def _bar_walk_inc_skewness(src: list[Any], period: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._skewness_inc_update(src[: i + 1], period))
+    return out
+
+
+def _bar_walk_full_kurtosis(src: list[Any], period: int) -> list[float | None]:
+    ev = _FullTA()
+    return [ev._builtin_ta_kurtosis([src[: i + 1], period]) for i in range(len(src))]
+
+
+def _bar_walk_inc_kurtosis(src: list[Any], period: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._kurtosis_inc_update(src[: i + 1], period))
+    return out
+
+
+def _bar_walk_full_beta(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_beta([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))
+    ]
+
+
+def _bar_walk_inc_beta(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(s1)):
+        ev._ta_call_i = 0
+        out.append(ev._beta_inc_update(s1[: i + 1], s2[: i + 1], length))
+    return out
+
+
+def test_incremental_skewness_matches_full() -> None:
+    src = _series(120)
+    for period in (10, 20):
+        _assert_series_close(
+            _bar_walk_inc_skewness(src, period),
+            _bar_walk_full_skewness(src, period),
+        )
+
+
+def test_incremental_kurtosis_matches_full() -> None:
+    src = _series(120)
+    for period in (10, 20):
+        _assert_series_close(
+            _bar_walk_inc_kurtosis(src, period),
+            _bar_walk_full_kurtosis(src, period),
+        )
+
+
+def test_incremental_beta_matches_full() -> None:
+    s1 = _series(120)
+    s2 = [x * 2.0 + math.sin(i / 5.0) * 0.4 for i, x in enumerate(s1)]
+    for length in (10, 20):
+        _assert_series_close(
+            _bar_walk_inc_beta(s1, s2, length),
+            _bar_walk_full_beta(s1, s2, length),
+        )
+
+
+def test_incremental_skewness_kurtosis_beta_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    peer: list[float | None] = [x * 1.5 if x is not None else None for x in src]
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        peer_p = peer[: i + 1]
+        ev._ta_call_i = 0
+        ev._skewness_inc_update(prefix, 10)
+        assert ev._ta_call_i == 1, f"skewness bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._kurtosis_inc_update(prefix, 10)
+        assert ev._ta_call_i == 1, f"kurtosis bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._beta_inc_update(prefix, peer_p, 10)
+        assert ev._ta_call_i == 1, f"beta bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_skewness_kurtosis_na_in_window() -> None:
+    """NA in the last-period calendar window yields na (full-path valid_data rule)."""
+    src: list[float | None] = list(_series(80))
+    na_i = 15
+    period = 10
+    src[na_i] = None
+    got_s = _bar_walk_inc_skewness(src, period)
+    got_k = _bar_walk_inc_kurtosis(src, period)
+    _assert_series_close(got_s, _bar_walk_full_skewness(src, period))
+    _assert_series_close(got_k, _bar_walk_full_kurtosis(src, period))
+    for i in range(na_i, na_i + period):
+        assert got_s[i] is None, f"skewness bar {i}: expected None while NA is in window"
+        assert got_k[i] is None, f"kurtosis bar {i}: expected None while NA is in window"
+
+
+def test_incremental_skewness_kurtosis_zero_stdev() -> None:
+    """Constant window → 0.0 (std_dev == 0), matching full path."""
+    src = [7.0] * 40
+    period = 10
+    got_s = _bar_walk_inc_skewness(src, period)
+    got_k = _bar_walk_inc_kurtosis(src, period)
+    _assert_series_close(got_s, _bar_walk_full_skewness(src, period))
+    _assert_series_close(got_k, _bar_walk_full_kurtosis(src, period))
+    for i in range(period - 1, len(src)):
+        assert got_s[i] == pytest.approx(0.0)
+        assert got_k[i] == pytest.approx(0.0)
+
+
+def test_incremental_beta_zero_variance() -> None:
+    """var(series2) == 0 → 0.0, matching full path."""
+    s1 = _series(50)
+    s2 = [3.0] * 50
+    length = 14
+    got = _bar_walk_inc_beta(s1, s2, length)
+    _assert_series_close(got, _bar_walk_full_beta(s1, s2, length))
+    for i in range(length - 1, len(s1)):
+        assert got[i] == pytest.approx(0.0)
+
+
+def test_incremental_skewness_kurtosis_beta_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtins consume the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    peer = [x * 2.0 for x in src]
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_skewness([prefix, 10])
+        assert ev._ta_call_i == 1, f"skewness builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_kurtosis([prefix, 10])
+        assert ev._ta_call_i == 1, f"kurtosis builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_beta([prefix, peer[: i + 1], 10])
+        assert ev._ta_call_i == 1, f"beta builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_skewness_kurtosis_beta_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("skew kurt beta")
+plot(ta.skewness(close, 20), "skew")
+plot(ta.kurtosis(close, 20), "kurt")
+plot(ta.beta(close, high, 20), "beta")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"skew", "kurt", "beta"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

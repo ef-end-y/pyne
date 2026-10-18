@@ -252,8 +252,14 @@ class CommonIndicators(TechnicalHelpers):
             msg = "ta.skewness() requires 2 arguments: series, period"
             self._error(msg)
 
-        series = args[0] if isinstance(args[0], list) else [args[0]]
         period = self._expect_int(args[1], "period must be integer")
+        if self._use_incremental_ta():
+            return self._skewness_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        series = self._as_series(args[0])
 
         if len(series) < period:
             return None
@@ -285,8 +291,14 @@ class CommonIndicators(TechnicalHelpers):
             msg = "ta.kurtosis() requires 2 arguments: series, period"
             self._error(msg)
 
-        series = args[0] if isinstance(args[0], list) else [args[0]]
         period = self._expect_int(args[1], "period must be integer")
+        if self._use_incremental_ta():
+            return self._kurtosis_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        series = self._as_series(args[0])
 
         if len(series) < period:
             return None
