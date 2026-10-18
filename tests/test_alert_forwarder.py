@@ -108,6 +108,80 @@ def test_http_post_json_does_not_follow_redirect(monkeypatch) -> None:
         httpd.server_close()
 
 
+def test_http_post_json_dns_rebind_is_blocked(monkeypatch) -> None:
+    """Cached public verdict must not pin a POST after connect DNS goes private."""
+    import socket
+
+    from backend import alert_forwarder as af
+
+    monkeypatch.delenv("ALERT_WEBHOOK_ALLOW_PRIVATE", raising=False)
+
+    def _public_gai(host, port, *args, **kwargs):
+        p = port if isinstance(port, int) and port else 0
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.216.34", p))]
+
+    monkeypatch.setattr(af.socket, "getaddrinfo", _public_gai)
+    with af._dns_verdicts_lock:
+        af._dns_verdicts.clear()
+    assert af.is_webhook_url_safe("https://evil.example/hook") is True
+
+    def _private_gai(host, port, *args, **kwargs):
+        p = port if isinstance(port, int) and port else 0
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("10.0.0.5", p))]
+
+    monkeypatch.setattr(af.socket, "getaddrinfo", _private_gai)
+    with pytest.raises(ValueError, match="blocked"):
+        af.http_post_json("https://evil.example/hook", {"a": 1})
+
+
+def test_http_post_json_pins_connect_to_resolved_ip(monkeypatch) -> None:
+    """Happy path: connect to the IP from one getaddrinfo, Host is the original name."""
+    import socket
+    import threading
+
+    from http.server import BaseHTTPRequestHandler
+    from http.server import HTTPServer
+
+    from backend.alert_forwarder import http_post_json
+
+    hits: list[tuple[str, str | None]] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: object) -> None:
+            return
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length:
+                self.rfile.read(length)
+            hits.append((self.path, self.headers.get("Host")))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+
+    httpd = HTTPServer(("127.0.0.1", 0), Handler)
+    port = int(httpd.server_address[1])
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    real_gai = socket.getaddrinfo
+
+    def _gai(host, port_arg, *args, **kwargs):
+        if host == "webhook.test":
+            p = port_arg if isinstance(port_arg, int) and port_arg else port
+            return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("127.0.0.1", p))]
+        return real_gai(host, port_arg, *args, **kwargs)
+
+    try:
+        monkeypatch.setenv("ALERT_WEBHOOK_ALLOW_PRIVATE", "1")
+        monkeypatch.setattr("backend.alert_forwarder.socket.getaddrinfo", _gai)
+        status = http_post_json(f"http://webhook.test:{port}/hook", {"x": 1})
+        assert status == 200
+        assert hits == [("/hook", f"webhook.test:{port}")]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_normalize_webhook_url_allow_private_env(monkeypatch) -> None:
     monkeypatch.setenv("ALERT_WEBHOOK_ALLOW_PRIVATE", "1")
     assert normalize_webhook_url("http://10.0.0.5/hook") == "http://10.0.0.5/hook"

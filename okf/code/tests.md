@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T14:31:16Z
+  at: 2026-10-18T14:32:30Z
 sources:
   - id: tree
     resource: "tests"
@@ -20,7 +20,7 @@ okf_lock: generated
 
 * `__init__.py`
 * `conftest.py` — pytest_addoption, pytest_generate_tests
-* `test_alert_forwarder.py` — test_build_payload, test_filter_last_bar, test_forward_batch, test_forward_exception_does_not_leak_message, test_forward_per_alert_exception_does_not_leak_message, test_http_post_json_does_not_follow_redirect, test_http_post_json_rejects_blocked_url, test_maybe_forward_last_bar_only, test_normalize_webhook_url, test_normalize_webhook_url_allow_private_env, test_normalize_webhook_url_blocks_mapped_and_decimal_loopback, test_normalize_webhook_url_blocks_ssrf_targets
+* `test_alert_forwarder.py` — test_build_payload, test_filter_last_bar, test_forward_batch, test_forward_exception_does_not_leak_message, test_forward_per_alert_exception_does_not_leak_message, test_http_post_json_dns_rebind_is_blocked, test_http_post_json_does_not_follow_redirect, test_http_post_json_pins_connect_to_resolved_ip, test_http_post_json_rejects_blocked_url, test_maybe_forward_last_bar_only, test_normalize_webhook_url, test_normalize_webhook_url_allow_private_env
 * `test_alerts.py` — TestAlerts
 * `test_backend.py` — TestAuth, TestBacktest, TestBacktestService, TestChartRenderer, TestGitOAuth, TestHealth, TestOptimizeEndpoint, TestPreview, TestRun, api_key, client
 * `test_backend_runner.py` — TestRunnerCron, TestRunnerDisabled, TestRunnerRegistry, client, off_client
@@ -56,7 +56,7 @@ okf_lock: generated
 * `test_feed_manager.py` — test_apply_feed_candles_advances_session_without_walk, test_datafeed_error_falls_back_to_poll, test_dispatch_fans_out_and_isolates_failures, test_fan_in_refreshes_when_membership_changes, test_fan_in_used_when_supported, test_normalize_candles_sorts_dedups_and_converts, test_per_series_fallback_without_fan_in, test_split_key
 * `test_first_party_ta_goldens.py` — bars, make_ohlcv, series_allclose, test_atr_wilder_dual_host, test_fixture_files_shipped, test_inline_atr_compile_object_mode_ok, test_keltner_dual_host, test_supertrend_dual_host, test_supertrend_dual_host_factor_period, test_supertrend_formula_after_atr_warmup, test_supertrend_interpret_compile_inc_numba
 * `test_for_loop_syntax.py` — test_comma_chained_for_structure, test_orderbook_style_typed_for, test_series_typed_for_iterator, test_switch_default_only_arm, test_switch_multi_value_arm, test_typed_for_in_iterator, test_typed_for_to_iterator
-* `test_free_limits.py` — client, test_free_data_source_allowlist, test_free_slot_and_rate_noop_when_limits_off, test_free_tier_limits_disabled_by_default, test_free_tier_limits_opt_in_truthy, test_health_reports_free_tier_limits_flag, test_json_key_store_is_hash_only, test_json_key_store_migrates_legacy_raw_keys, test_json_key_store_skips_orphaned_sha256_records, test_run_batch_rejects_ssrf_webhook, test_run_rejects_external_data_source, test_run_rejects_ssrf_webhook
+* `test_free_limits.py` — client, test_free_data_source_allowlist, test_free_slot_and_rate_noop_when_limits_off, test_free_tier_limits_disabled_by_default, test_free_tier_limits_opt_in_truthy, test_health_reports_free_tier_limits_flag, test_json_key_store_concurrent_save_stays_valid_json, test_json_key_store_is_hash_only, test_json_key_store_migrates_legacy_raw_keys, test_json_key_store_reload_verifies_persisted_key, test_json_key_store_skips_orphaned_sha256_records, test_run_batch_rejects_ssrf_webhook
 * `test_indicators.py` — TestAccdistIndicator, TestIiiIndicator, TestNviPviIndicators, TestPhase7Integration, TestWadIndicator, TestWvadIndicator
 * `test_interp_compile_parity.py` — harness, test_close5_lookback_interp_compile_na_and_values, test_harness_cli_flags_registered, test_harness_compare_ignore_fill_keys, test_harness_compare_ignore_hline_keys, test_harness_constant_hline, test_harness_expected_error_classifier, test_harness_is_fill_background_key, test_harness_mismatch_detail_type_na_and_n_bad, test_harness_normalize_error_auto_fib, test_harness_series_allclose_nan_none, test_harness_summarize_buckets
 * `test_langserver.py` — TestApplyTextEdit, TestDiagnostics, TestTrailingIdent, TestWorkspace

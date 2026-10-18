@@ -26,12 +26,14 @@ and :func:`require_admin_token`.
 
 from __future__ import annotations
 
-import hashlib
+import fcntl
 import functools
+import hashlib
 import hmac
 import json
 import os
 import secrets
+import tempfile
 import time
 
 from dataclasses import dataclass
@@ -152,9 +154,10 @@ class APIKeyStore:
 
     Backends:
 
-    * ``json`` (default) — single-process JSON file. **Hash-only** (raw secret
-      is never written to disk; keyed by PBKDF2-HMAC-SHA256 of the secret).
-      Not multi-worker safe for concurrent writes.
+    * ``json`` (default) — hash-only JSON file (raw secret is never written;
+      keyed by PBKDF2-HMAC-SHA256 of the secret). Writes are flock-serialized
+      and ``os.replace``d atomically so a concurrent writer cannot truncate
+      the file. Prefer ``sqlite`` for multi-worker / multi-replica.
     * ``sqlite`` — hash-only SQLite (WAL). Safe for multi-worker single host
       when the DB path is on a shared volume (e.g. ``/data/api_keys.db``).
     * ``redis`` — hash-only Redis. Safe for multi-replica (Cloud Run + Memorystore).
@@ -225,6 +228,8 @@ class APIKeyStore:
             self._save()
 
     def _save(self) -> None:
+        if self._backend is not None:
+            return
         path = self._store_path
         parent = os.path.dirname(path)
         if parent:
@@ -241,8 +246,36 @@ class APIKeyStore:
                 "created_at": api_key.created_at,
                 "last_used": api_key.last_used,
             }
-        with open(path, "w") as f:
-            json.dump(data, f, indent=2)
+        lock_path = f"{path}.lock"
+        tmp_dir = parent if parent else "."
+        lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            tmp_fd, tmp_name = tempfile.mkstemp(prefix=".api_keys.", suffix=".tmp", dir=tmp_dir)
+            replaced = False
+            try:
+                with os.fdopen(tmp_fd, "w", encoding="utf-8") as fh:
+                    tmp_fd = -1
+                    json.dump(data, fh, indent=2)
+                os.replace(tmp_name, path)
+                replaced = True
+            finally:
+                if tmp_fd >= 0:
+                    try:
+                        os.close(tmp_fd)
+                    except OSError:
+                        pass
+                if not replaced:
+                    try:
+                        os.unlink(tmp_name)
+                    except OSError:
+                        pass
+        finally:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(lock_fd)
 
     def persist_usage(self, api_key: APIKey) -> None:
         """Write call counters after :meth:`APIKey.increment_calls`."""

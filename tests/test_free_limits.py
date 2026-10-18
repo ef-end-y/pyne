@@ -200,6 +200,65 @@ def test_json_key_store_skips_orphaned_sha256_records(tmp_path: Path) -> None:
     assert data == {}
 
 
+def test_json_key_store_reload_verifies_persisted_key(tmp_path: Path) -> None:
+    """A key written by one store must still verify after a fresh load from disk."""
+    store_path = tmp_path / "keys.json"
+    store = APIKeyStore(store_path=str(store_path))
+    raw, key_id = store.create_key("hobby")
+    reloaded = APIKeyStore(store_path=str(store_path))
+    found = reloaded.validate_key(raw)
+    assert found is not None
+    assert found.key_id == key_id
+    assert found.tier == "hobby"
+    blob = store_path.read_text(encoding="utf-8")
+    assert raw not in blob
+    json.loads(blob)
+
+
+def test_json_key_store_concurrent_save_stays_valid_json(tmp_path: Path) -> None:
+    """Concurrent _save / persist_usage must not leave truncated JSON on disk."""
+    import threading
+
+    store_path = tmp_path / "keys.json"
+    store = APIKeyStore(store_path=str(store_path))
+    raw, _key_id = store.create_key("hobby")
+    api_key = store.validate_key(raw)
+    assert api_key is not None
+
+    errors: list[BaseException] = []
+
+    def _persist_loop() -> None:
+        try:
+            for _ in range(25):
+                api_key.increment_calls()
+        except BaseException as exc:
+            errors.append(exc)
+
+    def _save_loop() -> None:
+        try:
+            for _ in range(25):
+                store._save()
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=_persist_loop),
+        threading.Thread(target=_persist_loop),
+        threading.Thread(target=_save_loop),
+        threading.Thread(target=_save_loop),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    data = json.loads(store_path.read_text(encoding="utf-8"))
+    assert isinstance(data, dict)
+    assert all(k.startswith("v2:") for k in data)
+    reloaded = APIKeyStore(store_path=str(store_path))
+    assert reloaded.validate_key(raw) is not None
+
+
 def test_run_rejects_ssrf_webhook(client, monkeypatch) -> None:
     """POST /run returns 400 for private webhook_url."""
     monkeypatch.delenv("ALERT_WEBHOOK_ALLOW_PRIVATE", raising=False)

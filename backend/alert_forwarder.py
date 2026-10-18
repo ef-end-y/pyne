@@ -41,15 +41,16 @@ SSRF policy (audit 2026-08-10 Wave A):
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import json
 import logging
 import os
 import socket
+import ssl
 import threading
 import time
-import urllib.error
-import urllib.request
+
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from typing import Callable
@@ -314,41 +315,115 @@ def build_alert_payload(alert: dict[str, Any], *, symbol: str | None = None) -> 
     return payload
 
 
-class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Refuse 30x so a public hook cannot bounce into RFC1918 / metadata."""
+class _SNIHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection to a pinned IP with SNI / cert checks on the original name."""
 
-    def redirect_request(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        return None
+    def __init__(
+        self,
+        host: str,
+        port: int | None = None,
+        *,
+        server_hostname: str,
+        timeout: float = 10.0,
+        context: ssl.SSLContext | None = None,
+    ) -> None:
+        super().__init__(host, port, timeout=timeout, context=context)
+        self._server_hostname = server_hostname
+
+    def connect(self) -> None:
+        """TCP to the pinned IP; TLS SNI and hostname check use the original name."""
+        http.client.HTTPConnection.connect(self)
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self._server_hostname)
 
 
-_NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+def _webhook_peer_ip(hostname: str, port: int) -> str:
+    """Resolve *hostname* once and return a connect IP, or raise if blocked.
+
+    Does not use the 300s :func:`is_webhook_url_safe` verdict cache — a rebind
+    between request validation and POST must be observed at connect time.
+    """
+    host = (hostname or "").strip().lower().rstrip(".")
+    if not host:
+        msg = "blocked webhook url"
+        raise ValueError(msg)
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    allow_private = _allow_private_webhooks()
+    if host in _BLOCKED_WEBHOOK_HOSTS and not allow_private:
+        msg = "blocked webhook url"
+        raise ValueError(msg)
+    literal = _parse_literal_ip(host)
+    if literal is not None:
+        if not allow_private and _ip_is_blocked(literal):
+            msg = "blocked webhook url"
+            raise ValueError(msg)
+        return str(literal)
+    infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    addrs: list[str] = []
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            continue
+        if not allow_private and _ip_is_blocked(ip):
+            msg = "blocked webhook url"
+            raise ValueError(msg)
+        addrs.append(addr)
+    if not addrs:
+        msg = "blocked webhook url"
+        raise ValueError(msg)
+    return addrs[0]
 
 
 def http_post_json(url: str, body: dict[str, Any], *, timeout: float = 10.0) -> int:
-    """POST JSON via urllib; returns HTTP status code.
+    """POST JSON to *url*; returns HTTP status code.
 
-    Does not follow redirects (SSRF: public URL → 302 → loopback/metadata).
-    Re-checks :func:`is_webhook_url_safe` at POST time (DNS rebinding).
+    Pins the TCP connection to one ``getaddrinfo`` result so a DNS rebind
+    between the SSRF check and connect cannot hit RFC1918 / metadata.
+    HTTPS still presents the original hostname as SNI (and ``Host``) so
+    certificates validate against the name. Does not follow redirects.
     """
-    if not is_webhook_url_safe(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
         msg = "blocked webhook url"
         raise ValueError(msg)
+    if parsed.username is not None or parsed.password is not None:
+        msg = "blocked webhook url"
+        raise ValueError(msg)
+    hostname = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    ip = _webhook_peer_ip(hostname, port)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
     data = json.dumps(body).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "User-Agent": _USER_AGENT,
-            "X-Source": _SOURCE,
-        },
-    )
+    headers = {
+        "Host": parsed.netloc,
+        "Content-Type": "application/json",
+        "User-Agent": _USER_AGENT,
+        "X-Source": _SOURCE,
+    }
+    if parsed.scheme == "https":
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = True
+        conn: http.client.HTTPConnection = _SNIHTTPSConnection(
+            ip,
+            port,
+            server_hostname=hostname,
+            timeout=timeout,
+            context=ctx,
+        )
+    else:
+        conn = http.client.HTTPConnection(ip, port, timeout=timeout)
     try:
-        with _NO_REDIRECT_OPENER.open(req, timeout=timeout) as resp:
-            return int(getattr(resp, "status", 200) or 200)
-    except urllib.error.HTTPError as e:
-        return int(e.code)
+        conn.request("POST", path, body=data, headers=headers)
+        resp = conn.getresponse()
+        status = int(resp.status)
+        resp.read()
+        return status
+    finally:
+        conn.close()
 
 
 def forward_alerts(
