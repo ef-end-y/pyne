@@ -164,8 +164,9 @@ def test_feed_batch_emits_delta_to_socket(monkeypatch):
     tick = dict(_bars10()[-1])
     tick["close"] = 1.5
     fake_manager.cb([tick])
-    assert len(sent) == 1
-    delta = sent[0]
+    deltas = [f for f in sent if f.get("type") == "delta"]
+    assert len(deltas) == 1
+    delta = deltas[0]
     assert delta["type"] == "delta"
     assert delta["seq"] == 2
     assert delta["payload"]["tail_len"] == 1
@@ -223,6 +224,31 @@ def test_series_push_emits_bars_delta_and_close():
     assert frames[1]["type"] == "close"
     assert frames[1]["payload"]["time"] == 1_700_000_000 + 11 * 60
     assert record["count"] == 12
+
+
+def test_series_push_forming_retick_does_not_grow_count():
+    from backend.api import live_push as push_mod
+
+    registry = LiveRegistry()
+    registry.subscribe("sub-s", "series", KEY_TEXT, 10)
+    registry.attach("sub-s", None, _bars10())
+    record = registry.get("sub-s")
+    assert record is not None
+    assert record["count"] == 10
+    tip_time = 1_700_000_000 + 9 * 60
+    batch = [{"time": tip_time, "open": 1.0, "high": 2.0, "low": 1.0, "close": 1.5, "volume": 3.0}]
+    now_s = tip_time + 10
+    frames = push_mod.emit_series_push("sub-s", registry, record, batch, now_s)
+    assert frames[0]["type"] == "delta"
+    assert frames[0]["payload"]["count"] == 10
+    assert frames[0]["payload"]["tail_len"] == 1
+    assert frames[0]["payload"]["base_index"] == 9
+    assert frames[0]["payload"]["bars"] == batch
+    assert record["count"] == 10
+    # A second re-tick of the same slot still does not invent bars.
+    frames2 = push_mod.emit_series_push("sub-s", registry, record, batch, now_s)
+    assert frames2[0]["payload"]["count"] == 10
+    assert record["count"] == 10
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +401,8 @@ def test_series_subscription_attaches_feed_and_persists(_isolated, monkeypatch):
     batch = [dict(_bars10()[-1], time=_bars10()[-1]["time"] + 60, close=1.5)]
     manager.cb(batch)
 
-    assert sent[0]["type"] == "delta"
-    assert sent[0]["payload"]["bars"] == batch
-    assert sent[0]["payload"]["base_index"] == 10
+    deltas = [f for f in sent if f.get("type") == "delta"]
+    assert deltas[0]["type"] == "delta"
+    assert deltas[0]["payload"]["bars"] == batch
+    assert deltas[0]["payload"]["base_index"] == 10
     assert series_store.get_store().status(key)["newest"] == batch[0]["time"]

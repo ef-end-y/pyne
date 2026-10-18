@@ -114,11 +114,35 @@ def test_resume_unknown_is_gone():
     assert replies[0]["code"] == "SESSION_GONE"
 
 
-def test_repair_unavailable_but_retryable():
+def test_repair_unknown_is_gone():
     conn = _conn()
+    replies = conn.handle_dict({"type": "repair", "id": "ghost", "payload": {"from_time": 1}})
+    assert replies[0]["code"] == "SESSION_GONE"
+
+
+def test_repair_of_a_live_sub_resumes():
+    conn = _conn()
+    conn.handle_dict({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
     replies = conn.handle_dict({"type": "repair", "id": "s", "payload": {"from_time": 1}})
-    assert replies[0]["code"] == "REPAIR_UNAVAILABLE"
-    assert replies[0]["retryable"] is True
+    assert replies[0].get("code") != "REPAIR_UNAVAILABLE"
+    assert replies[0]["type"] in ("status", "full", "error")
+
+
+def test_subscribe_emits_loading_before_ensure():
+    order: list[object] = []
+
+    def ensurer(*_a, **_k):
+        order.append("ensure")
+        return {"outcome": "short", "have": 0, "need": 50}
+
+    def sender(frame):
+        order.append(("send", (frame.get("payload") or {}).get("code") or frame.get("type")))
+
+    conn = _conn(ensurer=ensurer, sender=sender)
+    conn.handle_dict({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+    assert order[0] == ("send", "datafeed-loading")
+    assert "ensure" in order
+    assert order.index(("send", "datafeed-loading")) < order.index("ensure")
 
 
 def test_unsubscribe_releases():

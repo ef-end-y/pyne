@@ -200,24 +200,61 @@ def emit_series_push(
         return []
     key = parse_live_key(str(record.get("series_key") or ""))
     interval_s = int(key.interval_seconds) if key else 60
-    before = int(record.get("count") or 0)
-    after = before + len(batch)
-    record["count"] = after
-    watermark = closed_upto(batch, interval_s, now_s)
-    session_id = str(record.get("engine_session_id") or f"series-{client_id}")
-    seq = registry.next_seq(client_id)
-    emitted = [
-        make_delta(
-            session_id,
-            seq,
-            before,
-            after,
-            len(batch),
-            watermark,
-            client_id,
-            bars=batch,
-        )
-    ]
+    by_time: dict[int, dict[str, Any]] = {}
+    for candle in batch:
+        try:
+            by_time[int(candle["time"])] = candle
+        except (TypeError, ValueError):
+            continue
+    if not by_time:
+        return []
+    ordered = [by_time[t] for t in sorted(by_time)]
+    newest = int(ordered[-1]["time"])
+    count = int(record.get("count") or 0)
+    last_time = int(record.get("last_time") or 0)
+    new_bars = [c for c in ordered if int(c["time"]) > last_time]
+    if not new_bars:
+        # Forming re-tick of the current tip: same count, tail_len=1.
+        tip = ordered[-1]
+        before = max(0, count - 1) if count > 0 else 0
+        after = count if count > 0 else 1
+        record["count"] = after
+        record["last_time"] = newest
+        watermark = closed_upto([tip], interval_s, now_s)
+        session_id = str(record.get("engine_session_id") or f"series-{client_id}")
+        seq = registry.next_seq(client_id)
+        emitted = [
+            make_delta(
+                session_id,
+                seq,
+                before,
+                after,
+                after - before,
+                watermark,
+                client_id,
+                bars=[tip],
+            )
+        ]
+    else:
+        before = count
+        after = before + len(new_bars)
+        record["count"] = after
+        record["last_time"] = newest
+        watermark = closed_upto(new_bars, interval_s, now_s)
+        session_id = str(record.get("engine_session_id") or f"series-{client_id}")
+        seq = registry.next_seq(client_id)
+        emitted = [
+            make_delta(
+                session_id,
+                seq,
+                before,
+                after,
+                len(new_bars),
+                watermark,
+                client_id,
+                bars=new_bars,
+            )
+        ]
     if watermark > 0:
         final = next((c for c in batch if int(c["time"]) == watermark), None)
         if final is not None:

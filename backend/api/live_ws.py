@@ -25,7 +25,7 @@ frame must be ``auth``. Unauthenticated frames are rejected with
 This module owns the transport + auth + subscription registry only. History
 ensure, feed ticks and ``full``/``delta``/``close`` frames land in F-11..F-13;
 until then a subscribe is honestly answered with ``datafeed-loading`` and
-``resume``/``repair`` with ``SESSION_GONE``/``REPAIR_UNAVAILABLE``.
+``resume``/``repair`` with ``SESSION_GONE`` (repair aliases resume).
 
 The protocol core (:class:`LiveConnection`) is socket-free so it unit-tests
 without a WS client; :func:`register_live_route` wires the flask-sock loop.
@@ -137,6 +137,12 @@ class LiveRegistry:
                 record["engine_session_id"] = engine_session_id
                 record["bars"] = list(bars)
                 record["count"] = len(bars)
+                last = bars[-1] if bars else None
+                if isinstance(last, dict) and "time" in last:
+                    try:
+                        record["last_time"] = int(last["time"])
+                    except (TypeError, ValueError):
+                        record["last_time"] = 0
 
     def next_seq(self, client_id: str) -> int:
         """Monotonic per-subscription frame sequence (F-12 gap detection)."""
@@ -272,6 +278,25 @@ class LiveConnection:
         history_bars = clamp_history_bars((meta or {}).get("history_bars"))
         if req_id is None:
             return [self._err(None, "subscribe needs an id", "BAD_SUBSCRIBE")]
+        # Tell the client we are fetching before the 4–9s first walk so the
+        # HUD is honest and the socket is not silent during ensure.
+        pending = self._registry.subscribe(str(req_id), str(kind), series_key, history_bars)
+        if self._sender is not None:
+            try:
+                self._sender(
+                    {
+                        "type": "status",
+                        "id": req_id,
+                        "sessionId": pending["session_id"],
+                        "payload": {
+                            "code": "datafeed-loading",
+                            "need": history_bars,
+                            "message": "fetching history",
+                        },
+                    }
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("early datafeed-loading send failed", exc_info=True)
         ensured = self._ensure(
             str(kind),
             series_key,
@@ -457,14 +482,9 @@ class LiveConnection:
         }
 
     def _handle_repair(self, req_id: Any, payload: Any) -> list[dict[str, Any]]:
-        return [
-            self._err(
-                req_id,
-                "Repair is not served yet — resubscribe for a fresh snapshot",
-                "REPAIR_UNAVAILABLE",
-                retryable=True,
-            )
-        ]
+        # Repair aliases resume: a fresh snapshot from the current store /
+        # session is enough to heal a close mismatch or seq gap.
+        return self._handle_resume(req_id, payload if isinstance(payload, dict) else {})
 
     def _handle_unsubscribe(self, req_id: Any) -> list[dict[str, Any]]:
         if req_id is not None:
