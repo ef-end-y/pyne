@@ -8,6 +8,7 @@
 - **Bar-mode incremental `ta.ichimoku` / `ta.apo` / `ta.emv` (T2).** Last-sample kernels match full recompute: Ichimoku reuses highest/lowest windows (stable six-slot order), APO is `EMA(fast) - EMA(slow)`, EMV is the last-N mean of per-bar ease-of-movement (na on bar 0 / zero volume / flat range).
 - **Bar-mode incremental `ta.skewness` / `ta.kurtosis` / `ta.beta` (T2).** Last-sample kernels match full recompute: population skew and excess kurtosis over the last-N calendar window (na while any slot is non-numeric; 0.0 when stdev is 0), beta as `cov(s1,s2)/var(s2)` (0.0 when var(s2) is 0).
 - **Bar-mode incremental `ta.r_squared` / `ta.comovement` (T2).** Last-sample kernels match full recompute: r_squared is corr² clipped to [0, 1] (0.0 when either variance is 0; na while the window is short or any slot is non-numeric), comovement is the percent of last-N-1 deltas that share sign.
+- **Bar-mode incremental `ta.volume_weighted_momentum` (T2).** Last-sample kernel matches full recompute: last-N `(Δprice * vol) / sum(vol)` (0.0 when volume_sum is 0; na while the window is short).
 
 ### Changed
 

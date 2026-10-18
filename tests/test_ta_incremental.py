@@ -4473,3 +4473,144 @@ plot(ta.comovement(close, high, 20), "como")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: volume_weighted_momentum incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_vwm(
+    src: list[Any], vol: list[Any], length: int
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_volume_weighted_momentum([src[: i + 1], vol[: i + 1], length])
+        for i in range(len(src))
+    ]
+
+
+def _bar_walk_inc_vwm(
+    src: list[Any], vol: list[Any], length: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._volume_weighted_momentum_inc_update(
+                src[: i + 1], vol[: i + 1], length
+            )
+        )
+    return out
+
+
+def test_incremental_volume_weighted_momentum_matches_full() -> None:
+    src = _series(120)
+    vol = _vols(120)
+    for length in (10, 20):
+        _assert_series_close(
+            _bar_walk_inc_vwm(src, vol, length),
+            _bar_walk_full_vwm(src, vol, length),
+        )
+
+
+def test_incremental_volume_weighted_momentum_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    vol: list[float | None] = list(_vols(40))
+    vol[7] = None
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._volume_weighted_momentum_inc_update(src[: i + 1], vol[: i + 1], 10)
+        assert ev._ta_call_i == 1, f"vwm bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_volume_weighted_momentum_zero_volume() -> None:
+    """volume_sum == 0 → 0.0; mixed zeros still match the full last-N path."""
+    src = _series(80)
+    vol = _vols(80)
+    vol[12] = 0.0
+    vol[13] = 0.0
+    got = _bar_walk_inc_vwm(src, vol, 10)
+    _assert_series_close(got, _bar_walk_full_vwm(src, vol, 10))
+    all_zero = [0.0] * 50
+    got_z = _bar_walk_inc_vwm(src[:50], all_zero, 10)
+    _assert_series_close(got_z, _bar_walk_full_vwm(src[:50], all_zero, 10))
+    for i in range(10 - 1, 50):
+        assert got_z[i] == pytest.approx(0.0)
+
+
+def test_incremental_volume_weighted_momentum_na_in_window() -> None:
+    """NA price in the last-N window yields na (full path would TypeError)."""
+    src: list[float | None] = list(_series(80))
+    na_i = 15
+    length = 10
+    src[na_i] = None
+    vol = _vols(80)
+    got = _bar_walk_inc_vwm(src, vol, length)
+    for i in range(na_i, min(na_i + length + 1, len(src))):
+        assert got[i] is None, f"vwm bar {i}: expected None while NA is in window"
+    clean = list(_series(80))
+    exp = _bar_walk_full_vwm(clean, vol, length)
+    for i in range(na_i):
+        _assert_series_close([got[i]], [exp[i]])
+    # After the NA price (and the extra prev-price slot) leave the window.
+    for i in range(na_i + length + 1, len(src)):
+        _assert_series_close([got[i]], [exp[i]])
+
+
+def test_incremental_volume_weighted_momentum_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    vol = _vols(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_volume_weighted_momentum([src[: i + 1], vol[: i + 1], 10])
+        assert ev._ta_call_i == 1, f"vwm builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_volume_weighted_momentum_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("vwm")
+plot(ta.volume_weighted_momentum(close, volume, 20), "vwm")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"vwm"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

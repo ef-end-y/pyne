@@ -3891,6 +3891,66 @@ class TechnicalHelpers:
         st["value"] = como_val
         return como_val
 
+    def _volume_weighted_momentum_inc_update(
+        self,
+        series: list[Any],
+        volume: list[Any],
+        length: int,
+    ) -> float | None:
+        """Incremental volume-weighted momentum matching the full last-N path.
+
+        Last-N ``(Δprice * vol) / sum(vol)``. Short window → na; ``volume_sum``
+        of 0 → 0.0. Non-numeric volume is 0.0 (full path); non-numeric price
+        yields na. One slot every bar, including warmup / na. Price deque is
+        N+1 so the oldest Δprice still has a previous sample once history
+        is long enough; the full path breaks that last term when
+        ``len(series)==length``.
+        """
+        n = int(length)
+        bucket, key = self._ta_key1("volume_weighted_momentum", n)
+        if n < 1:
+            return None
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "p": deque(maxlen=n + 1),
+                "v": deque(maxlen=n),
+                "value": None,
+            }
+            bucket[key] = st
+        raw_p = self._series_last(series)
+        raw_v = self._series_last(volume)
+        p_v: float | None = float(raw_p) if isinstance(raw_p, (int, float)) else None
+        v_v: float | None = float(raw_v) if isinstance(raw_v, (int, float)) else None
+        wp: deque[float | None] = st["p"]
+        wv: deque[float | None] = st["v"]
+        wp.append(p_v)
+        wv.append(v_v)
+        if len(wv) < n:
+            st["value"] = None
+            return None
+        ps = list(wp)
+        vs = list(wv)
+        momentum_sum = 0.0
+        volume_sum = 0.0
+        for i in range(n):
+            p_end = len(ps) - 1 - i
+            p_prev = p_end - 1
+            if p_prev < 0:
+                break
+            pv = ps[p_end]
+            pp = ps[p_prev]
+            if pv is None or pp is None:
+                st["value"] = None
+                return None
+            vol_raw = vs[len(vs) - 1 - i]
+            vol = 0.0 if vol_raw is None else vol_raw
+            momentum_sum += (pv - pp) * vol
+            volume_sum += vol
+        val = momentum_sum / volume_sum if volume_sum > 0 else 0.0
+        st["value"] = val
+        return val
+
     def _finalize_series(self, values: list[Any]) -> Any:
         """Return full series list, or current scalar in bar mode."""
         if not self._bar_mode():

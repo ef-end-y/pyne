@@ -1053,9 +1053,16 @@ class VolumeIndicators(TechnicalHelpers):
             msg = "ta.volume_weighted_momentum() requires 3 arguments: series, volume, length"
             self._error(msg)
 
-        series = args[0] if isinstance(args[0], list) else [args[0]]
-        volume = args[1] if isinstance(args[1], list) else [args[1]]
         length = self._expect_int(args[2], "length must be integer")
+        if self._use_incremental_ta():
+            return self._volume_weighted_momentum_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                length,
+            )
+
+        series = self._as_series(args[0])
+        volume = self._as_series(args[1])
 
         if len(series) < length or len(volume) < length:
             return None
