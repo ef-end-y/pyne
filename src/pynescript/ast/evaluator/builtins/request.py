@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import math
 import random
+import statistics
 
 from dataclasses import dataclass
 from dataclasses import field
@@ -99,7 +100,7 @@ _FUNDAMENTAL_TOKENS = ("DIVIDEND", "FACTSET", "EARNINGS", "ESD_")
 # Allowlisted simple ta.* forms for HTF resample (no arbitrary AST re-eval).
 # Matched only when the security expression *AST* is exactly one of these shapes
 # (visit_Call attaches :class:`HtfSimpleTaExpr` before chart pre-eval wins).
-_HTF_SIMPLE_TA_FUNCS = frozenset({"sma", "ema", "rsi", "atr", "wma", "rma"})
+_HTF_SIMPLE_TA_FUNCS = frozenset({"sma", "ema", "rsi", "atr", "wma", "rma", "cmo", "stdev", "linreg"})
 
 _LOG = logging.getLogger("pynescript.request.security")
 
@@ -115,8 +116,8 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "(htf_ohlcv_resample, last completed HTF bar by default — not full expression re-eval).",
     "Provider/feed OHLCV that is already coarser than the chart and carries bar times "
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
-    "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma on coarser TF runs the TA helper on "
-    "resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
+    "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg on coarser TF runs "
+    "the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
     "Foreign symbols without a multi-symbol feed hit return na (no mock invent under host chart).",
@@ -145,7 +146,7 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg
     source: str | None  # normalized OHLCV field; None for atr (uses h/l/c)
     length: int
 
@@ -173,12 +174,14 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     Allowed shapes (positional args only, no kwargs):
 
     - ``ta.sma(close, 14)`` / ``ta.ema`` / ``ta.rsi`` / ``ta.wma`` / ``ta.rma``
-      — source is a bare OHLCV name (``close``, ``open``, ``high``, ``low``,
-      ``volume``, ``hl2``, …); length is a positive integer literal.
+      / ``ta.cmo`` / ``ta.stdev`` / ``ta.linreg`` — source is a bare OHLCV name
+      (``close``, ``open``, ``high``, ``low``, ``volume``, ``hl2``, …); length
+      is a positive integer literal. ``ta.linreg`` is the 2-arg form (offset 0).
     - ``ta.atr(14)`` — length-only form (uses HTF high/low/close).
 
-    Nested calls (``ta.sma(ta.ema(...), n)``), multi-arg atr, variables as
-    length, and non-ta callees return ``None`` (existing complex-na path).
+    Nested calls (``ta.sma(ta.ema(...), n)``), multi-arg atr, 3-arg linreg,
+    variables as length, and non-ta callees return ``None`` (existing
+    complex-na path).
     """
     if type(expr_ast) is not ast_mod.Call:
         return None
@@ -196,7 +199,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
         return HtfSimpleTaExpr("atr", None, length) if length else None
 
-    # sma / ema / rsi / wma / rma: (source_name, length)
+    # sma / ema / rsi / wma / rma / cmo / stdev / linreg: (source_name, length)
     if len(arg_nodes) != 2:  # noqa: PLR2004 - fixed allowlist arity
         return None
     src_node = arg_nodes[0].value
@@ -1391,6 +1394,88 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = acc / denom if ok else None
         return out
 
+    @staticmethod
+    def _htf_stdev_full_series(src: list[float | None], period: int) -> list[float | None]:
+        """Full-list sample stdev matching interpret ``_stdev`` (strict window, ddof=1)."""
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 1:
+            return out
+        for i in range(period - 1, n):
+            window = src[i - period + 1 : i + 1]
+            vals: list[float] = []
+            ok = True
+            for v in window:
+                if v is None:
+                    ok = False
+                    break
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    ok = False
+                    break
+                if fv != fv:
+                    ok = False
+                    break
+                vals.append(fv)
+            out[i] = statistics.stdev(vals) if ok else None
+        return out
+
+    @staticmethod
+    def _htf_cmo_full_series(src: list[float | None], period: int) -> list[float | None]:
+        """Full-list CMO matching interpret ``ta.cmo`` (window of length+1 diffs)."""
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        need = period + 1
+        for i in range(need - 1, n):
+            window = src[i - need + 1 : i + 1]
+            up = 0.0
+            down = 0.0
+            prev: float | None = None
+            for v in window:
+                cur: float | None
+                if v is None:
+                    cur = None
+                else:
+                    try:
+                        fv = float(v)
+                        cur = None if fv != fv else fv
+                    except (TypeError, ValueError):
+                        cur = None
+                if prev is not None and cur is not None:
+                    diff = cur - prev
+                    if diff > 0:
+                        up += diff
+                    else:
+                        down += -diff
+                prev = cur
+            denom = up + down
+            out[i] = 0.0 if denom == 0.0 else 100.0 * (up - down) / denom
+        return out
+
+    @staticmethod
+    def _htf_linreg_full_series(src: list[float | None], period: int) -> list[float | None]:
+        """Full-list linreg endpoint matching interpret ``ta.linreg`` (offset 0)."""
+        from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
+
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period < 2:  # noqa: PLR2004 - OLS needs ≥2 points
+            return out
+        lin = TechnicalHelpers._linreg_from_valid
+        for i in range(period - 1, n):
+            window = src[i - period + 1 : i + 1]
+            v = lin(window, 0)
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                out[i] = None
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
     def _htf_rsi_full_series(self, closes: list[float | None], period: int) -> list[float | None]:
         """Full-list RSI on *closes* (Wilder RMA of gains/losses), bar-aligned."""
         n = len(closes)
@@ -1451,7 +1536,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return []
         name = expr.name
         period = int(expr.length)
-        if name in ("sma", "ema", "rsi", "wma", "rma"):
+        if name in ("sma", "ema", "rsi", "wma", "rma", "cmo", "stdev", "linreg"):
             field = expr.source or "close"
             src = self._htf_source_series(unique, field)
             if name == "sma":
@@ -1475,6 +1560,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 return list(raw) if raw is not None else [None] * n
             if name == "wma":
                 return self._htf_wma_full_series(src, period)
+            if name == "cmo":
+                return self._htf_cmo_full_series(src, period)
+            if name == "stdev":
+                return self._htf_stdev_full_series(src, period)
+            if name == "linreg":
+                return self._htf_linreg_full_series(src, period)
             return self._htf_rsi_full_series(src, period)
 
         # atr: length-only; uses HTF high/low/close.
@@ -1687,6 +1778,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         elif name == "wma":
             last = self._htf_wma_full_series(src, period)
             raw = last
+        elif name == "cmo":
+            raw = self._htf_cmo_full_series(src, period)
+        elif name == "stdev":
+            raw = self._htf_stdev_full_series(src, period)
+        elif name == "linreg":
+            raw = self._htf_linreg_full_series(src, period)
         elif name == "rsi":
             cleaned: list[float | None] = []
             for v in src:
@@ -2253,8 +2350,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           bar times that align to chart bars → same merge (``provider_htf_ohlcv``).
           Chart-length / no-timestamp provider series stay stubs
           (``provider_ohlcv`` / ``provider_ohlcv_chart_stub``) with unused merge.
-        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma`` with
-          bare OHLCV source + const length) on a **coarser** TF → run the
+        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg``
+          with bare OHLCV source + const length) on a **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
         - **Same-symbol + simple OHLCV** otherwise → chart passthrough /
           provider series (``chart_passthrough_htf_stub`` / same-TF eval).
@@ -2964,7 +3061,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
 
     Full chart columns are attached as ``_htf_full_ohlcv`` (same shape Runtime
     uses). TA full-list helpers are bound from the interpret technical mixins
-    so ``ta.sma/ema/rsi/atr/wma/rma`` on HTF bars match interpret exactly.
+    so ``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg`` on HTF bars match interpret exactly.
     """
 
     def __init__(

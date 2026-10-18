@@ -169,6 +169,30 @@ plot(ta.sma(close, 3), title="csma")
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["sma"][-1]) - float(sc["series"]["csma"][-1])) > 1e-6
 
+    def test_htf_cmo_stdev_linreg_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed cmo/stdev/linreg: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.cmo(close, 3)), title="cmo")
+plot(request.security(syminfo.tickerid, "D", ta.stdev(close, 3)), title="stdev")
+plot(request.security(syminfo.tickerid, "D", ta.linreg(close, 3)), title="linreg")
+plot(ta.stdev(close, 3), title="cstdev")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("cmo", "stdev", "linreg"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = sc["series"]["stdev"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["stdev"][-1]) - float(sc["series"]["cstdev"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -249,11 +273,11 @@ class TestCompileSecurityKeepLimits:
         src = """//@version=6
 indicator("t")
 plot(request.security(syminfo.tickerid, "60", ta.sma(ta.ema(close, 3), 3)), title="nested")
-plot(request.security(syminfo.tickerid, "60", ta.stdev(close, 5)), title="stdev")
+plot(request.security(syminfo.tickerid, "60", ta.cci(close, 5)), title="cci")
 """
         si, sc = _run_both(src, bars)
-        assert all(_is_na(x) for x in sc["series"]["stdev"])
-        _assert_series_match(si, sc, "stdev")
+        assert all(_is_na(x) for x in sc["series"]["cci"])
+        _assert_series_match(si, sc, "cci")
         # Nested ta is not allowlisted: compile stays na. Interpret may still
         # hit the chart-pre-eval OHLCV heuristic on a few bars — that is not
         # the HTF simple-ta path and is not required to match.

@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma on resampled HTF bars (not full multi-TF)."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg on resampled HTF bars."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -464,8 +464,8 @@ plot(ta.atr(3), title="catr")
 
         Chart pre-eval of nested SMA can occasionally equal an OHLCV sample and
         hit the pre-existing passthrough heuristic — that is not the simple-ta
-        HTF path. Nested ``ta.sma(ta.ema(...))`` and non-allowlist ``ta.stdev``
-        stay na; ``ta.wma`` / ``ta.rma`` are now allowlisted.
+        HTF path. Nested ``ta.sma(ta.ema(...))`` and non-allowlist ``ta.cci``
+        stay na; ``ta.stdev`` / ``ta.cmo`` / ``ta.linreg`` are now allowlisted.
         """
         from backend.runtime import Runtime
 
@@ -473,11 +473,11 @@ plot(ta.atr(3), title="catr")
         src = """//@version=6
 indicator("t")
 plot(request.security(syminfo.tickerid, "60", ta.sma(ta.ema(close, 3), 3)), title="nested")
-plot(request.security(syminfo.tickerid, "60", ta.stdev(close, 5)), title="stdev")
+plot(request.security(syminfo.tickerid, "60", ta.cci(close, 5)), title="cci")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
-        assert all(_is_na(x) for x in out["series"]["stdev"])
+        assert all(_is_na(x) for x in out["series"]["cci"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -522,9 +522,80 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "wma" and m.source == "close" and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.rma(hlc3, 10)"))
         assert m is not None and m.name == "rma" and m.source == "hlc3" and m.length == 10
+        m = match_htf_simple_ta_ast(_expr("ta.cmo(close, 9)"))
+        assert m is not None and m.name == "cmo" and m.source == "close" and m.length == 9
+        m = match_htf_simple_ta_ast(_expr("ta.stdev(close, 14)"))
+        assert m is not None and m.name == "stdev" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.linreg(hl2, 20)"))
+        assert m is not None and m.name == "linreg" and m.source == "hl2" and m.length == 20
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
-        assert match_htf_simple_ta_ast(_expr("ta.stdev(close, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cci(close, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
+
+    def test_htf_cmo_stdev_linreg_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily bucket, not forming day."""
+        import statistics
+
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.cmo(close, 3)), title="hcmo")
+plot(request.security(syminfo.tickerid, "D", ta.stdev(close, 3)), title="hstdev")
+plot(request.security(syminfo.tickerid, "D", ta.linreg(close, 3)), title="hlin")
+plot(ta.cmo(close, 3), title="ccmo")
+plot(ta.stdev(close, 3), title="cstdev")
+plot(ta.linreg(close, 3), title="clin")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hcmo = out["series"]["hcmo"]
+        hstdev = out["series"]["hstdev"]
+        hlin = out["series"]["hlin"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes = [float(bars[24 * (d + 1) - 1]["close"]) for d in range(7)]
+        # cmo(3) needs 4 HTF samples; stdev/linreg(3) need 3.
+        assert all(_is_na(x) for x in hcmo[1:96])
+        assert all(_is_na(x) for x in hstdev[1:72])
+        assert all(_is_na(x) for x in hlin[1:72])
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = hstdev[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        win3 = daily_closes[-3:]
+        expect_stdev = statistics.stdev(win3)
+        assert abs(float(hstdev[-1]) - expect_stdev) < 1e-9
+        # linreg(length=3, offset=0) skip-na OLS endpoint on last 3 completed days.
+        n = 3
+        xs = list(range(n))
+        mean_x = sum(xs) / n
+        mean_y = sum(win3) / n
+        num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(xs, win3, strict=True))
+        den = sum((xi - mean_x) ** 2 for xi in xs)
+        expect_lin = mean_y if den == 0 else mean_y + (num / den) * ((n - 1) - mean_x)
+        assert abs(float(hlin[-1]) - expect_lin) < 1e-9
+        win4 = daily_closes[-4:]
+        up = down = 0.0
+        for a, b in zip(win4[:-1], win4[1:], strict=True):
+            diff = b - a
+            if diff > 0:
+                up += diff
+            else:
+                down += -diff
+        denom = up + down
+        expect_cmo = 0.0 if denom == 0 else 100.0 * (up - down) / denom
+        assert abs(float(hcmo[-1]) - expect_cmo) < 1e-9
+        # Not chart-TF passthrough.
+        assert abs(float(hstdev[-1]) - float(out["series"]["cstdev"][-1])) > 1e-6
+        assert abs(float(hcmo[-1]) - float(out["series"]["ccmo"][-1])) > 1e-6
+        assert abs(float(hlin[-1]) - float(out["series"]["clin"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
 
 
 class TestRequestSecurityHonestyMeta:
