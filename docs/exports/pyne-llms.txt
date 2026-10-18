@@ -108,8 +108,6 @@ Grammar-driven parser, ASDL AST, bar-loop evaluator, LSP, Pro API, and edge work
 - [Local Dev](https://hoox.sh/pyne/docs/devops/local-dev)
 - [Ci](https://hoox.sh/pyne/docs/devops/ci)
 - [Release](https://hoox.sh/pyne/docs/devops/release)
-- [Pypi Publish](https://hoox.sh/pyne/docs/devops/pypi-publish)
-- [Publish Checklist](https://hoox.sh/pyne/docs/devops/publish-checklist)
 - [Docker](https://hoox.sh/pyne/docs/devops/docker)
 - [Nuitka Build](https://hoox.sh/pyne/docs/devops/nuitka-build)
 - [Metadata Crypto](https://hoox.sh/pyne/docs/devops/metadata-crypto)

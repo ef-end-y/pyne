@@ -95,7 +95,7 @@ Concurrency: `group: ci-${{ github.ref }}`, `cancel-in-progress: true`. Default 
 
 ### Secrets
 
-`publish.yml` uploads `hoox-pyne` to PyPI on `v*` tags. LSP binary encrypt uses `CRYPTO_KEY` from `METADATA_KEY` (see [Metadata crypto](/pyne/docs/devops/metadata-crypto)). `GITHUB_TOKEN` is the default Actions token for GitHub Release upload.
+`publish.yml` uploads `hoox-pyne` to PyPI on `v*` tags. LSP binary encrypt uses `CRYPTO_KEY` (see [Metadata crypto](/pyne/docs/devops/metadata-crypto)). GitHub Releases use the default Actions token.
 
 ## Invariants
 

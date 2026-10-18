@@ -61,10 +61,9 @@ flowchart LR
 
 | Variable | Context | Meaning |
 | --- | --- | --- |
-| `CRYPTO_KEY` | Build scripts / CI / Cloud Build | Key bytes for encrypt stage |
+| `CRYPTO_KEY` | Build scripts / CI | Key bytes for encrypt stage |
 | `PYNESCRIPT_METADATA_KEY` | Runtime decrypt fallback | Env-supplied key if file missing |
-| GitHub `secrets.METADATA_KEY` | Actions | Stable secret → `CRYPTO_KEY` |
-| Cloud Build `_METADATA_KEY` | `cloudbuild.yaml` substitution | `CRYPTO_KEY=${_METADATA_KEY}` |
+| `METADATA_KEY` | Build scripts | Alias for the same Fernet material |
 
 ### Code entrypoints
 
@@ -129,7 +128,7 @@ python scripts/build/compile.py --check   # stages metadata paths as configured
 - name: Build LSP binary
   run: python scripts/build/ci_build.py --jobs 4
   env:
-    CRYPTO_KEY: ${{ secrets.METADATA_KEY }}
+    CRYPTO_KEY: <stable-fernet-key>
 ```
 
 ### Runtime with env key

@@ -470,7 +470,7 @@ Response (success)
 | plot_meta | Record | Display metadata |
 | events | StrategyEvent[] | Strategy / trade-like events |
 | drawings | Drawing[] | line/label/box export |
-| alerts | AlertEvent[] | alert() / true alertcondition() firings (interpret; [] on compile) |
+| alerts | AlertEvent[] | alert() / true alertcondition() firings (interpret and object-mode compile; nopython stays []) |
 | alert_conditions | object[] | optional condition evaluations |
 | alert_forward | object | optional L2 webhook delivery summary |
 | count | number | Bars evaluated |
@@ -551,7 +551,7 @@ Internals — reference mapping
 | plots / series / plot_meta | pynescript.runtime.host.Runtime.run packing loop |
 | events | evaluator._strategy_state.drain_events() → to_dict() (compile: __events) |
 | drawings | DrawingRegistry.export_for_api (compile: __drawings) |
-| alerts | export_alerts_from_evaluator (interpret; compile returns []) |
+| alerts | export_alerts_from_evaluator (interpret); object-mode compile __alerts (nopython []) |
 | alert_forward | backend/alert_forwarder.maybe_forward_run_alerts |
 | script_id | sha256(source)[:16] |
 | run_id | Runtime._run_id |
@@ -1285,11 +1285,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Hosted runner"
-description: "Optional Flask/VPS/container script registry + bar-close scheduler (PYNE_RUNNER). Off by default."
+description: "Optional Flask/container script registry + bar-close scheduler (PYNE_RUNNER). Off by default."
 ---
 Hosted runner
 Abstract
-The Pro API is request/response: AXIS (or curl) POSTs bars, gets alerts[] in that reply, and nothing runs after the client disconnects. PYNE_RUNNER is an optional Flask-side loop that matches pyne-worker’s “upload then keep going” model on local, Docker, VPS, and Cloudflare Containers.
+The Pro API is request/response: AXIS (or curl) POSTs bars, gets alerts[] in that reply, and nothing runs after the client disconnects. PYNE_RUNNER is an optional Flask-side loop that matches pyne-worker’s “upload then keep going” model on local, Docker, and containers.
 Off unless PYNE_RUNNER=1 (or true / yes / on). Routes then 404 with RUNNER_DISABLED. Health reports features.script_runner.
 This is not HOOX order routing. Alerts leave via the same L2 webhooks as POST /run. Strategy events stay on the tick JSON unless you forward them yourself.
 Conceptual model
@@ -1350,7 +1350,7 @@ Docker:
 `bash
 PYNE_RUNNER=1 PYNE_RUNNER_SCHEDULER=1 docker compose up --build api
 `
-VPS: set the same env on pynescript-api.service (or the process environment scripts/deploy_vps.sh restarts). SQLite path should sit on a persistent disk (PYNE_RUNNER_DB=/data/runner.db).
+Self-host: set the same env on the API process. SQLite path should sit on a persistent disk (PYNE_RUNNER_DB=/data/runner.db).
 Cloudflare Container: keep PYNE_RUNNER=0 in cf/src/index.ts unless you want the runner inside the isolate; one gunicorn worker is already the default.
 Failure modes
 | Symptom | Cause | Fix |
@@ -1962,7 +1962,7 @@ or: PYNE_INTERP_COMPILE_FULL=1 pytest tests/test_interp_compile_parity.py
 Report artifact: .cache/interp_compile_parity.json. Value mismatches on shared series keys are regressions. First-party hline / fill / bgcolor / plotshape / barcolor / plotarrow / plotbar / plotcandle keys match (0.3.12); drawings is geometry-only. --ignore-hline-keys / --ignore-fill-keys are optional for leftover corpus noise. End-user mode semantics: Evaluate scripts — Runtime modes.
 Secrets & crypto
 scripts/build/.metadata.key is gitignored
-CI must supply stable CRYPTO_KEY from METADATA_KEY / _METADATA_KEY for reproducible .enc blobs
+CI must supply a stable CRYPTO_KEY (or METADATA_KEY) for reproducible .enc blobs
 Never commit Fernet keys or API admin tokens
 Internals (where to change what)
 | Want to… | Look at |
@@ -1987,11 +1987,11 @@ Match root CONTRIBUTING.md and .github/workflows/publish.yml / release.yml / ghc
 2. Align vscode-extension/package.json when shipping the VSIX together.
 3. Ensure CI is green on main.
 4. Tag and push: git tag vX.Y.Z && git push origin vX.Y.Z.
-5. Publish (publish.yml) builds sdist/wheel (hoox_pyne-.whl) and uploads to PyPI (PYPI_API_TOKEN or Trusted Publishing OIDC, environment pypi).
+5. Publish (publish.yml) builds sdist/wheel (hoox_pyne-.whl) and uploads hoox-pyne to PyPI on v tags.
 6. Build & Release (release.yml) attaches Nuitka CLI/LSP binaries + VSIX to the GitHub Release.
 7. GHCR (ghcr.yml) publishes ghcr.io/hoox-sh/pyne/{cli,lsp,api}:X.Y.Z on v tags.
-Dry-run PyPI: Actions → Publish → Run workflow → dry_run=true. Local: python -m build && twine check dist/*.
-AXIS charting releases live in hoox-sh/axis (historical fork: jango-blockchained/axis).
+Dry-run PyPI: Actions → Publish → Run workflow → dry_run=true. Local: python -m build && twine check dist/.
+AXIS charting releases live in hoox-sh/axis.
 PyneTS contributions
 Work in hoox-sh/pynets, not a pine-worker/ directory in this repo
 Bun for install / test / typecheck; bun run generate after PYNE .g4 changes
@@ -2010,6 +2010,7 @@ Failure modes for contributors
 See also
 Local development
 CI
+Release
 PyneTS
 pyne-worker
 pyne-agent-worker
@@ -3525,7 +3526,7 @@ AXIS PWA/e2e CI lives in the sister axis repo — not here.
 | --- | --- | --- |
 | ci.yml | CI | Lint, test matrix, package, Docker api+cli, VSIX |
 | release.yml | Build & Release | Tag v + dispatch: wheels, CLI/LSP Nuitka binaries, CLI image tarball, VSIX, GitHub Release |
-| publish.yml | Publish | Tag v + dispatch: PyPI hoox-pyne (token or OIDC) |
+| publish.yml | Publish | Tag v + dispatch: PyPI hoox-pyne |
 | ghcr.yml | GHCR | Tag v + dispatch: ghcr.io/hoox-sh/pyne/{api,cli,lsp} multi-arch |
 | docs-versions.yml | Docs versions | Daily: refresh PyPI / npm / Open VSX / GitHub release stamps. Commits only on change. No docs pageload. |
 Conceptual model
@@ -3556,16 +3557,11 @@ Internals
 | --- | --- |
 | .github/workflows/ci.yml | PR/main fan-out (name: CI) |
 | .github/workflows/release.yml | Multi-artifact tag release (name: Build & Release) |
-| .github/workflows/publish.yml | PyPI (token preferred) (name: Publish) |
+| .github/workflows/publish.yml | PyPI hoox-pyne on v tags (name: Publish) |
 | .github/workflows/ghcr.yml | Multi-arch image push (name: GHCR) |
 | tests/test_cli.py | CLI unit suite (CI-critical) |
 Secrets
-| Secret | Used by | Notes |
-| --- | --- | --- |
-| PYPI_API_TOKEN | publish.yml | Personal PyPI account (jango-blockchained) |
-| METADATA_KEY / CRYPTO_KEY | release.yml LSP encrypt | Fernet metadata |
-| VSCE_PAT | optional Marketplace | VSIX still attaches without it |
-| GITHUB_TOKEN | release upload | default |
+publish.yml uploads hoox-pyne to PyPI on v tags. LSP binary encrypt uses CRYPTO_KEY (see Metadata crypto). GitHub Releases use the default Actions token.
 Invariants
 1. Fail-fast is off on the Python matrix.
 2. Codecov only on 3.13.
@@ -3591,7 +3587,7 @@ Failure modes
 | Ruff F821 on main | incomplete imports | fix before push; gate is E,F,W |
 See also
 Release
-PyPI publish
+Contributing
 Docker
 ---
 FILE: docs/pyne/devops/docker.mdx
@@ -3685,13 +3681,13 @@ Environment variables
 | STORE_BACKEND | json (prod overlay: sqlite) | json \| sqlite \| redis |
 | API_KEY_STORE | /data/api_keys.json | JSON key store path (STORE_BACKEND=json) |
 | API_KEY_STORE_SQLITE | /data/api_keys.db | SQLite path (STORE_BACKEND=sqlite) |
-| ALLOWED_ORIGINS | compose default includes https://hoox.sh, https://hoox.sh/axis, and local AXIS :8081 | CORS allow-list. VPS AXIS is :80 — do not copy 8081 into VPS env |
+| ALLOWED_ORIGINS | compose default includes https://hoox.sh, https://hoox.sh/axis, and local AXIS :8081 | CORS allow-list |
 | ADMIN_TOKEN | unset | Required for POST /auth/create_key (X-Admin-Token) and prod compose |
 | PYNE_RUNNER | 0 | Optional hosted runner (docs). 1 enables /scripts + /cron/ |
 | PYNE_RUNNER_SCHEDULER | 0 | In-process bar-close poll. Prefer GUNICORN_WORKERS=1 when on |
 | PYNE_RUNNER_DB | /data/runner.db | SQLite on the api_data volume |
 | REDIS_URL | empty in prod; compose dev default redis://redis:6379/0 | Required when STORE_BACKEND=redis |
-| GUNICORN_WORKERS / GUNICORN_THREADS / GUNICORN_TIMEOUT | 2 / 4 / 120 (entrypoint default; prod compose overlay defaults to 60) | Prod entrypoint knobs |
+| GUNICORN_WORKERS / GUNICORN_THREADS / GUNICORN_TIMEOUT | 1 / 100 / 120 (entrypoint + prod compose; worker class hard-pinned gthread) | Prod entrypoint knobs |
 | GUNICORN_BIND | 0.0.0.0:${PORT} | Optional gunicorn bind override |
 Published image names
 GitHub Container Registry (workflow GHCR, tags v):
@@ -3718,7 +3714,7 @@ Keeps context small by excluding tests/ (corpus), docs/, brand/, node modules, c
 Compose healthchecks
 API: curl -fsS http://127.0.0.1:8080/. Redis: redis-cli ping.
 Invariants & edge cases
-1. Host port 5002 vs container 8080. Local compose publishes API on :5002. Cloud Run uses :8080. VPS deploy (scripts/deploy_vps.sh) health-checks API :5002 and AXIS :80. Local AXIS PWA is :8081 — do not treat 8081 as the VPS PWA port.
+1. Host port 5002 vs container 8080. Local compose publishes API on :5002. Cloud Run uses :8080. Local AXIS PWA is :8081.
 2. Read-only mounts in compose mean dependency changes need image rebuild; source edits are visible via PYTHONPATH precedence.
 3. Production target is immutable — no live mounts; use the prod overlay or Cloud Run.
 4. Non-root appuser cannot write arbitrary paths; keep API_KEY_STORE under /data.
@@ -3791,12 +3787,12 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "GCP & Cloud Run"
-description: "Cloud Build pipeline, Cloud Run Pro API sizing, cost model, and substitution secrets for PYNE deployments."
+description: "Self-host the Pro API on Cloud Run with the checked-in Cloud Build pipeline — timeouts, memory, and app-layer API keys."
 ---
 GCP & Cloud Run
 Abstract
-Production-shaped hosting for the Pro API targets Google Cloud Run, fed by Cloud Build (cloudbuild.yaml). The pipeline builds a container, pushes multi-tags to Container Registry, deploys a managed service, and can optionally compile the LSP binary in the same build graph.
-This page codifies the as-checked-in config and the cost envelope from docs/gcp_cost_estimate.md — treat dollar figures as planning estimates, not invoices.
+Self-host the Pro API on Google Cloud Run, fed by Cloud Build (cloudbuild.yaml). The pipeline builds a container, pushes multi-tags to Container Registry, deploys a managed service, and can optionally compile the LSP binary in the same build graph.
+This page matches the as-checked-in YAML: Cloud Run timeouts and memory, unauthenticated invoke at the platform, and app-layer API keys in Flask.
 Conceptual model
 Interface surface
 Substitutions (cloudbuild.yaml)
@@ -3805,7 +3801,7 @@ Substitutions (cloudbuild.yaml)
 | _SERVICE_NAME | pynescript-pro-api | Cloud Run service |
 | _REGION | us-central1 | Deploy region |
 | _REPOSITORY | pynescript | Image path segment |
-| _METADATA_KEY | (secret/subst) | Fernet key → CRYPTO_KEY for LSP stage |
+| _METADATA_KEY | (optional subst) | Passed to the LSP compile step as CRYPTO_KEY=${_METADATA_KEY} |
 | _PYNESCRIPT_VERSION | "0.6.13" | OCI label. Matches src/pynescript/about.py. |
 Build steps
 1. build — docker build with BuildKit; tags $COMMIT_SHA + latest; cache-from latest
@@ -3817,13 +3813,13 @@ Cloud Run flags (as configured)
 | --- | --- | --- |
 | --allow-unauthenticated | on | Public HTTP API (auth via API keys at app layer) |
 | --min-instances | 0 | Scale to zero |
-| --max-instances | 10 | Cap spend / blast radius |
+| --max-instances | 10 | Upper bound on concurrent instances |
 | --memory | 512Mi | Evaluator headroom |
 | --cpu | 1 | Single vCPU per instance |
 | --concurrency | 10 | Parallel requests per instance |
 | --timeout | 60s | Platform kill. Entrypoint gunicorn default is 120s (GUNICORN_TIMEOUT); set the env to 60 on Cloud Run or long evals die at the platform first. |
 | --set-env-vars | FLASK_ENV=production | App mode |
-Machine / budget knobs
+Build options
 ``yaml
 options:
 machineType: E2_HIGHCPU_8
@@ -3836,30 +3832,15 @@ Internals
 | cloudbuild.yaml | Pipeline definition |
 | Dockerfile target api | Production image recipe used by Cloud Build |
 | backend/app.py | Health /, CORS, body size limit |
-| docs/gcp_cost_estimate.md | Scenario costs (April 2026 draft) |
-Cost envelope (planning)
-| Scale | Rough monthly | Notes |
-| --- | --- | --- |
-| Free / hobby | ~$0 | Within Cloud Run free tier if tiny |
-| MVP (~10 pro users) | ~$50 | Cloud Run + micro SQL |
-| Growth (~50) | ~$120 | Add Redis caching |
-| Scale (~200) | ~$350 | Dominated by evaluator CPU-sec |
-Dominant cost driver: script execution CPU time (~2–5 CPU-sec per typical backtest over 1k bars). Memory ~200–400MB per concurrent Python worker.
-Free-tier leverage (GCP)
-Cloud Run: 2M requests, 400K CPU-sec, 200K GB-sec / month
-Cloud Build: 120 build-minutes / day
-Artifact Registry / GCS small free slices
 Invariants & edge cases
 1. App-layer auth still required when Cloud Run allows unauthenticated invoke — see Security.
-2. Scale-to-zero cold starts add latency; min-instances=1 trades money for snappiness.
+2. Scale-to-zero cold starts add latency; min-instances=1 keeps a warm instance.
 3. LSP build step does not deploy the binary to Cloud Run; it is a release-adjacent compile in the same YAML.
 4. 512Mi may be tight for large OHLCV payloads — watch OOM kills; raise memory before raising concurrency.
-5. Cost estimate doc also lists Railway / Render / Fly / self-host alternatives if GCP is overkill.
 Worked examples
-Manual deploy sketch (operator)
+Submit Cloud Build
 `bash
-gcloud builds submit --config cloudbuild.yaml \
---substitutions=_METADATA_KEY="$METADATA_KEY"
+gcloud builds submit --config cloudbuild.yaml
 `
 Smoke health after deploy
 `bash
@@ -3869,9 +3850,8 @@ expect JSON status healthy, service pynescript-pro-api
 Failure modes
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| Deploy timeout | Nuitka step + docker on 20 min budget | Split LSP compile to release pipeline |
+| Deploy timeout | Nuitka step + docker on 20 min Cloud Build timeout | Split LSP compile to release pipeline |
 | 429 / queue | max-instances or concurrency | Raise caps carefully; add queue |
-| High bill | No cache; chatty clients | Redis TTL; Cloud Tasks for backtests |
 | Auth bypass illusion | Unauthenticated Cloud Run | Enforce API keys in Flask |
 | Image pull errors | Wrong project / registry perms | IAM on GCR + Cloud Run service agent |
 See also
@@ -3910,9 +3890,8 @@ Interface surface
 | Local install & loops | Makefile, hatch envs | Local development |
 | PR / push CI | .github/workflows/ci.yml (name: CI) | CI |
 | Versioned CLI + LSP + VSIX | .github/workflows/release.yml (name: Build & Release) | Release |
-| PyPI (hoox-pyne) | .github/workflows/publish.yml (name: Publish) | PyPI publish |
+| PyPI (hoox-pyne) | .github/workflows/publish.yml (name: Publish) | Contributing |
 | GHCR images | .github/workflows/ghcr.yml (name: GHCR) | Docker |
-| First ship checklist | personal PyPI + API token | Publish checklist |
 | Containers | Dockerfile targets api/api-dev/lsp/cli | Docker |
 | Compiled CLI / LSP | scripts/build/compile.py --target | Nuitka build |
 | Builtin metadata crypto | Fernet key + .enc | Metadata crypto |
@@ -4014,7 +3993,6 @@ Make targets (primary)
 | make docker-buildx | multi-platform release bake (api + cli + lsp) |
 | make docker-push-ghcr | gh workflow run ghcr.yml |
 | make docker-cli ARGS="…" | compose profile cli (ephemeral) |
-| make deploy-vps | rsync + restart API; health API :5002, AXIS :80 (VPS; local AXIS is :8081) |
 | make docker-up | compose API on :5002 |
 | make docker-up-full | + redis profile |
 | make docker-prod | gunicorn overlay (ADMIN_TOKEN required) |
@@ -4119,10 +4097,9 @@ Files
 Environment variables
 | Variable | Context | Meaning |
 | --- | --- | --- |
-| CRYPTO_KEY | Build scripts / CI / Cloud Build | Key bytes for encrypt stage |
+| CRYPTO_KEY | Build scripts / CI | Key bytes for encrypt stage |
 | PYNESCRIPT_METADATA_KEY | Runtime decrypt fallback | Env-supplied key if file missing |
-| GitHub secrets.METADATA_KEY | Actions | Stable secret → CRYPTO_KEY |
-| Cloud Build _METADATA_KEY | cloudbuild.yaml substitution | CRYPTO_KEY=${_METADATA_KEY} |
+| METADATA_KEY | Build scripts | Alias for the same Fernet material |
 Code entrypoints
 Encrypt stage: scripts/build/compile.py (encrypt_metadata / _resolve_fernet_key), scripts/build/ci_build.py (stage_metadata)
 Decrypt: src/pynescript/langserver/providers/metadata_decrypt.py
@@ -4167,7 +4144,7 @@ CI snippet
 name: Build LSP binary
 run: python scripts/build/ci_build.py --jobs 4
 env:
-CRYPTO_KEY: ${{ secrets.METADATA_KEY }}
+CRYPTO_KEY:
 `
 Runtime with env key
 `bash
@@ -4457,7 +4434,7 @@ curl -s -X POST http://127.0.0.1:5002/run -H 'Content-Type: application/json' \
 -d '{"script":"//@version=6\nindicator(\"x\")\nplot(ta.sma(close,20))","data":[...]}'
 `
 Read the trace bottom-up: eligibility → cache HIT/MISS → JIT warm duration → run finished total=…. A first run paying ~9 s in prewarm: builtins warm and compile: MISS is expected; the second identical request should be a compile: HIT in ~0 ms.
-Check why live updates cost what they cost
+Inspect live-session delta stats
 `bash
 curl -s http://127.0.0.1:5002/stats \
 | jq '{delta: .counters["delta.bars_appended"], appends: .counters["delta.append_calls"],
@@ -4491,243 +4468,6 @@ Docker
 Security
 API lifecycle
 ---
-FILE: docs/pyne/devops/publish-checklist.mdx
-Copyright (C) 2024-2026 jango_blockchained
-This file is part of pynescript.
-pynescript is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-pynescript is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-You should have received a copy of the GNU Affero General Public License
-along with pynescript. If not, see .
-SPDX-License-Identifier: AGPL-3.0-or-later
----
-title: "Publish checklist"
-description: "Publish hoox-pyne under personal PyPI account jango-blockchained from hoox-sh/pyne Actions."
----
-Publish checklist
-Abstract
-Ship hoox-pyne from GitHub hoox-sh/pyne while owning the PyPI
-project under the personal account
-jango-blockchained. A PyPI
-organization is not required (and is not used while org approval is pending).
-0. Identity map
-| Surface | Value |
-| --- | --- |
-| GitHub org / repo | hoox-sh/pyne (Actions host) |
-| PyPI account (owner) | jango-blockchained (personal) |
-| PyPI project | hoox-pyne |
-| Import / CLIs | import pynescript; CLIs pyne / pyne-lsp (aliases pynescript / pynescript-lsp) |
-| Package version | src/pynescript/about.py → 0.6.13 |
-| VS Marketplace / Open VSX publisher | hoox-sh (hoox-sh.pyne 0.4.4) |
-1. Confirm repo host (hoox-sh/pyne)
-The GitHub repo already lives at hoox-sh/pyne. If a checkout still points at the old personal remote, retarget it:
-``bash
-git remote set-url origin https://github.com/hoox-sh/pyne.git
-git remote -v
-gh repo view --json nameWithOwner,url
-expect: hoox-sh/pyne
-`
-Automation secrets
-| Item | Action |
-| --- | --- |
-| Actions enabled | Org/repo Settings → Actions allowed for this repo |
-| Environment pypi | Recreate if missing: gh api -X PUT repos/hoox-sh/pyne/environments/pypi |
-| Secrets | Re-set if missing: METADATA_KEY, CRYPTO_KEY (same Fernet material as scripts/build/.metadata.key) |
-| Optional | VSCE_PAT for Marketplace publish on tag |
-| Workflow permissions | Read/write as needed for release.yml (contents: write on release job) |
-`bash
-gh secret set METADATA_KEY -R hoox-sh/pyne < scripts/build/.metadata.key
-gh secret set CRYPTO_KEY -R hoox-sh/pyne < scripts/build/.metadata.key
-optional marketplace:
-gh secret set VSCE_PAT -R hoox-sh/pyne
-`
-2. PyPI under personal account jango-blockchained
-Preferred — API token
-1. pypi.org as jango-blockchained → API tokens → add token.
-2. gh secret set PYPI_API_TOKEN -R hoox-sh/pyne
-3. First upload creates project hoox-pyne owned by your user.
-Optional — Trusted Publishing
-Log in as jango-blockchained (personal), then pending publisher:
-| Field | Value |
-| --- | --- |
-| PyPI project name | hoox-pyne |
-| Owner | hoox-sh (GitHub repo owner — Actions host) |
-| Repository | pyne |
-| Workflow name | publish.yml |
-| Environment name | pypi |
-Leave PYPI_API_TOKEN unset to force OIDC. Do not put your PyPI username
-in the GitHub Owner field.
-Details: PyPI publish.
-3. Local package smoke (no upload)
-`bash
-version already 0.6.13 in src/pynescript/about.py
-pip install build twine
-rm -rf dist/
-python -m build
-twine check dist/
-expect: hoox_pyne-0.6.13-py3-none-any.whl hoox_pyne-0.6.13.tar.gz
-python -m venv /tmp/pyne-smoke
-/tmp/pyne-smoke/bin/pip install dist/.whl
-/tmp/pyne-smoke/bin/python -c "import pynescript; print(pynescript.version)"
-/tmp/pyne-smoke/bin/pyne --help
-`
-4. GitHub Actions dry-run
-1. Push main with publish-ready tree to hoox-sh/pyne.
-2. Confirm CI green (lint, test matrix, package, docker, vscode-ext).
-3. Actions → Publish → Run workflow → dry_run=true (build + twine only, no upload).
-5. Cut v0.6.13
-1. Move CHANGELOG.md Unreleased notes into ## [0.6.13] - YYYY-MM-DD.
-2. Align VSIX version in vscode-extension/package.json (already 0.4.4) if shipping Marketplace/VSIX with this tag.
-3. Tag and push:
-`bash
-git tag -a v0.6.13 -m "v0.6.13"
-git push origin v0.6.13
-`
-4. Watch in parallel:
-Publish → PyPI hoox-pyne
-Build & Release → GitHub Release assets + optional Marketplace
-GHCR → ghcr.io/hoox-sh/pyne/{api,cli,lsp}:0.6.13
-6. Post-publish verify
-`bash
-pip index versions hoox-pyne # or: pip install hoox-pyne==0.6.13
-python -c "import pynescript; print(pynescript.version)"
-GitHub Release: https://github.com/hoox-sh/pyne/releases/tag/v0.6.13
-PyPI: https://pypi.org/project/hoox-pyne/0.6.13/
-`
-Hardcoded owner map (repo automation)
-Workflows use relative github.* context (no hard-coded owner) except
-documentation/comments. Project metadata and docs must point at hoox-sh/pyne:
-| Location | Role |
-| --- | --- |
-| pyproject.toml [project.urls] | PyPI package links |
-| .github/workflows/publish.yml header | Trusted Publisher fields |
-| Dockerfile org.opencontainers.image.source | Image source label |
-| package.json / vscode-extension/package.json repository | Clone / issues URLs |
-| docs/pyne/docs.json navbar GitHub | Docs site link |
-| scripts/build/README.md gh secret set -R | Secret target repo |
-| CONTRIBUTING.md + this page | Human publish runbook |
-Intentionally not changed
-| Item | Why |
-| --- | --- |
-| .github/FUNDING.yml | GitHub Sponsors username (personal) |
-| Sister repos jango-blockchained/{axis,hoox} | Separate transfers |
-| Author strings jango_blockchained | Copyright / author field |
-| PyPI account jango-blockchained | Package owner; not the VS Code namespace |
-See also
-PyPI publish
-Release — LSP + VSIX
-CI
-Root CONTRIBUTING.md`
----
-FILE: docs/pyne/devops/pypi-publish.mdx
-Copyright (C) 2024-2026 jango_blockchained
-This file is part of pynescript.
-pynescript is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-pynescript is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-You should have received a copy of the GNU Affero General Public License
-along with pynescript. If not, see .
-SPDX-License-Identifier: AGPL-3.0-or-later
----
-title: "PyPI publish"
-description: "Ship hoox-pyne to PyPI under the personal jango-blockchained account (API token or Trusted Publishing). Import package stays pynescript."
----
-PyPI publish
-Abstract
-The Python distribution name on PyPI is hoox-pyne. After install, the import path stays pynescript; preferred CLIs are pyne / pyne-lsp (aliases: pynescript / pynescript-lsp).
-PyPI ownership is the personal account jango-blockchained (not a PyPI organization — org approval is not required). Automation still runs on GitHub hoox-sh/pyne via .github/workflows/publish.yml.
-Auth modes (first match wins):
-1. API token — repo secret PYPI_API_TOKEN from the personal PyPI account (recommended while no PyPI org is needed).
-2. Trusted Publishing (OIDC) — pending publisher created while logged in as jango-blockchained, with GitHub Owner = hoox-sh (where Actions run).
-Why not pynescript or pyne on PyPI? pynescript is owned by elbakramer/pynescript; plain pyne/PyNE is an unrelated 0.1.0 process-networking library. We ship as hoox-pyne; the import package stays pynescript.
-Install surface
-``bash
-pip install hoox-pyne
-pip install "hoox-pyne[lsp]"
-pip install "hoox-pyne[pro]"
-python -c "import pynescript; print(pynescript.version)"
-pyne --help
-pyne-lsp # stdio language server (alias: pynescript-lsp)
-`
-One-time setup (personal PyPI account)
-A. Recommended — API token (no org, no OIDC)
-1. Sign in at pypi.org as jango-blockchained (2FA required).
-2. Account settings → API tokens → Add API token.
-Name: e.g. hoox-sh-pyne-gha
-Scope: Entire account for the first upload of hoox-pyne; after the project exists you can rotate to a project-scoped token.
-3. Copy the token (pypi-…) once.
-4. On GitHub:
-`bash
-Environment (optional reviewers / wait timer)
-gh api -X PUT repos/hoox-sh/pyne/environments/pypi
-Never commit the token — Actions secret only
-gh secret set PYPI_API_TOKEN -R hoox-sh/pyne
-paste pypi-... token
-`
-5. First successful tag (or workflow_dispatch with dry_run=false) creates hoox-pyne under your personal account.
-B. Optional — Trusted Publishing (OIDC)
-Use this when you prefer no long-lived token. Log into PyPI as jango-blockchained (personal user), then:
-| Field | Value |
-| --- | --- |
-| PyPI project name | hoox-pyne |
-| Owner | hoox-sh ← GitHub repo owner (workflow host), not your PyPI username |
-| Repository | pyne |
-| Workflow name | publish.yml |
-| Environment name | pypi |
-Leave PYPI_API_TOKEN unset so the publish job uses OIDC.
-Do not put jango-blockchained in the GitHub Owner field unless the workflow actually runs under github.com/jango-blockchained/pyne. OIDC is bound to the repo that executes the job (hoox-sh/pyne).
-GitHub environment
-Repo Settings → Environments → pypi on hoox-sh/pyne. Optional: required reviewers on production uploads.
-Cut a release
-`bash
-1. Version + changelog on main
-src/pynescript/about.py → 0.6.13
-vscode-extension/package.json is a separate pin (currently 0.4.4)
-CHANGELOG.md
-2. Local smoke (no upload)
-pip install build twine
-rm -rf dist/
-python -m build
-twine check dist/
-expect: hoox_pyne-0.6.13-.whl and hoox_pyne-0.6.13.tar.gz
-3. Push main, then tag
-git tag -a v0.6.13 -m "v0.6.13"
-git push origin v0.6.13
-4. Watch Actions → Publish
-`
-If a tag already exists and the wheel was never uploaded, re-run:
-Actions → Publish → Run workflow → dry_run=false (builds from that workflow’s default branch / checked-out tag context as configured), or retag a new patch version.
-Dry-run without upload: Actions → Publish → Run workflow → dry_run=true.
-Workflow map
-| Job | When | What |
-| --- | --- | --- |
-| build | tag v or dispatch | python -m build + twine check + artifact |
-| publish-pypi | tag v or dispatch with dry_run=false | Token if PYPI_API_TOKEN set, else OIDC |
-Failure modes
-| Symptom | Cause | Fix |
-| --- | --- | --- |
-| 403 invalid token | Wrong/revoked PYPI_API_TOKEN | Create new token as jango-blockchained; re-gh secret set |
-| 403 / no trusted publisher | OIDC path without pending publisher | Add pending publisher or set API token |
-| Wrong GitHub Owner in pending publisher | Used PyPI username as Owner | Set Owner to hoox-sh (GitHub org of the repo) |
-| Environment not found | Missing GitHub pypi env | gh api -X PUT repos/hoox-sh/pyne/environments/pypi |
-| File already exists | Version already on PyPI | Bump about.version and tag a new version |
-| Tag publish skipped | dry_run dispatch only | Use a real v* tag or dry_run=false |
-See also
-Release — CLI/LSP binaries + VSIX
-Publish checklist
-CI
-Root CONTRIBUTING.md`
----
 FILE: docs/pyne/devops/release.mdx
 Copyright (C) 2024-2026 jango_blockchained
 This file is part of pynescript.
@@ -4754,7 +4494,7 @@ CLI platform-native Nuitka binaries (pynescript)
 LSP platform-native Nuitka binaries (pynescript-lsp)
 CLI Docker image tarball (pynescript-cli-image.tar.gz)
 VS Code VSIX
-Assets attach to a GitHub Release; PyPI upload is handled by Publish (publish.yml). Multi-arch container images are a separate workflow (GHCR / ghcr.yml) — not attached as tarballs except the CLI image save in this workflow. Marketplace / Open VSX publish is optional via VSCE_PAT / OVSX_PAT.
+Assets attach to a GitHub Release; PyPI upload is handled by Publish (publish.yml). Multi-arch container images are a separate workflow (GHCR / ghcr.yml) — not attached as tarballs except the CLI image save in this workflow. Marketplace / Open VSX publish is optional when those jobs are configured.
 Conceptual model
 Interface surface
 Triggers
@@ -4771,7 +4511,7 @@ Jobs
 | build-docker-cli | ubuntu-latest | pynescript-cli-docker (gzipped docker save) |
 | build-vscode | ubuntu-latest | pynescript-vscode-extension VSIX |
 | release | needs package + vscode success; tag or dispatch | GitHub Release body + staged assets (name: pyne vX.Y.Z) |
-| publish-vscode | needs VSIX; tag or dispatch | vsce publish if VSCE_PAT; ovsx publish if OVSX_PAT |
+| publish-vscode | needs VSIX; tag or dispatch | vsce publish / ovsx publish when configured |
 Environment
 ``yaml
 env:
@@ -4817,7 +4557,7 @@ Release asset contract (from release body)
 Invariants & edge cases
 1. CRYPTO_KEY must be stable across builds if you care about byte-identical builtin_metadata.json.enc. Supply secrets.METADATA_KEY.
 2. Tag name is the version source for the GitHub Release title (v prefix stripped).
-3. Marketplace publish needs VSCE_PAT. Without it, packaging may still succeed while publish fails.
+3. Marketplace / Open VSX publish is optional. GitHub Release still attaches the VSIX when those jobs are unconfigured.
 4. Artifact retention is short (5 days on build jobs) — releases must attach files immediately.
 5. macOS artifact is ARM64 from macos-latest — Intel Mac users may need separate builds if required.
 6. Draft vs prerelease: workflow currently sets draft: false, prerelease: false for tag releases.
@@ -4846,7 +4586,7 @@ Failure modes
 | Binary not found after Nuitka | Path layout drift in ci_build.py | Inspect dist/; fix finder step |
 | Decrypt errors in field | Key mismatch between encrypt and runtime | Align METADATA_KEY with embedded key strategy |
 | Empty GitHub Release assets | Artifact download path mismatch | Match files: globs to download-artifact layout |
-| Marketplace 401 | Bad/expired VSCE_PAT | Rotate PAT with Marketplace scopes |
+| Marketplace 401 | Missing or expired marketplace credentials | Reconfigure the publish job |
 | Windows .exe not marked executable | Finder uses -type f -executable` | Fallback non-executable find branch in workflow |
 See also
 Nuitka build
@@ -4874,7 +4614,7 @@ description: "API keys, CORS, body limits, secrets hygiene, Fernet metadata keys
 ---
 Security
 Abstract
-PYNE security is layered: transport/hosting (Cloud Run, containers), application (API keys, admin tokens, CORS, body size caps), build secrets (Fernet metadata keys, VSCE PAT), and supply chain (CI dependency installs, extension packaging). This page documents controls that exist in code and workflows — not a full threat model certification.
+PYNE security is layered: transport/hosting (Cloud Run, containers), application (API keys, admin tokens, CORS, body size caps), build secrets (Fernet metadata keys), and supply chain (CI dependency installs, extension packaging). This page documents controls that exist in code and workflows — not a full threat model certification.
 Conceptual model
 Interface surface
 HTTP application controls (backend/app.py)
@@ -4894,7 +4634,6 @@ Build / release secrets
 | Secret | Purpose |
 | --- | --- |
 | METADATA_KEY / _METADATA_KEY | Stable Fernet key for LSP metadata encrypt |
-| VSCE_PAT | VS Code Marketplace / vsce package |
 | GITHUB_TOKEN | Release asset upload |
 | PYNESCRIPT_METADATA_KEY | Runtime decrypt env fallback |
 Container hardening (Dockerfile target api)
@@ -4920,13 +4659,13 @@ Internals
 | backend/middleware/key_store_redis.py / key_store_sqlite.py | Hash-only shared stores |
 | backend/middleware/schemas.py | Request validation schemas |
 | src/pynescript/langserver/providers/metadata_decrypt.py | Encrypted metadata load |
-| .github/workflows/*.yml | Secret consumption (METADATA_KEY, PYPI_API_TOKEN, VSCE_PAT, OVSX_PAT) |
+| .github/workflows/*.yml | Secret consumption (METADATA_KEY) |
 | AXIS PWA security tests | Sister repo hoox-sh/axis — not in this tree |
 Audit notes encoded in source
 Comments in app.py reference a 2026-07-05 audit (findings S1 body size, S7/S8 CORS). Prefer reading the code over assuming defaults never change.
 Invariants & edge cases
 1. Cloud Run --allow-unauthenticated does not mean open data. It means IAM does not gate invoke; the Flask app must.
-2. Free tier with calls_limit=0 is special-cased as unlimited remaining in some helpers — verify tier semantics before production billing.
+2. Free tier with calls_limit=0 is special-cased as unlimited remaining in some helpers — verify tier semantics before relying on remaining-call counts.
 3. Localhost CORS regex permits any port on localhost/127.0.0.1 — fine for desk, wrong for prod ALLOWED_ORIGINS.
 4. Fernet protects binary metadata packaging, not user script confidentiality.
 5. Admin token routes are high privilege — rotate and store separately from user API keys.
@@ -5236,7 +4975,7 @@ pip install "hoox-pyne[lsp,compile]"
 pyne --version
 pyne info
 `
-Project page: pypi.org/project/hoox-pyne · owner account jango-blockchained.
+Project page: pypi.org/project/hoox-pyne.
 Extras
 Defined in pyproject.toml under [project.optional-dependencies]:
 `bash
@@ -5330,7 +5069,7 @@ See also
 Quick start
 CLI guide
 Editors / LSP
-PyPI publish (maintainers)
+Release
 End User hub
 ---
 FILE: docs/pyne/enduser/getting-started/quick-start.mdx
@@ -7689,10 +7428,12 @@ aliases: pynescript / pynescript-lsp
 The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyodide (via AXIS), and Cloudflare workers. Round-trip fidelity (parse → unparse) and interpretcompile plot parity are first-class invariants — see compatibility. Local open-corpus set01–04 (2026-08-09): parse 99.96%, Runtime interpret 100% excl. intentional demos (set01 249/249). The repository does not ship third-party script corpora.
 TypeScript consumers import PyneTS (@hoox-sh/pynets) — same public names; Python remains the oracle.
 What's new
-hoox-pyne 0.6.13 (live) — production hardening and live-surface additions:
-GET /stats — public process-wide counters: requests, runs by mode, compile cache hit/miss, prewarm, delta sizes, sessions, datafeed. In-process, so treat it as a snapshot rather than a time series. See stats.
-PYNE_DEBUG=1 — development-only logging that traces the interpreter bar loop, the compile pipeline, prewarm, delta calculation, and the datafeed. Optional PYNE_DEBUG_SCOPE narrows it to a logger allowlist. See observability.
-Engine-owned live plane (0.6.10–0.6.13): WebSocket /ws/live subscription plane with delta envelopes; refcount-pooled shared sessions (F-29) keyed by content hash; opt-in delta envelopes; gevent WebSocket worker (F-30); CCXT provider caching + tick-walk sharing; live session persistence (SQLite journal); production profile + PYNE_DATA_DIR; Docker prod on VPS; Redis unpublished + opt-in auth; CORS for AXIS authenticated requests.
+hoox-pyne 0.6.13 (live) — dual-host HTF, LSP signature help, host hardening:
+Compile HTF request.security (D-06) — same-symbol simple OHLCV, close[1], and allowlisted ta.sma/ema/rsi/atr/wma/rma on a coarser TF match interpret (gaps_on / lookahead_on on those paths). Nested ta. and foreign tickers stay na.
+LSP signature help — textDocument/signatureHelp for builtins and user FunctionDef (( / ,).
+JSON key-store atomic save and webhook DNS pin — flock + os.replace; POST connects to the resolved public IP with HTTPS SNI on the original hostname.
+Live P3 / P2 — forming last-value tails, pair-form tick identity, gthread pin, 100 threads.
+0.6.12 — production hardening and live-surface additions (GET /stats, PYNE_DEBUG=1, engine-owned live plane 0.6.10–0.6.12).
 Earlier on main — prior releases are documented in GitHub releases.
 0.6.6 (2026-09-22) — last-sample TA (ao/dmi/bb/cog/mode), convert-to-v6 keeps UDF/for n names, webhook SSRF, LSP nested strategy.risk completion.
 0.6.5 — convert-to-v6 leaves UDF definitions, parameters, and unpack names alone (set01–04 older scripts parse 323/323 after convert).
@@ -7710,7 +7451,7 @@ How to use
 | Runtime | Series caps, builtins, strategy, alerts, compiler parity | Runtime |
 | LSP | Diagnostics, completion, hover, format (.pyne / .pine) | LSP |
 | Pro API | HTTP /run (alerts + L2 webhooks), /optimize, preview, backtest | API |
-| Ops | CI, Docker, Nuitka, secrets, GCP | DevOps |
+| Ops | CI, Docker, Nuitka, self-host | DevOps |
 | PyneTS | TypeScript / Bun library (parse / unparse / Runtime.run) | PyneTS |
 | AXIS (separate product) | Charting PWA AXIS | AXIS docs |
 | HOOX | Edge trade mesh | HOOX docs |
@@ -7723,7 +7464,7 @@ Install the package (pip install hoox-pyne), run the CLI, embed the library API,
 Core / Runtime / LSP / API
 Contributor and systems manuals: how the front-end, semantics, editor protocol, and HTTP bridge are built. Runtime covers series caps, incremental TA, drawing GC, fill() export, request.security HTF resample + barmerge (foreign/complex → na), strategy optimize, and parity.
 DevOps
-CI matrices, Fernet metadata encryption, Nuitka LSP binaries, containers, Cloud Build.
+CI matrices, Fernet metadata encryption, Nuitka LSP binaries, containers.
 → DevOps hub
 Reference
 Compatibility guarantees, missing surface, numerical validation, PyneTS, ecosystem map, roadmap.
@@ -7739,7 +7480,7 @@ Auto-generated like HOOX manuals (bun run docs:exports):
 | --- | --- |
 | Full-corpus LLM pack | llm.txt |
 | LLM site map (llmstxt.org) | llms.txt |
-| Track PDFs (A4) | /exports/pyne-*-manual.pdf` |
+| Track PDFs (A4) | /exports/pyne--manual.pdf` |
 See also
 Installation
 Quick start
@@ -7954,12 +7695,7 @@ scripts/build/compile.py → encrypt_metadata() / _resolve_fernet_key():
 2. Resolve key (first hit wins): env CRYPTO_KEY → PYNESCRIPT_METADATA_KEY → METADATA_KEY → existing scripts/build/.metadata.key → generate a new Fernet key and write that file (mode 0o600).
 3. Encrypt → builtin_metadata.json.enc.
 4. Write truncated SHA-256 of plaintext to .sha256.
-A random key is generated only on first local encrypt when no env/file key exists. For byte-stable encrypted artifacts across CI runs, supply a stable secret:
-| Context | Mechanism |
-| --- | --- |
-| GitHub Actions | secrets.METADATA_KEY → env (documented as CRYPTO_KEY in workflows / AGENTS) |
-| Cloud Build | substitution ${_METADATA_KEY} → CRYPTO_KEY |
-| Runtime decrypt | File .metadata.key next to providers or env PYNESCRIPT_METADATA_KEY |
+A random key is generated only on first local encrypt when no env/file key exists. For byte-stable encrypted artifacts across CI runs, supply a stable secret via the same env vars the encrypt path already reads (CRYPTO_KEY, PYNESCRIPT_METADATA_KEY, or METADATA_KEY), or reuse scripts/build/.metadata.key. Runtime decrypt uses a .metadata.key file next to the providers or env PYNESCRIPT_METADATA_KEY.
 Without a stable key, each CI encrypt produces a different .enc blob — not a functional bug, but noisy diffs and cache misses.
 Decrypt path
 metadata_decrypt.py:
@@ -9389,7 +9125,7 @@ What this is not
 | Numba | Python compile backend. PyneTS compile is JS emit (object-mode analog). |
 | AXIS engine | AXIS does not load this package. |
 Internals (repo paths)
-Standalone (/home/jango/Git/pynets or the published package):
+Standalone (hoox-sh/pynets / @hoox-sh/pynets):
 | Path | Role |
 | --- | --- |
 | src/index.ts | Public barrel — do not re-export generated ANTLR |
@@ -10311,7 +10047,7 @@ Still incomplete / by design
 | Warm-compile product path (H2) | SLOs / prewarm / deploy IR cache defaults |
 | Runtime residual (C1) | set01-04 Runtime interpret 100% excl. EXPECTED_FAIL; third-party corpus not shipped |
 | Series cap (T1) | PYNE_SERIES_CAP default ON |
-| Residual TA inc (T2) | R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume obv/wad/cmf/klinger; nvi/pvi; aroon/dpo/donchian/kst |
+| Residual TA inc (T2) | R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume obv/wad/cmf/klinger; nvi/pvi; aroon/dpo/donchian/kst; ichimoku/apo/emv; skewness/kurtosis/beta landed (other T2 residuals remain) |
 | Pending-fill (F2) | R7 interpret + compile goldens |
 | Plot parity residual (P1p) | Harness + first-party goldens + official TV builtins 0 MISMATCH; optional set0x community corpus unmeasured |
 | Compile leftover library stubs | Some float(None) / UDF arity on missing import libraries; INV expected-fail fixtures stay fail |

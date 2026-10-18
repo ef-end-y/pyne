@@ -7,6 +7,10 @@
 - **Bar-mode incremental `ta.ichimoku` / `ta.apo` / `ta.emv` (T2).** Last-sample kernels match full recompute: Ichimoku reuses highest/lowest windows (stable six-slot order), APO is `EMA(fast) - EMA(slow)`, EMV is the last-N mean of per-bar ease-of-movement (na on bar 0 / zero volume / flat range).
 - **Bar-mode incremental `ta.skewness` / `ta.kurtosis` / `ta.beta` (T2).** Last-sample kernels match full recompute: population skew and excess kurtosis over the last-N calendar window (na while any slot is non-numeric; 0.0 when stdev is 0), beta as `cov(s1,s2)/var(s2)` (0.0 when var(s2) is 0).
 
+### Changed
+
+- **Public product docs are end-user and developer only.** Mintlify (`docs/pyne/**`) no longer carries operator shipping (personal PyPI account, Trusted Publishing / API-token how-to, GCP cost estimates, VPS deploy wiring). `/devops/pypi-publish` and `/devops/publish-checklist` redirect to Contributing. Audience rules live in `docs/WRITING.md`.
+
 ### Fixed
 
 - **`strategy.risk.max_intraday_loss` resumes the next `syminfo.timezone` calendar day (D-02).** The halt and the day-scoped `max_intraday_filled_orders` cap now use DST-aware midnight-to-midnight buckets (same rules as `timeframe.change`); a bar that is still yesterday in `America/New_York` stays blocked. `max_drawdown` remains a permanent halt. `max_position_size` is still %-of-equity.
