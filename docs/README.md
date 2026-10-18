@@ -26,7 +26,8 @@ Self-hosted product manuals (HOOX-style MDX) for this monorepo.
 | **PYNE** | [`docs/pyne/`](pyne/) | https://hoox.sh/pyne/docs |
 | **AXIS** | [`docs/axis/`](axis/) | https://hoox.sh/axis/docs |
 
-Authoring rules: [`WRITING.md`](WRITING.md).
+Authoring rules: [`WRITING.md`](WRITING.md). Public MDX must follow the
+Audience rules there (no cost estimates or internal shipping).
 
 ## Layout
 

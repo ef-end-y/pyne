@@ -22,6 +22,28 @@
 Source of truth for agents authoring MDX under `docs/pyne/` and `docs/axis/`.
 Hosted (Phase B) at `https://hoox.sh/pyne/docs` and `https://hoox.sh/axis/docs`.
 
+## Audience
+
+`docs/pyne/**` and `docs/axis/**` are **public product docs** for end users and
+external developers only.
+
+Never document:
+
+- Cost estimates, dollar amounts, monthly GCP bills, or free-tier spend planning
+- Personal PyPI or GitHub accounts (e.g. `jango-blockchained` remotes)
+- Trusted Publishing / API-token shipping, `PYPI_API_TOKEN`, or
+  `gh secret set` for hoox-sh
+- VPS / Hetzner / `deploy_vps.sh`, or machine-local paths like `/home/jango/...`
+
+Operator and internal shipping belong in `AGENTS.md`, root `CONTRIBUTING.md`,
+and `scripts/build/README.md` — not in Mintlify MDX.
+
+Developer-facing internals (repo paths under `src/`, self-host Docker, env vars
+the code reads) are in-scope.
+
+Copyright headers with `jango_blockchained` stay (license). Public `hoox-sh/*`
+GitHub orgs are fine.
+
 ## Products
 
 | Tree | Public base | Brand pack (hoox.sh) |

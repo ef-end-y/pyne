@@ -9,7 +9,6 @@
 * [ROADMAP.md](ROADMAP.md) - Live package: hoox-pyne 0.6.13.
 * [WRITING.md](WRITING.md) - Source of truth for agents authoring MDX under docs/pyne/ and docs/axis/.
 * [compatibility_guarantee.md](compatibility_guarantee.md) - Product map (working / partial / residual / out of scope):.
-* [gcp_cost_estimate.md](gcp_cost_estimate.md) - CI/CD: Cloud Build → Artifact Registry → Cloud Run (already configured in cloudbuild.yaml).
 * [index.md](index.md) - docs/index.md document.
 * [Known divergences from reference Pine semantics](known_divergences.md) - Status: intentional or residual gaps; track until closed or product-scoped.
 * [license.md](license.md) - Default: GNU AGPL-3.0-or-later (LICENSE).
