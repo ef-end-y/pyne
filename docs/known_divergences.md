@@ -21,7 +21,7 @@ when moving it between tables.
 | D-02 | Strategy risk | `max_position_size` is %-of-equity (reference: contracts); cash thresholds in account units without FX conversion; tick-accurate accounting | [§ Strategy → risk](#sec-risk-compile) |
 | D-03 | Trade queries | Per-trade `max_drawdown` / `max_runup` are OHLC-path approximations, not tick-accurate | [§ Strategy → trade queries](#sec-trade-queries) |
 | D-04 | Realtime `var` / `varip` | Numeric nopython does not poll. `CCXTProDataFeed.poll_ohlcv` is the last cached watch/fetch candle (no REST in the bar loop). Unconfirmed ticks roll back in-place array/matrix/map/UDT mutations and broker fills | [§ Evaluator → var/varip](#sec-varip) |
-| D-06 | `request.security` | No full HTF expression re-eval engine; `gaps` / `lookahead` still unused on passthrough / provider / complex-na paths and for LTF requests | [§ Request → security](#sec-security) |
+| D-06 | `request.security` | No full HTF expression re-eval engine; `gaps` / `lookahead` still unused on passthrough / chart-length provider stubs / complex-na paths and for LTF requests | [§ Request → security](#sec-security) |
 
 ### Fixed
 
@@ -196,12 +196,13 @@ When the host omits quotes, `bid`/`ask` are **na (`None`)**, not mock prices (`1
 | Foreign ticker + host chart wired + no multi-symbol feed hit | **`na`** (no mock invent; matches compile foreign-na) |
 | Same-symbol + **complex** pre-eval (UDF / nested / non-allowlist `ta.*`) + request TF ≠ chart TF | **`na`** — no full multi-TF re-eval engine (do not invent HTF structure) |
 | Same-symbol + **simple OHLCV** + request TF **coarser** than chart bar spacing (parseable fixed TF or bare `D`/`W`/`M`, bar times present) | **Timestamp / calendar resample** of chart OHLCV (`htf_ohlcv_resample`): open/high/low/close/volume/time/hl2/hlc3/ohlc4 on **last completed** HTF bucket only (lookahead_off-style). Bare `D`/`W`/`M` use the same calendar ids as `timeframe.change` (`3D` / `2W` stay fixed-width). |
+| **Provider/feed simple OHLCV** already **coarser** than the chart, with bar times that align to chart bars | **Provider HTF merge** (`provider_htf_ohlcv`): map unique provider bars onto chart bars by timestamp; same `gaps_on` / `lookahead_on` as chart resample. Chart-length / no-timestamp payloads (e.g. `ChartOHLCVProvider` ignoring `interval`) stay stubs with unused merge. No LTF invention. |
 | Same-symbol + **allowlisted simple ta.*** (`ta.sma` / `ta.ema` / `ta.rsi` / `ta.wma` / `ta.rma` with bare OHLCV source + const length; `ta.atr(length)`) + request TF **coarser** | **HTF series TA** (`htf_simple_ta_resample`): bucket chart bars → run interpret TA helper on unique completed HTF OHLCV → map last completed value to chart bars. Not arbitrary AST re-eval. |
 | Same-symbol + **OHLCV history offset** (`close[1]`, …) + request TF **coarser** | **HTF offset resample** (`htf_ohlcv_offset`): offset is taken on unique HTF bars (TV non-repaint pattern with `lookahead_on`). |
 | Same-symbol + **simple OHLCV** otherwise (same TF, LTF, unparseable TF, …) | Chart series **passthrough** / provider series (`same_tf_chart_eval` / `chart_passthrough_htf_stub`) |
 | Same-symbol `ticker.heikinashi` | Chart OHLC → Heikin-Ashi transform (not raw chart candles) |
-| `barmerge.gaps_on` / `gaps_off` | **Honored on HTF resample paths**, still unused elsewhere — see below |
-| `barmerge.lookahead_on` / `lookahead_off` | **Honored on HTF resample paths**, still unused elsewhere — see below |
+| `barmerge.gaps_on` / `gaps_off` | **Honored on HTF resample paths** (chart + provider-backed coarser OHLCV); still unused on passthrough / chart-length provider stubs / complex-na / LTF — see below |
+| `barmerge.lookahead_on` / `lookahead_off` | **Honored on HTF resample paths** (chart + provider-backed coarser OHLCV); still unused on passthrough / chart-length provider stubs / complex-na / LTF — see below |
 | Fundamentals / footprint / dividends / … | Mock or soft-fail (see module docstring) |
 | Standalone evaluator (no chart identity) | Legacy mock OHLCV for bare string series names (offline demos) |
 
@@ -209,16 +210,18 @@ When the host omits quotes, `bid`/`ask` are **na (`None`)**, not mock prices (`1
 
 **Barmerge on resample paths (0.6.0):** `gaps_on` delivers the resampled value only on the first chart bar of an HTF bucket (`na` elsewhere). `lookahead_on` shows each HTF bucket's **final** value from the period start on historical bars (TV lookahead bias / repaint). Combine with `close[1]` (now resampled on the HTF unique series) for the TV non-repaint pattern. The two compose: `gaps_on` + `lookahead_on` yields the leaked final value on bucket-start bars, including bar 0 of the first period. Single-bar charts fall back to chart-period inference and may take the passthrough stub on bar 0 (pre-existing edge, same as `gaps_off`).
 
+**Provider HTF merge:** when `data_provider` / `data_feed` returns a **coarser** OHLCV series with bar times, interpret aligns those bars to the chart by timestamp and runs the same `_select_htf_agg` / `_htf_bar_is_bucket_start` merge as chart resample (`provider_htf_ohlcv`, `gaps_applied` / `lookahead_applied`). `ChartOHLCVProvider` ignores `interval` and returns chart-length bars — that stub keeps unused merge args (`gaps_lookahead_provided` without `gaps_applied`). Nested `ta.*`, LTF, and no-timestamp payloads are unchanged.
+
 Runtime **interpret** results expose honesty metadata when any `request.security` ran:
 
 - `meta.request_security.htf_reeval` → always `false` (OHLCV/simple-ta resample is not a full expression re-eval engine)
-- `meta.request_security.gaps_supported` / `lookahead_supported` → `true` once a resample call actually honored them (still `false` on passthrough / provider / complex-na paths)
-- `meta.request_security.policies` → tags such as `htf_ohlcv_resample`, `htf_simple_ta_resample`, `complex_htf_na`, `chart_passthrough_htf_stub`, `foreign_na`, `gaps_lookahead_provided`, `gaps_applied`, `lookahead_applied`, `same_tf_chart_eval`, …
+- `meta.request_security.gaps_supported` / `lookahead_supported` → `true` once a resample call actually honored them (still `false` on passthrough / chart-length provider stubs / complex-na / LTF)
+- `meta.request_security.policies` → tags such as `htf_ohlcv_resample`, `provider_htf_ohlcv`, `htf_simple_ta_resample`, `complex_htf_na`, `chart_passthrough_htf_stub`, `foreign_na`, `gaps_lookahead_provided`, `gaps_applied`, `lookahead_applied`, `same_tf_chart_eval`, …
 - `meta.request_security.notes` → short product notes (same text as evaluator)
 
-Regression coverage: `tests/test_request_data_feed.py` (foreign-na, complex HTF na, HTF OHLCV resample hourly→daily / 1m→60m, HTF simple ta.sma/ema/rsi/atr/wma/rma, nested ta still na, gaps/lookahead on resample paths + unused-on-passthrough, Runtime meta). Compile dual-host: `tests/test_request_security_compile_htf.py`.
+Regression coverage: `tests/test_request_data_feed.py` (foreign-na, complex HTF na, HTF OHLCV resample hourly→daily / 1m→60m, provider HTF daily-on-1h gaps/lookahead + ChartOHLCVProvider unused-merge, HTF simple ta.sma/ema/rsi/atr/wma/rma, nested ta still na, gaps/lookahead on resample paths + unused-on-passthrough, Runtime meta). Compile dual-host: `tests/test_request_security_compile_htf.py` (chart HTF helpers; compile does not consume `data_provider`).
 
-**Impact:** MTF indicators that need full expression re-eval on HTF still diverge from reference Pine, as do LTF requests and provider-series merge args. Compile now resamples the same allowlisted HTF shapes as interpret (simple OHLCV, `close[1]`, `ta.sma/ema/rsi/atr/wma/rma`) in object mode via the interpret helpers, including `gaps_on` / `lookahead_on` on those paths. Still not a full HTF expression re-eval engine: nested `ta.*`, UDFs, foreign tickers, LTF, and unparseable TFs stay `na` / chart passthrough as before.
+**Impact:** MTF indicators that need full expression re-eval on HTF still diverge from reference Pine, as do LTF requests and passthrough / complex-na merge args. Provider-backed coarser OHLCV with timestamps now honors `gaps_on` / `lookahead_on` on interpret. Compile now resamples the same allowlisted **chart** HTF shapes as interpret (simple OHLCV, `close[1]`, `ta.sma/ema/rsi/atr/wma/rma`) in object mode via the interpret helpers, including `gaps_on` / `lookahead_on` on those paths. Still not a full HTF expression re-eval engine: nested `ta.*`, UDFs, foreign tickers without a provider series, LTF, and unparseable TFs stay `na` / chart passthrough as before.
 
 **Track:** audit AGENT_03; full multi-TF host engine is out of product scope until explicitly scheduled.
 

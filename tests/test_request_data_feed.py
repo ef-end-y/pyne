@@ -911,3 +911,234 @@ plot(timeframe.change("W") ? 1 : 0, "chg")
         # Monday opens a new week: last completed weekly close is Friday's 20.
         assert abs(float(sec[2]) - 20.0) < 1e-9
         assert abs(float(sec[3]) - 20.0) < 1e-9
+
+
+def _utc_day0_ms() -> int:
+    day0 = 1_700_000_000_000
+    return day0 - day0 % 86_400_000
+
+
+def _day_aligned_hourly(n: int = 72, start: float = 100.0) -> list[dict]:
+    """Hourly bars starting on a UTC day boundary (3 days when n=72)."""
+    day0 = _utc_day0_ms()
+    bars: list[dict] = []
+    price = start
+    for i in range(n):
+        o = round(price, 2)
+        c = round(price + (1.0 if i % 3 else -0.5), 2)
+        h = round(max(o, c) + 0.8, 2)
+        lo = round(min(o, c) - 0.8, 2)
+        bars.append(
+            {
+                "open": o,
+                "high": h,
+                "low": max(lo, 0.01),
+                "close": c,
+                "time": day0 + i * 3_600_000,
+                "volume": 1000.0 + i,
+            }
+        )
+        price = c
+    return bars
+
+
+class _DailyHtfProvider:
+    """Honors interval: daily OHLCV with timestamps (unlike ChartOHLCVProvider)."""
+
+    def __init__(self, daily_bars: list[dict], symbol: str = "AAPL"):
+        self._bars = list(daily_bars)
+        self._symbol = str(symbol).upper()
+
+    def fetch(self, symbol: str, period: str = "1d", interval: str = "1d") -> dict:
+        _ = period, interval, symbol
+        bars = self._bars
+        return {
+            "open": [float(b["open"]) for b in bars],
+            "high": [float(b["high"]) for b in bars],
+            "low": [float(b["low"]) for b in bars],
+            "close": [float(b["close"]) for b in bars],
+            "volume": [float(b.get("volume", 0.0)) for b in bars],
+            "time": [b["time"] for b in bars],
+            "symbol": self._symbol,
+        }
+
+
+class _ChartLengthStubProvider:
+    """ChartOHLCVProvider-like: ignores interval, returns the chart bars."""
+
+    def __init__(self, bars: list[dict], symbol: str = "AAPL"):
+        self._bars = list(bars)
+        self._symbol = str(symbol).upper()
+
+    def fetch(self, symbol: str, period: str = "1d", interval: str = "1d") -> dict:
+        _ = period, interval, symbol
+        bars = self._bars
+        return {
+            "open": [float(b["open"]) for b in bars],
+            "high": [float(b["high"]) for b in bars],
+            "low": [float(b["low"]) for b in bars],
+            "close": [float(b["close"]) for b in bars],
+            "volume": [float(b.get("volume", 0.0)) for b in bars],
+            "time": [b.get("time", 0) for b in bars],
+            "symbol": self._symbol,
+        }
+
+
+def _daily_provider_bars(closes: tuple[float, ...] = (111.0, 222.0, 333.0)) -> list[dict]:
+    day0 = _utc_day0_ms()
+    out: list[dict] = []
+    for i, c in enumerate(closes):
+        out.append(
+            {
+                "open": float(c),
+                "high": float(c),
+                "low": float(c),
+                "close": float(c),
+                "volume": 1.0,
+                "time": day0 + i * 86_400_000,
+            }
+        )
+    return out
+
+
+class TestProviderHtfBarmerge:
+    """gaps_on / lookahead_on on provider-backed coarser OHLCV (D-06 residual)."""
+
+    def test_gaps_on_daily_provider_only_bucket_starts(self) -> None:
+        """Daily provider on a 1h chart: gaps_on close only on HTF day-open bars."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(72)
+        prov = _DailyHtfProvider(_daily_provider_bars())
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_on, barmerge.lookahead_off)
+plot(v, title="sec")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret", data_provider=prov)
+        assert not out.get("error"), out.get("error")
+        sec = out["series"]["sec"]
+        assert len(sec) == len(bars)
+        # Day 0: no completed daily bar yet.
+        assert all(_is_na(v) for v in sec[0:24])
+        # Day-open bars carry the previous day's provider close.
+        assert abs(float(sec[24]) - 111.0) < 1e-9
+        assert abs(float(sec[48]) - 222.0) < 1e-9
+        assert all(_is_na(v) for v in sec[25:48])
+        assert all(_is_na(v) for v in sec[49:])
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert pol.get("gaps_supported") is True
+        policies = pol.get("policies") or {}
+        assert "gaps_applied" in policies
+        assert "gaps_lookahead_provided" in policies
+
+    def test_lookahead_on_daily_provider_leaks_from_period_start(self) -> None:
+        """lookahead_on leaks each daily close from the UTC day start on 1h bars."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(72)
+        prov = _DailyHtfProvider(_daily_provider_bars())
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_off, barmerge.lookahead_on)
+plot(v, title="sec")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret", data_provider=prov)
+        assert not out.get("error"), out.get("error")
+        sec = out["series"]["sec"]
+        for i in (0, 12, 23):
+            assert abs(float(sec[i]) - 111.0) < 1e-9
+        for i in (24, 36, 47):
+            assert abs(float(sec[i]) - 222.0) < 1e-9
+        for i in (48, 60, 71):
+            assert abs(float(sec[i]) - 333.0) < 1e-9
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert pol.get("lookahead_supported") is True
+        assert "lookahead_applied" in (pol.get("policies") or {})
+
+    def test_gaps_and_lookahead_combined_daily_provider(self) -> None:
+        """gaps_on + lookahead_on: leaked daily close on day-open hours only."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(72)
+        prov = _DailyHtfProvider(_daily_provider_bars())
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_on, barmerge.lookahead_on)
+plot(v, title="sec")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret", data_provider=prov)
+        assert not out.get("error"), out.get("error")
+        sec = out["series"]["sec"]
+        assert abs(float(sec[0]) - 111.0) < 1e-9
+        assert abs(float(sec[24]) - 222.0) < 1e-9
+        assert abs(float(sec[48]) - 333.0) < 1e-9
+        assert all(_is_na(v) for v in sec[1:24])
+        assert all(_is_na(v) for v in sec[25:48])
+        assert all(_is_na(v) for v in sec[49:])
+
+    def test_daily_feed_ohlcv_lookahead_on(self) -> None:
+        """Feed ``fetch_latest_ohlcv`` daily rows align like a provider payload."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(72)
+        day0 = _utc_day0_ms()
+        rows = []
+        for i, c in enumerate((111.0, 222.0, 333.0)):
+            ts = day0 + i * 86_400_000
+            rows.append([ts, c, c, c, c, 1.0])
+
+        class _DailyHtfFeed:
+            def fetch_latest_ohlcv(self, symbol, timeframe="D", limit=5):
+                _ = symbol, timeframe
+                n = int(limit) if limit is not None else len(rows)
+                return rows[-max(1, n) :] if n < len(rows) else list(rows)
+
+        src = """//@version=6
+indicator("t")
+v = request.security(syminfo.tickerid, "D", "close", barmerge.gaps_off, barmerge.lookahead_on)
+plot(v, title="sec")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret", data_feed=_DailyHtfFeed())
+        assert not out.get("error"), out.get("error")
+        sec = out["series"]["sec"]
+        assert abs(float(sec[0]) - 111.0) < 1e-9
+        assert abs(float(sec[24]) - 222.0) < 1e-9
+        assert abs(float(sec[48]) - 333.0) < 1e-9
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "lookahead_applied" in (pol.get("policies") or {})
+
+    def test_chart_length_provider_gaps_unused(self) -> None:
+        """ChartOHLCVProvider-like (ignores interval) + gaps_on stays unused-merge."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(48)
+        stub = _ChartLengthStubProvider(bars, symbol="AAPL")
+        src_on = """//@version=6
+indicator("t")
+v = request.security("MSFT", "D", "close", barmerge.gaps_on, barmerge.lookahead_off)
+plot(v, title="sec")
+"""
+        src_off = """//@version=6
+indicator("t")
+v = request.security("MSFT", "D", "close", barmerge.gaps_off, barmerge.lookahead_off)
+plot(v, title="sec")
+"""
+        rt = Runtime(symbol="AAPL")
+        on = rt.run(src_on, bars, mode="interpret", data_provider=stub)
+        off = rt.run(src_off, bars, mode="interpret", data_provider=stub)
+        assert not on.get("error"), on.get("error")
+        assert not off.get("error"), off.get("error")
+        sec_on = on["series"]["sec"]
+        sec_off = off["series"]["sec"]
+        assert len(sec_on) == len(sec_off) == len(bars)
+        for a, b in zip(sec_on, sec_off, strict=True):
+            na_a, na_b = _is_na(a), _is_na(b)
+            assert na_a == na_b
+            if not na_a:
+                assert abs(float(a) - float(b)) < 1e-9
+        pol = (on.get("meta") or {}).get("request_security") or {}
+        assert pol.get("gaps_supported") is False
+        policies = pol.get("policies") or {}
+        assert "gaps_lookahead_provided" in policies
+        assert "gaps_applied" not in policies

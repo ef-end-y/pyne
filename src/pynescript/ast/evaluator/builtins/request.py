@@ -45,6 +45,7 @@ from .base import BuiltinDispatchMixin
 from .base import BuiltinHandler
 from .timeframe import SECONDS_PER_MONTH
 from .timeframe import _chart_period
+from .timeframe import _normalize_time_ms
 from .timeframe import timeframe_calendar_id
 from .timeframe import timeframe_in_seconds
 from .timeframe import timeframe_is_calendar_tf
@@ -106,12 +107,14 @@ _LOG = logging.getLogger("pynescript.request.security")
 _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "No multi-timeframe expression re-eval engine: HTF complex UDF/nested ta results are na.",
     "barmerge.gaps_on / gaps_off honored on HTF resample paths (na-gap series on bucket starts); "
-    "still unused on passthrough / provider / complex-na paths.",
+    "still unused on passthrough / chart-length provider stubs / complex-na / LTF.",
     "barmerge.lookahead_on / lookahead_off honored on HTF resample paths "
     "(historical bars see each HTF bucket's final value from the period start); "
-    "still unused on passthrough / provider / complex-na paths.",
+    "still unused on passthrough / chart-length provider stubs / complex-na / LTF.",
     "Same-symbol simple OHLCV on a coarser TF resamples chart bars by timestamp "
     "(htf_ohlcv_resample, last completed HTF bar by default — not full expression re-eval).",
+    "Provider/feed OHLCV that is already coarser than the chart and carries bar times "
+    "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma on coarser TF runs the TA helper on "
     "resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -1204,21 +1207,32 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return True
 
     def _select_htf_agg(
-        self, spec: Any, series: list[dict[str, float] | None], *, gaps_on: bool, lookahead_on: bool
+        self,
+        spec: Any,
+        series: list[dict[str, float] | None],
+        *,
+        gaps_on: bool,
+        lookahead_on: bool,
+        forming: list[dict[str, float] | None] | None = None,
     ) -> dict[str, float] | None:
         """Pick the HTF agg for the current bar under the merge flags.
 
         ``lookahead_on`` reads the bucket's final agg (historical leak from
         period start); ``gaps_on`` keeps it only on bucket-start bars.
+        Pass *forming* for provider-aligned series; otherwise the chart HTF
+        forming cache for *spec* is used.
         """
         i = self._chart_bar_index()
         agg = series[i] if series and 0 <= i < len(series) else None
-        forming = None
+        forming_series = forming
         if lookahead_on:
-            forming = self._htf_forming_series_for_tf(spec)
-            if forming is not None and 0 <= i < len(forming) and forming[i] is not None:
-                agg = forming[i]
-        if gaps_on and not self._htf_bar_is_bucket_start(series, lookahead_on=lookahead_on, forming=forming, index=i):
+            if forming_series is None:
+                forming_series = self._htf_forming_series_for_tf(spec)
+            if forming_series is not None and 0 <= i < len(forming_series) and forming_series[i] is not None:
+                agg = forming_series[i]
+        if gaps_on and not self._htf_bar_is_bucket_start(
+            series, lookahead_on=lookahead_on, forming=forming_series, index=i
+        ):
             agg = None
         return agg
 
@@ -1758,26 +1772,345 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return None
 
     def _ohlcv_closes(self, symbol: str, timeframe: str = "D", limit: int = REQUEST_OHLCV_LIMIT) -> list[float] | None:
+        payload = self._ohlcv_payload(symbol, str(timeframe), limit=limit)
+        if not payload:
+            return None
+        closes = payload.get("close") or []
+        return list(closes) if closes else None
+
+    def _ohlcv_payload(  # noqa: C901
+        self, symbol: str, timeframe: str, *, limit: int | None = None
+    ) -> dict[str, list[Any]] | None:
+        """OHLCV columns from data_feed / data_provider, including times when present.
+
+        *limit* truncates to the most recent N bars (``None`` keeps the full
+        payload so HTF alignment can see every provider bar).
+        """
+        cache = getattr(self, "_ohlcv_payload_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ohlcv_payload_cache = cache  # type: ignore[attr-defined]
+        key = (str(symbol), str(timeframe), limit)
+        if key in cache:
+            return cache[key]
+
+        def _store(payload: dict[str, list[Any]] | None) -> dict[str, list[Any]] | None:
+            if len(cache) >= 8:  # noqa: PLR2004 - tiny per-eval cache
+                cache.clear()
+            cache[key] = payload
+            return payload
+
         data_feed, data_provider = self._get_request_data()
         if data_feed is not None and hasattr(data_feed, "fetch_latest_ohlcv"):
             try:
-                ohlcv = data_feed.fetch_latest_ohlcv(symbol, str(timeframe), limit=limit)
-                if ohlcv:
-                    closes = [float(c[OHLCV_CLOSE_IDX]) for c in ohlcv if len(c) > OHLCV_CLOSE_IDX]
-                    if closes:
-                        return closes
+                n = int(limit) if limit is not None else max(REQUEST_OHLCV_LIMIT, self._chart_len_hint())
+                ohlcv = data_feed.fetch_latest_ohlcv(symbol, str(timeframe), limit=max(1, n))
+                rows = self._ohlcv_rows_to_payload(ohlcv, limit=limit)
+                if rows is not None:
+                    return _store(rows)
             except Exception:  # noqa: S110
                 pass
         if data_provider is not None and hasattr(data_provider, "fetch"):
             try:
                 data = data_provider.fetch(symbol, period="1d", interval=str(timeframe))
-                closes = data.get("close", [])
-                if closes:
-                    recent = closes[-limit:] if len(closes) >= limit else closes
-                    return [float(x) for x in recent]
+                rows = self._provider_dict_to_payload(data, limit=limit)
+                if rows is not None:
+                    return _store(rows)
             except Exception:  # noqa: S110
                 pass
-        return None
+        return _store(None)
+
+    def _chart_len_hint(self) -> int:
+        src = self._htf_source_lists()
+        if src is None:
+            return REQUEST_OHLCV_LIMIT
+        return max(REQUEST_OHLCV_LIMIT, len(src[0]))
+
+    @staticmethod
+    def _float_col(raw: Any, n: int, *, default: float = float("nan")) -> list[float]:
+        out: list[float] = []
+        seq = raw if isinstance(raw, (list, tuple)) else []
+        for i in range(n):
+            if i >= len(seq):
+                out.append(default)
+                continue
+            try:
+                out.append(float(seq[i]))
+            except (TypeError, ValueError):
+                out.append(default)
+        return out
+
+    def _ohlcv_rows_to_payload(self, ohlcv: Any, *, limit: int | None) -> dict[str, list[Any]] | None:
+        if not ohlcv:
+            return None
+        rows = [r for r in ohlcv if isinstance(r, (list, tuple)) and len(r) > OHLCV_CLOSE_IDX]
+        if not rows:
+            return None
+        if limit is not None and len(rows) > int(limit):
+            rows = rows[-int(limit) :]
+        n = len(rows)
+        times: list[Any] = []
+        for r in rows:
+            tm = _normalize_time_ms(r[0]) if r else None
+            times.append(tm if tm is not None else 0.0)
+        return {
+            "open": [float(r[1]) for r in rows],
+            "high": [float(r[2]) for r in rows],
+            "low": [float(r[3]) for r in rows],
+            "close": [float(r[OHLCV_CLOSE_IDX]) for r in rows],
+            "volume": [float(r[5]) if len(r) > 5 else 0.0 for r in rows],
+            "time": times,
+            "_n": n,
+        }
+
+    def _provider_dict_to_payload(self, data: Any, *, limit: int | None) -> dict[str, list[Any]] | None:
+        if not isinstance(data, dict):
+            return None
+        closes_raw = data.get("close") or []
+        if not isinstance(closes_raw, (list, tuple)) or not closes_raw:
+            return None
+        total = len(closes_raw)
+        start = 0
+        n = total
+        if limit is not None and total > int(limit):
+            start = total - int(limit)
+            n = int(limit)
+
+        def _slice(key: str) -> list[Any]:
+            raw = data.get(key) or []
+            if not isinstance(raw, (list, tuple)):
+                return []
+            return list(raw[start : start + n])
+
+        times_raw = _slice("time") or _slice("timestamp")
+        times: list[Any] = []
+        for t in times_raw:
+            tm = _normalize_time_ms(t)
+            times.append(tm if tm is not None else 0.0)
+        if len(times) < n:
+            times.extend([0.0] * (n - len(times)))
+        return {
+            "open": self._float_col(_slice("open"), n),
+            "high": self._float_col(_slice("high"), n),
+            "low": self._float_col(_slice("low"), n),
+            "close": self._float_col(_slice("close"), n),
+            "volume": self._float_col(_slice("volume"), n, default=0.0),
+            "time": times[:n],
+            "_n": n,
+        }
+
+    @staticmethod
+    def _median_bar_seconds(times: list[Any]) -> float | None:
+        """Median positive delta of *times* (ms or seconds) in seconds."""
+        deltas: list[float] = []
+        prev: float | None = None
+        for raw in times:
+            t = _normalize_time_ms(raw)
+            if t is None or t <= 0.0:
+                continue
+            if prev is not None:
+                d = t - prev
+                if d > 0:
+                    deltas.append(d)
+            prev = t
+        if not deltas:
+            return None
+        deltas.sort()
+        return deltas[len(deltas) // 2] / 1000.0
+
+    def _payload_is_coarser_htf(self, times: list[Any], n_prov: int, n_chart: int) -> bool:
+        """True when provider bars are fewer than chart and timestamps are coarser."""
+        if n_prov <= 0 or n_chart <= 0 or n_prov >= n_chart:
+            return False
+        if len(times) < n_prov:
+            return False
+        usable = 0
+        for t in times[:n_prov]:
+            tm = _normalize_time_ms(t)
+            if tm is not None and tm > 0.0:
+                usable += 1
+        if usable < n_prov:
+            return False
+        prov_sec = self._median_bar_seconds(times[:n_prov])
+        chart_sec = self._infer_chart_bar_seconds()
+        if prov_sec is not None and chart_sec is not None and chart_sec > 0:
+            return prov_sec > chart_sec * _HTF_BAR_SEC_MARGIN
+        return True
+
+    def _htf_bucket_id(self, spec: Any, t_ms: float) -> int | None:
+        """HTF bucket id for a millisecond timestamp under *spec*."""
+        if isinstance(spec, tuple) and spec and spec[0] == "cal":
+            tf_s = str(spec[1])
+            tz = spec[2] if len(spec) > 2 else "UTC"
+            return timeframe_calendar_id(t_ms, tf_s, tz)
+        bucket_ms = 0
+        if isinstance(spec, tuple) and spec and spec[0] == "ms":
+            try:
+                bucket_ms = int(spec[1])
+            except (TypeError, ValueError, IndexError):
+                return None
+        else:
+            try:
+                bucket_ms = int(spec)
+            except (TypeError, ValueError):
+                return None
+        if bucket_ms <= 0:
+            return None
+        return int(t_ms) // bucket_ms * bucket_ms
+
+    def _align_provider_htf_to_chart(
+        self,
+        payload: dict[str, list[Any]],
+        spec: Any,
+        n_chart: int,
+        chart_times: list[Any],
+    ) -> tuple[list[dict[str, float] | None], list[dict[str, float] | None]] | None:
+        """Map unique provider HTF bars onto chart bars: (completed, forming)."""
+        closes = payload.get("close") or []
+        n_prov = len(closes)
+        if n_prov <= 0 or n_chart <= 0:
+            return None
+        opens = payload.get("open") or []
+        highs = payload.get("high") or []
+        lows = payload.get("low") or []
+        volumes = payload.get("volume") or []
+        times = payload.get("time") or []
+
+        def _f(seq: list[Any], i: int, default: float = float("nan")) -> float:
+            if i >= len(seq):
+                return default
+            try:
+                return float(seq[i])
+            except (TypeError, ValueError):
+                return default
+
+        unique_buckets: list[int] = []
+        unique_aggs: list[dict[str, float]] = []
+        by_bucket: dict[int, int] = {}
+        for i in range(n_prov):
+            t_ms = _normalize_time_ms(times[i] if i < len(times) else None)
+            if t_ms is None or t_ms <= 0.0:
+                continue
+            b = self._htf_bucket_id(spec, t_ms)
+            if b is None:
+                continue
+            c = _f(closes, i)
+            agg = {
+                "open": _f(opens, i, c),
+                "high": _f(highs, i, c),
+                "low": _f(lows, i, c),
+                "close": c,
+                "volume": _f(volumes, i, 0.0),
+                "time": float(b),
+            }
+            idx = by_bucket.get(b)
+            if idx is None:
+                by_bucket[b] = len(unique_aggs)
+                unique_buckets.append(int(b))
+                unique_aggs.append(agg)
+            else:
+                unique_aggs[idx] = agg
+        n_u = len(unique_aggs)
+        if n_u == 0:
+            return None
+
+        completed: list[dict[str, float] | None] = [None] * n_chart
+        forming: list[dict[str, float] | None] = [None] * n_chart
+        u = -1
+        for i in range(n_chart):
+            t_ms = _normalize_time_ms(chart_times[i] if i < len(chart_times) else None)
+            if t_ms is None:
+                continue
+            b = self._htf_bucket_id(spec, t_ms)
+            if b is None:
+                continue
+            while u + 1 < n_u and unique_buckets[u + 1] <= b:
+                u += 1
+            if u < 0:
+                continue
+            if unique_buckets[u] == b:
+                forming[i] = unique_aggs[u]
+                completed[i] = unique_aggs[u - 1] if u > 0 else None
+            else:
+                completed[i] = unique_aggs[u]
+        return completed, forming
+
+    def _try_provider_htf_ohlcv(
+        self,
+        symbol: str,
+        expression: Any,
+        timeframe: Any,
+        *,
+        gaps_on: bool,
+        lookahead_on: bool,
+    ) -> Any | None:
+        """Align provider/feed HTF OHLCV onto chart bars, or None to fall through.
+
+        Chart-length / no-timestamp payloads stay stubs (unused merge). LTF
+        (more provider bars than chart bars, or not coarser spacing) is not
+        invented.
+        """
+        if not self._request_is_higher_tf(timeframe):
+            return None
+        spec = self._htf_tf_spec(timeframe)
+        if spec is None:
+            return None
+        fields = self._identify_simple_ohlcv_fields(expression)
+        if not fields:
+            return None
+        payload = self._ohlcv_payload(str(symbol), str(timeframe), limit=None)
+        if payload is None:
+            return None
+        src = self._htf_source_lists()
+        if src is None:
+            return None
+        _opens, _highs, _lows, _closes, _vols, chart_times = src
+        n_chart = len(_opens)
+        closes = payload.get("close") or []
+        times = payload.get("time") or []
+        n_prov = len(closes)
+        if not self._payload_is_coarser_htf(times, n_prov, n_chart):
+            return None
+        cache = getattr(self, "_provider_htf_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._provider_htf_cache = cache  # type: ignore[attr-defined]
+        fp = (
+            str(symbol),
+            str(timeframe),
+            n_prov,
+            n_chart,
+            spec,
+            _normalize_time_ms(times[0]) if times else 0.0,
+            _normalize_time_ms(times[-1]) if times else 0.0,
+            float(closes[-1]) if closes else 0.0,
+            _normalize_time_ms(chart_times[0]) if chart_times else 0.0,
+            _normalize_time_ms(chart_times[-1]) if chart_times else 0.0,
+        )
+        aligned = cache.get(fp)
+        if aligned is None:
+            aligned = self._align_provider_htf_to_chart(payload, spec, n_chart, chart_times)
+            if len(cache) >= 8:  # noqa: PLR2004 - tiny per-eval cache
+                cache.clear()
+            cache[fp] = aligned
+        if aligned is None:
+            return None
+        completed, forming = aligned
+        agg = self._select_htf_agg(
+            spec, completed, gaps_on=gaps_on, lookahead_on=lookahead_on, forming=forming
+        )
+        if gaps_on or lookahead_on:
+            self._mark_security_merge_applied(gaps_on=gaps_on, lookahead_on=lookahead_on)
+        na = float("nan")
+        if len(fields) == 1 and not isinstance(expression, (list, tuple)):
+            if agg is None:
+                return na
+            return self._htf_agg_field(agg, fields[0])
+        if agg is None:
+            out_na = [na] * len(fields)
+            return out_na if isinstance(expression, list) else tuple(out_na)
+        vals = [self._htf_agg_field(agg, f) for f in fields]
+        return vals if isinstance(expression, list) else tuple(vals)
 
     def _heikinashi_current_ohlc(self) -> tuple[float, float, float, float] | None:
         """Incremental Heikin-Ashi OHLC for the host chart (one update per bar).
@@ -1916,6 +2249,10 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           timestamp resample of chart OHLCV (``htf_ohlcv_resample``): last
           completed HTF bar by default; ``gaps_on`` / ``lookahead_on`` honored
           on this path (bucket-start na-gaps / historical final-from-period-start).
+        - **Provider/feed simple OHLCV** already coarser than the chart, with
+          bar times that align to chart bars → same merge (``provider_htf_ohlcv``).
+          Chart-length / no-timestamp provider series stay stubs
+          (``provider_ohlcv`` / ``provider_ohlcv_chart_stub``) with unused merge.
         - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma`` with
           bare OHLCV source + const length) on a **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
@@ -1927,9 +2264,10 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           **different** TF → ``na`` without full multi-TF re-eval.
         - **Same-symbol + same TF** pre-eval → chart eval is correct; allow.
         - **gaps / lookahead** (``barmerge.*``) are honored on the HTF resample
-          paths above and accepted-but-unused elsewhere (passthrough, provider
-          series, complex/foreign na). Presence vs effect is recorded in policy
-          metadata (``gaps_lookahead_provided`` vs ``gaps_applied`` /
+          paths above (chart and provider-backed coarser OHLCV) and
+          accepted-but-unused elsewhere (passthrough, chart-length provider
+          stubs, complex/foreign na, LTF). Presence vs effect is recorded in
+          policy metadata (``gaps_lookahead_provided`` vs ``gaps_applied`` /
           ``lookahead_applied``) rather than silently affecting values.
         """
         ticker_arg = args[0] if len(args) > 0 else "AAPL"
@@ -1954,7 +2292,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         # honors them it additionally notes gaps_applied / lookahead_applied
         # (and flips gaps_supported / lookahead_supported); presence without an
         # applied marker means the call fell through to a path where they are
-        # still unused (passthrough, complex/foreign na, provider series).
+        # still unused (passthrough, complex/foreign na, chart-length provider).
         if gaps_provided or lookahead_provided:
             self._note_security_policy(
                 "gaps_lookahead_provided",
@@ -1988,6 +2326,21 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         same_tf = self._request_tf_matches_chart(timeframe)
         na = float("nan")
         tf_s = str(timeframe) if timeframe is not None else ""
+
+        # Provider/feed already-coarser OHLCV with timestamps: align to chart
+        # bars and honor gaps/lookahead. Chart-length / no-timestamp stay stubs.
+        if not is_ha and not isinstance(expression, (HtfSimpleTaExpr, HtfOffsetExpr)):
+            if self._expression_is_simple_ohlcv_value(expression):
+                prov_htf = self._try_provider_htf_ohlcv(
+                    str(symbol), expression, timeframe, gaps_on=gaps_on, lookahead_on=lookahead_on
+                )
+                if prov_htf is not None:
+                    return self._security_return(
+                        prov_htf,
+                        "provider_htf_ohlcv",
+                        timeframe=tf_s,
+                        symbol=str(symbol),
+                    )
 
         def _maybe_htf_resample(expr: Any) -> Any | None:
             """Same-symbol simple OHLCV or allowlisted ta.* HTF path; None → fall through."""

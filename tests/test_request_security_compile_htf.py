@@ -33,6 +33,7 @@ from typing import Any
 from backend.runtime import Runtime
 from tests.test_request_data_feed import _aligned_1m_bars
 from tests.test_request_data_feed import _daily_bars
+from tests.test_request_data_feed import _day_aligned_hourly
 from tests.test_request_data_feed import _hour_bars
 
 
@@ -91,6 +92,20 @@ plot(close, title="c")
         assert abs(float(sec[-1]) - float(bars[-1]["close"])) > 1e-6
         hour1_close = float(bars[119]["close"])
         assert abs(float(sec[-1]) - hour1_close) < 1e-9
+
+    def test_hourly_to_daily_close_matches_interpret(self) -> None:
+        """Chart-length ChartOHLCVProvider stays on chart HTF helpers (compile dual-host)."""
+        bars = _day_aligned_hourly(72)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", close), title="sec")
+plot(close, title="c")
+"""
+        si, sc = _run_both(src, bars)
+        _assert_series_match(si, sc, "sec")
+        # Last completed UTC day close, not the forming hour.
+        assert abs(float(sc["series"]["sec"][-1]) - float(bars[47]["close"])) < 1e-9
+        assert abs(float(sc["series"]["sec"][-1]) - float(sc["series"]["c"][-1])) > 1e-6
 
     def test_htf_high_and_close_offset_match_interpret(self) -> None:
         bars = _hour_bars()
