@@ -2891,30 +2891,34 @@ class Runtime:
                 When exceeded, interpret stops early and returns partial
                 results with ``timed_out=True`` and ``error`` set.
                 ``None`` = no limit. Checked every 32 bars on the hot path.
-            realtime_last_bar: Interpret only. When true, the last bar is
-                visited with ``barstate.isrealtime=True`` (forming bar:
-                ``ishistory=False``). Default false keeps historical hosts
-                unchanged (``isrealtime`` always false). Ignored when
-                ``realtime_bars > 0`` or ``realtime_from_bar`` is set (those
-                define a multi-bar realtime window instead).
-            realtime_ticks: Interpret only. How many times to re-visit each
-                bar in the realtime window. Values ``>1`` also enable last-bar
-                realtime when no window is set via ``realtime_bars`` /
+            realtime_last_bar: When true, the last bar is visited with
+                ``barstate.isrealtime=True`` (forming bar: ``ishistory=False``).
+                Default false keeps historical hosts unchanged (``isrealtime``
+                always false). Ignored when ``realtime_bars > 0`` or
+                ``realtime_from_bar`` is set (those define a multi-bar
+                realtime window instead). Honored on interpret and
+                object-mode compile (numeric nopython stays historical).
+            realtime_ticks: How many times to re-visit each bar in the
+                realtime window. Values ``>1`` also enable last-bar realtime
+                when no window is set via ``realtime_bars`` /
                 ``realtime_from_bar`` (same as ``realtime_last_bar=True``).
                 Intermediate ticks discard plot cells so series length stays
                 one sample per bar; final tick keeps ``varip`` re-init
-                semantics from the evaluator. Default ``1``.
-            realtime_bars: Interpret only. When ``>0``, the last *K* bars
+                semantics. Default ``1``. Honored on interpret and
+                object-mode compile.
+            realtime_bars: When ``>0``, the last *K* bars
                 (``[n_bars - K, n_bars)``) are treated as realtime-forming
                 with multi-tick re-eval. Historical bars before that window
                 stay ``ishistory=True`` / ``isrealtime=False``. Default ``0``
                 keeps legacy last-bar-only behavior when
                 ``realtime_last_bar`` / ``realtime_ticks`` are used.
-            realtime_from_bar: Interpret only. Absolute start index of the
-                realtime window ``[realtime_from_bar, n_bars)``. When set,
-                overrides ``realtime_bars`` and last-bar-only flags for
-                window extent. Clamped to ``[0, n_bars)``. ``None`` (default)
-                does not open a window by itself.
+                Honored on interpret and object-mode compile.
+            realtime_from_bar: Absolute start index of the realtime window
+                ``[realtime_from_bar, n_bars)``. When set, overrides
+                ``realtime_bars`` and last-bar-only flags for window extent.
+                Clamped to ``[0, n_bars)``. ``None`` (default) does not open
+                a window by itself. Honored on interpret and object-mode
+                compile.
 
         Returns:
             dict with 'series': list of plotted values for each bar.
@@ -2942,7 +2946,14 @@ class Runtime:
         )
         _stats.count("run.by_mode", dim=mode_norm)
         if mode_norm == "compile":
-            return self._run_compiled(source_code, ohlcv_data)
+            return self._run_compiled(
+                source_code,
+                ohlcv_data,
+                realtime_last_bar=realtime_last_bar,
+                realtime_ticks=realtime_ticks,
+                realtime_bars=realtime_bars,
+                realtime_from_bar=realtime_from_bar,
+            )
         if mode_norm == "auto":
             return self._run_auto(
                 source_code,
@@ -2952,6 +2963,10 @@ class Runtime:
                 inputs=inputs,
                 timeout_seconds=timeout_seconds,
                 libraries=libraries,
+                realtime_last_bar=realtime_last_bar,
+                realtime_ticks=realtime_ticks,
+                realtime_bars=realtime_bars,
+                realtime_from_bar=realtime_from_bar,
             )
         if mode_norm not in ("interpret",):
             return _error_payload(
@@ -3853,6 +3868,11 @@ class Runtime:
         inputs: dict | None = None,
         timeout_seconds: float | None = None,
         libraries: list[dict[str, Any]] | None = None,
+        *,
+        realtime_last_bar: bool = False,
+        realtime_ticks: int = 1,
+        realtime_bars: int = 0,
+        realtime_from_bar: int | None = None,
     ) -> dict:
         """Try compile; fall back to interpret on eligibility fail or any error.
 
@@ -3874,6 +3894,10 @@ class Runtime:
                 inputs=inputs,
                 timeout_seconds=timeout_seconds,
                 libraries=libraries,
+                realtime_last_bar=realtime_last_bar,
+                realtime_ticks=realtime_ticks,
+                realtime_bars=realtime_bars,
+                realtime_from_bar=realtime_from_bar,
             )
             if isinstance(result, dict):
                 result["mode"] = result.get("mode") or "interpret"
@@ -3898,7 +3922,14 @@ class Runtime:
 
         compile_err: str | None = reason or None
         if eligible:
-            compiled_result = self._run_compiled(source_code, ohlcv_data)
+            compiled_result = self._run_compiled(
+                source_code,
+                ohlcv_data,
+                realtime_last_bar=realtime_last_bar,
+                realtime_ticks=realtime_ticks,
+                realtime_bars=realtime_bars,
+                realtime_from_bar=realtime_from_bar,
+            )
             if "error" not in compiled_result:
                 _HOST_COMPILE_FAIL_CACHE.pop(src_key, None)
                 compiled_result["mode"] = "compile"
@@ -3924,6 +3955,10 @@ class Runtime:
             inputs=inputs,
             timeout_seconds=timeout_seconds,
             libraries=libraries,
+            realtime_last_bar=realtime_last_bar,
+            realtime_ticks=realtime_ticks,
+            realtime_bars=realtime_bars,
+            realtime_from_bar=realtime_from_bar,
         )
         if isinstance(result, dict):
             result["mode"] = result.get("mode") or "interpret"
@@ -3932,12 +3967,25 @@ class Runtime:
                 result["compile_fallback_reason"] = compile_err
         return result
 
-    def _run_compiled(self, source_code: str, ohlcv_data: list[dict]) -> dict:
+    def _run_compiled(
+        self,
+        source_code: str,
+        ohlcv_data: list[dict],
+        *,
+        realtime_last_bar: bool = False,
+        realtime_ticks: int = 1,
+        realtime_bars: int = 0,
+        realtime_from_bar: int | None = None,
+    ) -> dict:
         """Execute via Numba numeric or pure-Python object-mode bar loop.
 
         Numba is required only for pure-numeric scripts; object-mode (strategy,
         collections, drawings) works without it. Host caches successful
         ``CompiledScript`` values by raw-source sha256.
+
+        Realtime window kwargs match :meth:`Runtime.run`. Numeric nopython
+        stays historical; an active window re-emits object mode so the tick
+        loop can honor ``var`` / ``varip`` / ``barstate`` / ``once``.
         """
         t_total0 = time.perf_counter()
         _clear_pine_logger()
@@ -4048,7 +4096,30 @@ class Runtime:
                 )
             except Exception:
                 pass
-            series_map = compiled.run(opens, highs, lows, closes, volumes, time=times)
+            n_bars_run = int(len(closes)) if closes is not None else 0
+            rt_first, rt_ticks = _resolve_realtime_first(
+                n_bars_run,
+                realtime_ticks=realtime_ticks,
+                realtime_bars=realtime_bars,
+                realtime_from_bar=realtime_from_bar,
+                realtime_last_bar=realtime_last_bar,
+            )
+            if rt_first is not None and not compiled.object_mode:
+                compiled = compile_script(
+                    source_code,
+                    use_cache=False,
+                    force_object_mode=True,
+                )
+            series_map = compiled.run(
+                opens,
+                highs,
+                lows,
+                closes,
+                volumes,
+                time=times,
+                rt_first=rt_first,
+                rt_ticks=rt_ticks,
+            )
         except Exception as e:
             run_ms = (time.perf_counter() - t_run0) * 1000.0
             return _attach_logs_profile(

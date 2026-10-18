@@ -20,7 +20,7 @@ when moving it between tables.
 | D-01 | Strategy exits | Trail stops (`trail_*`) are OHLC-path approximations — no tick path | [§ Strategy → exits](#sec-exit-brackets) |
 | D-02 | Strategy risk | No full reference risk engine: `max_position_size` is %-of-equity (reference: contracts); cash thresholds in account units without FX conversion; tick-accurate accounting | [§ Strategy → risk](#sec-risk-compile) |
 | D-03 | Trade queries | Per-trade `max_drawdown` / `max_runup` are OHLC-path approximations, not tick-accurate | [§ Strategy → trade queries](#sec-trade-queries) |
-| D-04 | Realtime `var` / `varip` | No live datafeed-driven ticks; no compile-mode realtime multi-pass; no deep rollback of in-place container mutations or broker side effects | [§ Evaluator → var/varip](#sec-varip) |
+| D-04 | Realtime `var` / `varip` | No live datafeed-driven ticks; no deep rollback of in-place container mutations or broker side effects. Compile object-mode honors the interpret realtime window (`var` / `varip` / `barstate` / `once`); numeric nopython stays historical | [§ Evaluator → var/varip](#sec-varip) |
 | D-06 | `request.security` | No full HTF expression re-eval engine; `gaps` / `lookahead` still unused on passthrough / provider / complex-na paths and for LTF requests | [§ Request → security](#sec-security) |
 
 ### Fixed
@@ -141,13 +141,15 @@ Full-list `_ema` / `_ema_state_step` and incremental / Numba paths all use **SMA
 | `Runtime.run(..., realtime_from_bar=I)` | Absolute window start: bars in `[I, n_bars)` are realtime-forming (overrides `realtime_bars` / last-bar-only for window extent). |
 | When `isrealtime` | Evaluator **re-evaluates `varip` RHS** each visit; `var` does **not** re-init (keeps prior binding). This is a simplified stand-in for reference tick persistence — not a full rollback of non-`varip` series/strategy state between ticks. |
 
-**`once` (0.4.4):** interpret commits the fired flag only when `barstate.isconfirmed` (so unconfirmed realtime ticks can re-run the body). Compile always treats the bar as confirmed. Side effects inside the body still follow the `var` / `varip` contract above — there is no extra snapshot of non-`varip` state just for `once`.
+**`once` (0.4.4 / D-04 compile):** interpret and object-mode compile commit the fired flag only when `barstate.isconfirmed` (so unconfirmed realtime ticks can re-run the body). Numeric nopython stays historical (`isconfirmed` always true). Side effects inside the body still follow the `var` / `varip` contract above — there is no extra snapshot of non-`varip` state just for `once`.
 
 **Intrabar rollback (0.6.0):** on interpret realtime bars, intermediate ticks snapshot the `var` scope (context bindings + series `.current` + declaration set) and restore it after the visit, so every tick starts from confirmed state and only the final tick commits. `varip` names (tracked in `_varip_declarations`) are excluded and persist. Shallow by design: in-place mutations of referenced containers (arrays / matrices / UDTs) and broker side effects (fills, pending orders) are not rolled back; history pushes and the series-assign map are left alone so `x[1]` keeps working on forming bars.
 
-**Not yet:** deep rollback of in-place container mutations or broker side effects, live datafeed-driven ticks, or compile-mode realtime multi-pass.
+**Compile multi-pass (D-04):** object-mode `execute_script_compiled(..., rt_first=None, rt_ticks=1)` re-visits bars in `[rt_first, n_bars)` `rt_ticks` times with `__isrealtime` / `__isconfirmed` / `__ishistory` / `__isnew` per tick. Intermediate ticks overwrite the same plot cell (series length stays one sample per bar) and do not latch `once`. `varip` re-inits while `var` commits on the confirmed tick. Host `_run_compiled` forwards the same `Runtime.run` realtime kwargs; an active window re-emits object mode so numeric scripts can opt in without changing the historical nopython path. Disk IR cache v19.
 
-**Track:** audit AGENT_02; host kwargs in `pynescript.runtime.host.Runtime.run`.
+**Not yet:** deep rollback of in-place container mutations or broker side effects, live datafeed-driven ticks.
+
+**Track:** audit AGENT_02; host kwargs in `pynescript.runtime.host.Runtime.run`; dual-host tests in `tests/test_compiler_realtime.py`.
 
 <span id="sec-tf-change"></span>
 ### `timeframe.change` (calendar D/W/M, fixed-width otherwise)

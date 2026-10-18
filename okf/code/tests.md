@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T15:07:49Z
+  at: 2026-10-18T18:53:15Z
 sources:
   - id: tree
     resource: "tests"
@@ -36,6 +36,7 @@ okf_lock: generated
 * `test_compiler_engine_r8.py` — TestEndToEndDuplicateTitles, TestIrShareMetadataGate, TestLegacyArityAndCache, TestNormalizeAndCoerce, TestTranspileTitlesMatchRun, TestUniquifyAndPack
 * `test_compiler_numba.py` — TestAdxDmiBuiltinScriptPlotParity, TestCompileAndRun, TestCompileCoverageSprint, TestCompileCoverageSprint3, TestCompileCoverageSprint4, TestCompileCoverageSprint5, TestCompileCoverageSprint6Materialize, TestCompileCoverageSprint6TaBuiltins, TestCompileEngineRound6, TestCompileRound4IncKernels, TestCompileRound5IncKernels, TestCompileRound6DmiSupertrendAlma
 * `test_compiler_objects.py` — TestCollectionObjectModeParity, TestDrawingCompile, TestMapCompile, TestNumericStillNumba, TestObjectModeNaArithmetic, TestSet05MissingNames, TestUDTCompile
+* `test_compiler_realtime.py` — test_historical_default_compile_isrealtime_false, test_numeric_nopython_stays_historical_without_object_features, test_object_mode_execute_keeps_six_arg_positional, test_once_unconfirmed_ticks_can_refire, test_realtime_bars_default_zero_keeps_historical, test_realtime_from_bar_window, test_realtime_last_bar_sets_isrealtime_on_compile, test_realtime_last_bar_single_tick_sets_isrealtime, test_realtime_ticks_implies_last_bar_realtime, test_varip_reinit_under_realtime_last_bar_multi_tick, test_varip_vs_var_across_last_two_realtime_bars
 * `test_compiler_strategy.py` — TestCompileBrokerCommissionParity, TestCompileExitAndSeriesParity, TestCompileStrategyRun, TestCompileStrategyTranspile, TestCompileTradeQueries, TestStrategyRiskAndQtyNameErrors, test_compile_mode_still_works_for_numeric_sma
 * `test_corpus_collections_r8.py` — TestArrayNegativeIndexRuntime, TestArraySoftNaRuntime, TestIntentionalRuntimeErrorStillFails, TestMapMatrixSoftNaRuntime, TestStrMatchAndPosRuntime
 * `test_corpus_runtime_expected_fail.py` — test_corpus_rel_path_normalizes_under_tests_data, test_expected_fail_rels_includes_docs_demos, test_is_expected_fail_accepts_absolute_and_basename, test_is_expected_fail_does_not_promote_unknown_paths, test_is_expected_fail_path_and_error_required, test_parse_and_timeout_routes_would_classify_listed_only

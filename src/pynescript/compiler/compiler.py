@@ -36,7 +36,8 @@ Host packing / contracts
 - Generated entry point is always
   ``execute_script_compiled(open, high, low, close, vol, time)`` — the host
   is :mod:`pynescript.compiler.engine` (synthetic ``bar*60_000`` ms when time
-  omitted; Runtime passes real OHLCV bar-open ms).
+  omitted; Runtime passes real OHLCV bar-open ms). Object-mode adds optional
+  ``rt_first=None, rt_ticks=1`` kwargs (defaults keep 6-arg calls valid).
 - ``request.security`` / ``security``: same-symbol allowlisted HTF OHLCV /
   ``close[1]`` / simple ``ta.*`` resample in object mode (interpret helpers);
   same-TF / LTF simple OHLCV still passthrough. Foreign tickers and complex
@@ -633,6 +634,8 @@ class CompilerVisitor(NodeVisitor):
         # a ``once`` inside a UDF forces object mode + module-level flags.
         self.once_flags: list[str] = []
         self.once_in_function: bool = False
+        # ``varip`` names: re-init when ``__isrealtime`` (object-mode tick loop).
+        self.varip_vars: set[str] = set()
         self.user_funcs: set[str] = set()  # user-defined function names (Pine ids)
         # Pine UDF name → safe Python def name (``from`` → ``from_``)
         self.func_name_map: dict[str, str] = {}
@@ -1082,6 +1085,7 @@ class CompilerVisitor(NodeVisitor):
         self._emit_series_local_state(lines, indent="    ")
         self._emit_fixed_state(lines, indent="    ")
         self._emit_once_flags(lines, indent="    ")
+        self._emit_barstate_flag_inits(lines, indent="    ")
         for idx in range(len(self.plots)):
             lines.append(f"    plot_{idx} = np.full(n_bars, np.nan)")
         lines.append("    for __bar_idx in range(n_bars):")
@@ -1123,7 +1127,7 @@ class CompilerVisitor(NodeVisitor):
 
         lines.extend(
             [
-                "def execute_script_compiled(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr):",
+                "def execute_script_compiled(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, rt_first=None, rt_ticks=1):",
                 "    n_bars = len(close_arr)",
                 "    open_arr = np.asarray(open_arr, dtype=np.float64)",
                 "    high_arr = np.asarray(high_arr, dtype=np.float64)",
@@ -1198,32 +1202,8 @@ class CompilerVisitor(NodeVisitor):
                 lines.append(f"    {name} = None")
         for idx in range(len(self.plots)):
             lines.append(f"    plot_{idx} = np.full(n_bars, np.nan)")
-
-        lines.append("    for __bar_idx in range(n_bars):")
-        if self.needs_heikinashi:
-            for hl in self._heikinashi_bar_update_lines():
-                lines.append(f"        {hl}")
-        if self.uses_strategy:
-            # One-call bar setup + pending fill (same order as Runtime:
-            # process pending → evaluate body). Broker uses _mark for market fills.
-            lines.append(
-                "        __strategy.begin_bar("
-                "__bar_idx, "
-                "open_arr[__bar_idx], high_arr[__bar_idx], "
-                "low_arr[__bar_idx], close_arr[__bar_idx], "
-                "int(time_arr[__bar_idx]) if time_arr[__bar_idx] == time_arr[__bar_idx] else 0)"
-            )
-        if not body_lines and not self.uses_strategy:
-            lines.append("        pass")
-        for line in body_lines:
-            line = line.replace("\n", "\n        ")
-            lines.append(f"        {line}")
-        if not body_lines and self.uses_strategy:
-            lines.append("        pass")
-        if self.uses_strategy:
-            lines.append("        __strategy_position_size_arr[__bar_idx] = float(__strategy.position_size)")
-            lines.append("        __strategy_position_avg_price_arr[__bar_idx] = float(__strategy.position_avg_price)")
-            lines.append("        __strategy_closed_trades_arr[__bar_idx] = float(__strategy.closed_trades)")
+        self._emit_object_realtime_prelude(lines, indent="    ")
+        self._emit_object_mode_bar_loop(lines, body_lines)
 
         # Use repr so titles with apostrophes (Spearman's Rho) stay valid Python.
         dict_items = [f"{p['title']!r}: plot_{i}" for i, p in enumerate(self.plots)]
@@ -1282,6 +1262,103 @@ class CompilerVisitor(NodeVisitor):
             return
         for name in self.once_flags:
             lines.append(f"{indent}{name} = False")
+
+    def _emit_barstate_flag_inits(self, lines: list[str], *, indent: str = "    ") -> None:
+        """Historical barstate defaults (numeric loop never updates these)."""
+        lines.append(f"{indent}__isrealtime = False")
+        lines.append(f"{indent}__isconfirmed = True")
+        lines.append(f"{indent}__ishistory = True")
+        lines.append(f"{indent}__isnew = True")
+
+    def _var_init_cond(self, is_varip: bool) -> str:
+        """First-bar (and realtime-varip) predicate for ``var`` / ``varip`` init."""
+        if is_varip:
+            return "(__bar_idx == 0 or __isrealtime)"
+        return "(__bar_idx == 0)"
+
+    def _rt_snap_scalars(self) -> list[str]:
+        """Python locals rolled back on unconfirmed realtime ticks (not varip)."""
+        names = (self.scalar_vars | self.map_vars) - self.varip_vars
+        return [n for n in sorted(names) if n.isidentifier()]
+
+    def _emit_object_realtime_prelude(self, lines: list[str], *, indent: str = "    ") -> None:
+        """Normalize ``rt_first`` / ``rt_ticks`` and seed barstate flags."""
+        self._emit_barstate_flag_inits(lines, indent=indent)
+        lines.append(f"{indent}try:")
+        lines.append(f"{indent}    __rt_ticks = int(rt_ticks)")
+        lines.append(f"{indent}except (TypeError, ValueError):")
+        lines.append(f"{indent}    __rt_ticks = 1")
+        lines.append(f"{indent}if __rt_ticks < 1:")
+        lines.append(f"{indent}    __rt_ticks = 1")
+        lines.append(f"{indent}if rt_first is None:")
+        lines.append(f"{indent}    __rt_first = n_bars")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    try:")
+        lines.append(f"{indent}        __rt_first = int(rt_first)")
+        lines.append(f"{indent}    except (TypeError, ValueError):")
+        lines.append(f"{indent}        __rt_first = 0")
+        lines.append(f"{indent}    if __rt_first < 0:")
+        lines.append(f"{indent}        __rt_first = 0")
+
+    def _emit_rt_tick_snapshot(self, lines: list[str], *, indent: str) -> None:
+        """Shallow snapshot before an unconfirmed realtime tick."""
+        scalars = self._rt_snap_scalars()
+        lines.append(f"{indent}__rt_snap_ndraw = len(__drawings)")
+        for name in scalars:
+            lines.append(f"{indent}__rt_snap_{name} = {name}")
+        for flag in self.once_flags:
+            lines.append(f"{indent}__rt_snap_{flag} = {flag}")
+        for st_name, _size in self.fixed_state:
+            lines.append(f"{indent}__rt_snap_{st_name} = {st_name}.copy()")
+
+    def _emit_rt_tick_restore(self, lines: list[str], *, indent: str) -> None:
+        """Restore var/once/TA after an unconfirmed realtime tick (varip persists)."""
+        lines.append(f"{indent}del __drawings[__rt_snap_ndraw:]")
+        for name in self._rt_snap_scalars():
+            lines.append(f"{indent}{name} = __rt_snap_{name}")
+        for flag in self.once_flags:
+            lines.append(f"{indent}{flag} = __rt_snap_{flag}")
+        for st_name, _size in self.fixed_state:
+            lines.append(f"{indent}{st_name}[:] = __rt_snap_{st_name}")
+
+    def _emit_object_mode_bar_loop(self, lines: list[str], body_lines: list[str]) -> None:
+        """Object-mode bar loop with optional realtime multi-tick re-visits."""
+        lines.append("    for __bar_idx in range(n_bars):")
+        if self.needs_heikinashi:
+            for hl in self._heikinashi_bar_update_lines():
+                lines.append(f"        {hl}")
+        if self.uses_strategy:
+            # One-call bar setup + pending fill (same order as Runtime:
+            # process pending → evaluate body). Broker uses _mark for market fills.
+            lines.append(
+                "        __strategy.begin_bar("
+                "__bar_idx, "
+                "open_arr[__bar_idx], high_arr[__bar_idx], "
+                "low_arr[__bar_idx], close_arr[__bar_idx], "
+                "int(time_arr[__bar_idx]) if time_arr[__bar_idx] == time_arr[__bar_idx] else 0)"
+            )
+        lines.append("        __bar_rt = __bar_idx >= __rt_first")
+        lines.append("        __n_ticks = __rt_ticks if __bar_rt else 1")
+        lines.append("        for __tick_i in range(__n_ticks):")
+        lines.append("            __isrealtime = __bar_rt")
+        lines.append("            __ishistory = (not __bar_rt)")
+        lines.append("            __isnew = (not __bar_rt) or (__tick_i == 0)")
+        lines.append("            __isconfirmed = (not __bar_rt) or (__tick_i == __n_ticks - 1)")
+        lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
+        self._emit_rt_tick_snapshot(lines, indent="                ")
+        if not body_lines and not self.uses_strategy:
+            lines.append("            pass")
+        for line in body_lines:
+            line = line.replace("\n", "\n            ")
+            lines.append(f"            {line}")
+        if not body_lines and self.uses_strategy:
+            lines.append("            pass")
+        lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
+        self._emit_rt_tick_restore(lines, indent="                ")
+        if self.uses_strategy:
+            lines.append("        __strategy_position_size_arr[__bar_idx] = float(__strategy.position_size)")
+            lines.append("        __strategy_position_avg_price_arr[__bar_idx] = float(__strategy.position_avg_price)")
+            lines.append("        __strategy_closed_trades_arr[__bar_idx] = float(__strategy.closed_trades)")
 
     # ---------------------------------------------------------------- statements
     def visit_TypeDef(self, node: ast.TypeDef):
@@ -1639,6 +1716,9 @@ class CompilerVisitor(NodeVisitor):
 
         name = node.target.id
         is_var = hasattr(node, "mode") and isinstance(node.mode, (ast.Var, ast.VarIp))
+        is_varip = hasattr(node, "mode") and isinstance(node.mode, ast.VarIp)
+        if is_varip:
+            self.varip_vars.add(name)
 
         type_node_early = getattr(node, "type", None)
         type_id_early = type_node_early.id if isinstance(type_node_early, ast.Name) else None
@@ -1650,7 +1730,7 @@ class CompilerVisitor(NodeVisitor):
                 return self._emit_loop_assign(name, node.value)
             val = self.visit(node.value)
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         # Pine for/while used as an expression: last body value → target.
@@ -1793,7 +1873,10 @@ class CompilerVisitor(NodeVisitor):
                 # list handles so array.push mutations accumulate across bars).
                 sl_arr = self._series_local_arr(name)
                 if is_var or name in getattr(self, "var_locals", set()):
-                    return f"{sl_arr}[__bar_idx] = {val} if __bar_idx == 0 else {sl_arr}[__bar_idx - 1]"
+                    return (
+                        f"{sl_arr}[__bar_idx] = {val} if {self._var_init_cond(is_varip)} "
+                        f"else {sl_arr}[__bar_idx - 1]"
+                    )
                 return f"{sl_arr}[__bar_idx] = {val}"
             if self._is_map_new(node.value) or self._is_typed_map(type_node):
                 self.object_mode = True
@@ -1834,7 +1917,7 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.discard(f"{name}_arr")
             self.arrays.discard(f"{loc}_arr")
             if is_var:
-                return f"if __bar_idx == 0:\n    {loc} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {loc} = {val}"
             return f"{loc} = {val}"
 
         # `var table t = na` / `label l = na` / `matrix m = f()` → scalar handle
@@ -1843,7 +1926,7 @@ class CompilerVisitor(NodeVisitor):
             self.scalar_vars.add(name)
             self.arrays.discard(f"{name}_arr")
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         # `var MyState s = na` / `var chart.point p = na` → object-dtype series
@@ -1856,7 +1939,7 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.add(f"{name}_arr")
             if is_var:
                 return (
-                    f"if __bar_idx == 0:\n"
+                    f"if {self._var_init_cond(is_varip)}:\n"
                     f"    {name}_arr[__bar_idx] = {val}\n"
                     f"else:\n"
                     f"    {name}_arr[__bar_idx] = {name}_arr[__bar_idx - 1]"
@@ -1877,6 +1960,8 @@ class CompilerVisitor(NodeVisitor):
                 self.local_sequence_vars.add(name)
                 return f"{self._py_ident(name)} = {val}"
             if is_var:
+                if is_varip:
+                    return f"if {name} is None or __isrealtime:\n    {name} = {val}"
                 return f"if {name} is None:\n    {name} = {val}"
             return f"{name} = {val}"
 
@@ -1886,7 +1971,7 @@ class CompilerVisitor(NodeVisitor):
             self.scalar_vars.add(name)
             self.string_scalars.add(name)
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         # String/color RHS: bar-constant → scalar; per-bar (ternary colors, …) →
@@ -1912,7 +1997,7 @@ class CompilerVisitor(NodeVisitor):
                 self.scalar_vars.add(name)
                 self.string_scalars.add(name)
                 if is_var:
-                    return f"if __bar_idx == 0:\n    {name} = {val}"
+                    return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
                 return f"{name} = {val}"
             # Per-bar string/color series (e.g. close > open ? color.green : color.red)
             # Also `color x = f()` where UDF returns a color string.
@@ -1921,7 +2006,7 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.add(arr_n)
             if is_var:
                 return (
-                    f"if __bar_idx == 0:\n"
+                    f"if {self._var_init_cond(is_varip)}:\n"
                     f"    {arr_n}[__bar_idx] = {val}\n"
                     f"else:\n"
                     f"    {arr_n}[__bar_idx] = {arr_n}[__bar_idx - 1]"
@@ -1931,7 +2016,7 @@ class CompilerVisitor(NodeVisitor):
         # Map / scalar object vars (var m = map.new...)
         if name in self.map_vars or name in self.scalar_vars:
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         # Existing string series re-assign / already tracked
@@ -1941,7 +2026,7 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.add(arr_n)
             if is_var:
                 return (
-                    f"if __bar_idx == 0:\n"
+                    f"if {self._var_init_cond(is_varip)}:\n"
                     f"    {arr_n}[__bar_idx] = {val}\n"
                     f"else:\n"
                     f"    {arr_n}[__bar_idx] = {arr_n}[__bar_idx - 1]"
@@ -1957,7 +2042,7 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.discard(f"{name}_arr")
             rhs = "{}" if self._is_map_new(node.value) else val
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {rhs}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {rhs}"
             return f"{name} = {rhs}"
 
         # UDT series / chart.point dict / udt_index handle / UDT ref (p2 = p1)
@@ -1981,7 +2066,7 @@ class CompilerVisitor(NodeVisitor):
             self.arrays.add(f"{name}_arr")
             if is_var:
                 return (
-                    f"if __bar_idx == 0:\n"
+                    f"if {self._var_init_cond(is_varip)}:\n"
                     f"    {name}_arr[__bar_idx] = {val}\n"
                     f"else:\n"
                     f"    {name}_arr[__bar_idx] = {name}_arr[__bar_idx - 1]"
@@ -1994,7 +2079,7 @@ class CompilerVisitor(NodeVisitor):
             self.scalar_vars.add(name)
             self.arrays.discard(f"{name}_arr")
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         if self._is_array_or_matrix_handle(node.value):
@@ -2002,7 +2087,7 @@ class CompilerVisitor(NodeVisitor):
             self.scalar_vars.add(name)
             self.arrays.discard(f"{name}_arr")
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         # Sequence / list RHS must not land in float64 series
@@ -2012,7 +2097,7 @@ class CompilerVisitor(NodeVisitor):
             self.scalar_vars.add(name)
             self.arrays.discard(f"{name}_arr")
             if is_var:
-                return f"if __bar_idx == 0:\n    {name} = {val}"
+                return f"if {self._var_init_cond(is_varip)}:\n    {name} = {val}"
             return f"{name} = {val}"
 
         # Non-numeric cast results / opaque object handles → safe float series
@@ -2020,7 +2105,10 @@ class CompilerVisitor(NodeVisitor):
             self.object_mode = True
             self.arrays.add(f"{name}_arr")
             if is_var:
-                return f"{name}_arr[__bar_idx] = {val} if __bar_idx == 0 else {name}_arr[__bar_idx-1]"
+                return (
+                    f"{name}_arr[__bar_idx] = {val} if {self._var_init_cond(is_varip)} "
+                    f"else {name}_arr[__bar_idx-1]"
+                )
             return f"{name}_arr[__bar_idx] = {val}"
 
         if not val:
@@ -2042,7 +2130,10 @@ class CompilerVisitor(NodeVisitor):
         if self._looks_like_const_expr(store_val):
             self.const_like_values[name] = store_val
         if is_var:
-            return f"{name}_arr[__bar_idx] = {store_val} if __bar_idx == 0 else {name}_arr[__bar_idx-1]"
+            return (
+                f"{name}_arr[__bar_idx] = {store_val} if {self._var_init_cond(is_varip)} "
+                f"else {name}_arr[__bar_idx-1]"
+            )
         return f"{name}_arr[__bar_idx] = {store_val}"
 
     def _looks_like_const_expr(self, expr: str) -> bool:
@@ -3963,19 +4054,27 @@ class CompilerVisitor(NodeVisitor):
         return _udt_field(orig_val, node.attr)
 
     def _emit_barstate(self, attr: str) -> str:
-        """barstate.* flags for compile path."""
+        """barstate.* flags for compile path.
+
+        ``isrealtime`` / ``isconfirmed`` / ``ishistory`` / ``isnew`` read the
+        per-tick locals set by the object-mode loop (numeric keeps historical
+        constants). ``islast`` stays last index; ``isnew`` is true on the first
+        visit of a bar.
+        """
         if attr in ("isfirst", "isfirstconfirmedhistory"):
             return "(__bar_idx == 0)"
-        if attr in ("islast", "islastconfirmedhistory"):
+        if attr == "islast":
             return "(__bar_idx == n_bars - 1)"
+        if attr == "islastconfirmedhistory":
+            return "((__bar_idx == n_bars - 1) and (not __isrealtime))"
         if attr == "ishistory":
-            return "(__bar_idx < n_bars - 1)"
+            return "__ishistory"
         if attr == "isrealtime":
-            return "False"
+            return "__isrealtime"
         if attr == "isnew":
-            return "True"
+            return "__isnew"
         if attr == "isconfirmed":
-            return "True"
+            return "__isconfirmed"
         return "False"
 
     def _emit_array_or_matrix(self, func_name: str, args: list[str], kwargs: dict[str, str]) -> str:
@@ -8899,8 +8998,9 @@ class CompilerVisitor(NodeVisitor):
     def visit_Once(self, node: ast.Once):
         """Lower ``once [cond]`` to a persistent fired flag + nested if.
 
-        Compile is historical (``barstate.isconfirmed`` is always true), so the
-        flag is set as soon as the body runs. Realtime rollback is interpret-only.
+        The fired flag latches only when ``__isconfirmed`` (historical bars and
+        the last tick of a realtime bar). Unconfirmed intermediate ticks may
+        re-run the body; snapshot/restore also rolls the flag back.
         """
         flag = self._alloc_once_flag()
         test = "True" if node.test is None else self._as_bool_cond(self.visit(node.test), node=node.test)
@@ -8914,7 +9014,8 @@ class CompilerVisitor(NodeVisitor):
                 n += 1
         if n == 0:
             lines.append("        pass")
-        lines.append(f"        {flag} = True")
+        lines.append("        if __isconfirmed:")
+        lines.append(f"            {flag} = True")
         return "\n".join(lines)
 
     def visit_FunctionDef(self, node: ast.FunctionDef):
