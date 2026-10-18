@@ -1298,3 +1298,40 @@ strategy.exit("X", "L", limit=110.0)
         for ev in result["events"]:
             assert type(ev["bar_time"]) is int, f"bar_time={ev['bar_time']!r} kind={ev['kind']}"
             assert type(ev["bar_index"]) is int
+
+
+class TestCompileRiskDayResume:
+    """D-02: compile broker resumes ``max_intraday_loss`` on the next tz day."""
+
+    def test_intraday_loss_resumes_next_utc_day(self) -> None:
+        from pynescript.compiler.strategy_broker import CompileStrategyBroker
+
+        day1 = 1_704_067_200_000  # 2024-01-01 00:00 UTC
+        b = CompileStrategyBroker(initial_capital=10_000.0)
+        b.begin_bar(0, 100.0, 100.0, 100.0, 100.0, bar_time=day1)
+        b.risk_max_intraday_loss(500.0, "cash")
+        b._day_pnl = -600.0
+        b.entry("L", "long", 1.0)
+        assert b.position_size == 0.0
+        assert b.entries_blocked is True
+        b.begin_bar(1, 100.0, 100.0, 100.0, 100.0, bar_time=day1 + 86_400_000)
+        b.entry("L2", "long", 1.0)
+        assert b.position_size == pytest.approx(1.0)
+        assert b.entries_blocked is False
+
+    def test_max_drawdown_stays_blocked_across_utc_day_roll(self) -> None:
+        from pynescript.compiler.strategy_broker import CompileStrategyBroker
+
+        day1 = 1_704_067_200_000
+        b = CompileStrategyBroker(initial_capital=10_000.0)
+        b.begin_bar(0, 100.0, 100.0, 100.0, 100.0, bar_time=day1)
+        b.risk_max_drawdown(50.0)
+        b._equity_peak = 10_000.0
+        b._max_drawdown = 100.0
+        b.entry("L", "long", 1.0)
+        assert b.position_size == 0.0
+        assert b.entries_blocked is True
+        b.begin_bar(1, 100.0, 100.0, 100.0, 100.0, bar_time=day1 + 86_400_000)
+        b.entry("L2", "long", 1.0)
+        assert b.position_size == 0.0
+        assert b.entries_blocked is True

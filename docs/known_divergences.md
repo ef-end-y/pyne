@@ -18,7 +18,7 @@ when moving it between tables.
 | ID | Area | Divergence | Details |
 |----|------|------------|---------|
 | D-01 | Strategy exits | Trail stops (`trail_*`) are OHLC-path approximations — no tick path | [§ Strategy → exits](#sec-exit-brackets) |
-| D-02 | Strategy risk | No full reference risk engine: `max_position_size` is %-of-equity (reference: contracts); cash thresholds in account units without FX conversion; tick-accurate accounting | [§ Strategy → risk](#sec-risk-compile) |
+| D-02 | Strategy risk | `max_position_size` is %-of-equity (reference: contracts); cash thresholds in account units without FX conversion; tick-accurate accounting | [§ Strategy → risk](#sec-risk-compile) |
 | D-03 | Trade queries | Per-trade `max_drawdown` / `max_runup` are OHLC-path approximations, not tick-accurate | [§ Strategy → trade queries](#sec-trade-queries) |
 | D-04 | Realtime `var` / `varip` | Numeric nopython does not poll. `CCXTProDataFeed.poll_ohlcv` is the last cached watch/fetch candle (no REST in the bar loop). Unconfirmed ticks roll back in-place array/matrix/map/UDT mutations and broker fills | [§ Evaluator → var/varip](#sec-varip) |
 | D-06 | `request.security` | No full HTF expression re-eval engine; `gaps` / `lookahead` still unused on passthrough / provider / complex-na paths and for LTF requests | [§ Request → security](#sec-security) |
@@ -77,18 +77,20 @@ when moving it between tables.
 | `strategy.risk.max_position_size` | **Wired** — caps entry qty to `%` of equity at fill price |
 | `strategy.risk.max_drawdown` | **Wired** — absolute and/or `%` of peak; sets `entries_blocked` when exceeded |
 | `strategy.risk.max_cons_loss_days` | **Wired** — consecutive calendar-day loss tracking on closes; halt when N hit |
-| `strategy.risk.max_intraday_loss` | **Wired on both brokers** — day PnL as `%` of initial capital or absolute cash |
-| `strategy.risk.max_intraday_filled_orders` | **Wired on both brokers** — counts entry+exit fills per bar-time day bucket; blocks new entries when cap hit (day-scoped; resets on next day) |
+| `strategy.risk.max_intraday_loss` | **Wired on both brokers** — day PnL as `%` of initial capital or absolute cash; halt resumes the next `syminfo.timezone` calendar day |
+| `strategy.risk.max_intraday_filled_orders` | **Wired on both brokers** — counts entry+exit fills per tz calendar-day bucket; blocks new entries when cap hit (day-scoped; resets on next day) |
 
-**Impact:** common risk halt gates now share interpret-like `entries_blocked` + `risk_blocked` comments on compile (filled-order cap is day-scoped without permanent `entries_blocked`).
+**Impact:** common risk halt gates now share interpret-like `entries_blocked` + `risk_blocked` comments on compile (intraday loss and filled-order cap are day-scoped without a permanent halt).
 
 **Known residual:** `strategy.risk.max_position_size` caps entry notional as %-of-equity on both hosts; reference takes absolute contracts/shares. Changing it would break pinned behavior, so it stays documented until explicitly scheduled. Same for cash thresholds (account units, no FX) and tick-accurate risk accounting.
 
-**D-02 residuals:** loss halts are permanent once tripped (reference Pine resumes the next trading day). Day buckets are UTC-epoch (`floor(time / 86_400_000)`), not `syminfo.timezone` / exchange session days.
+**D-02 landed:** `max_intraday_loss` halt clears when the calendar day rolls in `syminfo.timezone` (UTC default; DST-aware midnight-to-midnight, same rules as `timeframe.change`). Day-scoped fill cap uses the same bucket. A bar that is still “yesterday” in `America/New_York` does not resume. `max_drawdown` halt stays permanent. `allow_entry_in` is unchanged.
 
-**Intraday parity (0.6.0):** `strategy.risk.max_intraday_loss(value, type)` honors `type` on both brokers — percent-of-initial-capital by default (`percent` / `strategy.percent_of_equity` / `%`), absolute account-currency cash for `cash` / `strategy.cash` (no FX conversion; unknown types fall back to percent). Percent and cash are mutually exclusive. Interpret and compile both enforce the loss halt and the day-scoped fill cap in `_risk_allows_entry`, including pending `strategy.entry` / `strategy.order` fills. The fill cap resets on day roll.
+**D-02 residual:** `max_position_size` %-of-equity (pinned contract). Cash thresholds stay account units without FX conversion; risk accounting is not tick-accurate.
 
-**Track:** audit AGENT_04; tests in `tests/test_compiler_strategy.py`, `tests/test_strategy_risk_intraday.py`.
+**Intraday parity (0.6.0):** `strategy.risk.max_intraday_loss(value, type)` honors `type` on both brokers — percent-of-initial-capital by default (`percent` / `strategy.percent_of_equity` / `%`), absolute account-currency cash for `cash` / `strategy.cash` (no FX conversion; unknown types fall back to percent). Percent and cash are mutually exclusive. Interpret and compile both enforce the loss halt and the day-scoped fill cap in `_risk_allows_entry`, including pending `strategy.entry` / `strategy.order` fills. The fill cap and the loss halt reset on tz day roll.
+
+**Track:** audit AGENT_04; tests in `tests/test_compiler_strategy.py`, `tests/test_strategy_risk_intraday.py`, `tests/test_strategy_risk_day_resume.py`.
 
 <span id="sec-trade-queries"></span>
 ### Open/closed trade query surface (compile) — partial honesty

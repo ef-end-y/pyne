@@ -245,12 +245,14 @@ class TestCompileBrokerParity:
 
 
 def _losing_bars() -> list[dict[str, float | int]]:
-    # Day 0: enter 100 @ 100. Day 1: exit @ 80 (-$2000 = -2% of 100k).
-    # Days 2-3: re-entry attempts must stay blocked (1% cap).
+    # Day 0: enter 100 @ 100. Next UTC day: exit @ 80 (-$2000 = -2% of 100k).
+    # Later bars stay on that close day so the 1% cap still blocks re-entry
+    # (halt resumes only on the next calendar day — see D-02 day-resume tests).
     closes = [100.0, 80.0, 80.0, 80.0]
+    times = [_DAY_MS, _DAY_MS + 86_400_000, _DAY_MS + 86_400_000 + 3_600_000, _DAY_MS + 86_400_000 + 7_200_000]
     return [
         {
-            "time": _DAY_MS + i * 86_400_000,
+            "time": times[i],
             "open": c,
             "high": c,
             "low": c,
@@ -275,7 +277,7 @@ plot(strategy.position_size, "ps")
 
 
 def test_losing_strategy_blocked_dual_host() -> None:
-    """Day-1 -2% loss trips the 1% cap; both hosts block days 2-3 identically."""
+    """Day-1 -2% loss trips the 1% cap; same-day re-entry stays blocked on both hosts."""
     bars = _losing_bars()
     ri = Runtime(symbol="RISK").run(_LOSING_SRC, bars, mode="interpret")
     assert "error" not in ri, ri.get("error")
@@ -311,9 +313,10 @@ def test_strategy_cash_identifier_dual_host() -> None:
     assert "__strategy.cash" not in code.split("risk_max_intraday_loss", 1)[1][:120]
     assert "'cash'" in code or '"cash"' in code
     closes = [100.0, 50.0, 50.0, 50.0]
+    times = [_DAY_MS, _DAY_MS + 86_400_000, _DAY_MS + 86_400_000 + 3_600_000, _DAY_MS + 86_400_000 + 7_200_000]
     bars = [
         {
-            "time": _DAY_MS + i * 86_400_000,
+            "time": times[i],
             "open": c,
             "high": c,
             "low": c,

@@ -44,6 +44,7 @@ from pynescript.ast.evaluator.events import StrategyEvent
 
 from .base import BuiltinDispatchMixin
 from .base import BuiltinHandler
+from .timeframe import calendar_day_bucket
 
 
 def _soft_int_decl(value: Any, default: int = 0) -> int:
@@ -309,12 +310,14 @@ class StrategyState:
         self.max_drawdown_risk_percent: float | None = None  # optional % of peak
         self.max_cons_loss_days: int | None = None
         self.allow_entry_in: str = "all"  # all | long | short
-        self.entries_blocked: bool = False  # risk halt (drawdown / cons loss days)
+        self.entries_blocked: bool = False  # risk halt (drawdown / cons loss / intraday)
         self.consecutive_loss_days: int = 0
-        self._last_trade_day: int | None = None  # exit_time // day_ms bucket
+        self._last_trade_day: int | None = None  # exit_time day bucket
         self._day_pnl: float = 0.0
         self._fills_day: int | None = None  # bar-time day bucket for fill counting
         self._day_filled_orders: int = 0
+        self._calendar_day: int | None = None  # current tz calendar day
+        self._timezone: object | None = None  # syminfo.timezone (UTC default)
         self.max_intraday_filled_orders: int | None = None  # day-scoped fill cap
         # Default partial-fill cap per bar for pending orders (0 = full remaining)
         self.default_max_fill_per_bar: float = 0.0
@@ -420,35 +423,71 @@ class StrategyState:
     def note_closed_trade_day(self, exit_time: int, profit: float) -> None:
         """Track consecutive calendar-day losses for risk.max_cons_loss_days.
 
-        Day bucket = floor(exit_time / 86_400_000) when time looks like ms,
-        else floor(exit_time / 86_400) for seconds, else bar-time as-is.
+        Day buckets are midnight-to-midnight in ``syminfo.timezone`` (UTC
+        default). Small integers are treated as already-bucketed day ids.
         """
-        day = self._day_bucket(exit_time)
-        if self._last_trade_day is None or day != self._last_trade_day:
-            # Finalize previous day
-            if self._last_trade_day is not None:
-                if self._day_pnl < 0:
-                    self.consecutive_loss_days += 1
-                elif self._day_pnl > 0:
-                    self.consecutive_loss_days = 0
-            self._last_trade_day = day
-            self._day_pnl = 0.0
+        self._ensure_calendar_day(exit_time)
+        if self._last_trade_day is None:
+            self._last_trade_day = self._day_bucket(exit_time)
         self._day_pnl += float(profit)
         if self.max_cons_loss_days is not None and self.consecutive_loss_days >= int(self.max_cons_loss_days):
             self.entries_blocked = True
 
-    @staticmethod
-    def _day_bucket(ts: int) -> int:
-        """Calendar-day bucket for a bar/exit timestamp (compile-broker aligned).
+    def _day_bucket(self, ts: int, tz: object | None = None) -> int:
+        """Timezone-aware calendar-day id (``timeframe.change("D")`` ordinal).
 
-        ms epoch → //86_400_000, seconds epoch → //86_400, else raw value.
+        Small integers (``<= 10_000_000``) stay raw day ids. *tz* defaults to
+        ``self._timezone`` (host ``syminfo.timezone``; UTC when unset).
         """
+        zone = tz if tz is not None else getattr(self, "_timezone", None)
+        day = calendar_day_bucket(ts, zone)
+        if day is not None:
+            return day
         t = int(ts)
-        if t > 10_000_000_000:  # ms epoch
+        if t > 10_000_000_000:
             return t // 86_400_000
-        if t > 10_000_000:  # seconds epoch
+        if t > 10_000_000:
             return t // 86_400
         return t
+
+    def _permanent_risk_halt(self) -> bool:
+        """True when max_drawdown or max_cons_loss_days still forbids entries."""
+        if self.max_drawdown_risk is not None and self._max_drawdown >= float(self.max_drawdown_risk):
+            return True
+        if self.max_drawdown_risk_percent is not None and self._max_drawdown_percent >= float(
+            self.max_drawdown_risk_percent
+        ):
+            return True
+        if self.max_cons_loss_days is not None and self.consecutive_loss_days >= int(self.max_cons_loss_days):
+            return True
+        return False
+
+    def _ensure_calendar_day(self, ts: int) -> None:
+        """Roll day-scoped risk when the tz calendar day changes.
+
+        Resets day PnL / fill counters and clears ``max_intraday_loss`` halt.
+        ``max_drawdown`` and ``max_cons_loss_days`` stay blocked.
+        """
+        day = self._day_bucket(ts)
+        if self._calendar_day is None:
+            self._calendar_day = day
+            self._fills_day = day
+            return
+        if day == self._calendar_day:
+            return
+        if self._last_trade_day is not None and self._last_trade_day != day:
+            if self._day_pnl < 0:
+                self.consecutive_loss_days += 1
+            elif self._day_pnl > 0:
+                self.consecutive_loss_days = 0
+            if self.max_cons_loss_days is not None and self.consecutive_loss_days >= int(self.max_cons_loss_days):
+                self.entries_blocked = True
+            self._last_trade_day = day
+        self._calendar_day = day
+        self._day_pnl = 0.0
+        self._day_filled_orders = 0
+        self._fills_day = day
+        self.entries_blocked = self._permanent_risk_halt()
 
     def note_fill_day(self, bar_time: int | float | None) -> None:
         """Count one filled order toward max_intraday_filled_orders.
@@ -456,14 +495,12 @@ class StrategyState:
         The fill cap is day-scoped (not a permanent halt) and resets on day roll.
         """
         try:
-            day = self._day_bucket(int(float(bar_time))) if bar_time is not None else None
+            ts = int(float(bar_time)) if bar_time is not None else None
         except (TypeError, ValueError):
-            day = None
-        if day is None:
+            ts = None
+        if ts is None:
             return
-        if self._fills_day is None or day != self._fills_day:
-            self._fills_day = day
-            self._day_filled_orders = 0
+        self._ensure_calendar_day(ts)
         self._day_filled_orders += 1
 
     def reset(self) -> None:
@@ -1055,6 +1092,19 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         ctx = getattr(self, "context", {}) or {}
         return int(self._coerce_number(ctx.get("time", 0), default=0))
 
+    def _risk_timezone(self) -> object:
+        """Host ``syminfo.timezone`` for day-scoped risk (UTC when unset)."""
+        ctx = getattr(self, "context", None) or {}
+        sym = ctx.get("syminfo")
+        if sym is not None:
+            raw = getattr(sym, "timezone", None)
+            if raw:
+                return raw
+        flat = ctx.get("syminfo.timezone")
+        if flat:
+            return flat
+        return None
+
     # ENTRY/EXIT FUNCTIONS
 
     def _handle_strategy_entry(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> None:
@@ -1293,6 +1343,11 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
     def _risk_allows_entry(self, direction: str, mark_price: float) -> bool:
         """Apply strategy.risk.* gates before opening an entry."""
         st = self._strategy_state
+        st._timezone = self._risk_timezone()
+        try:
+            st._ensure_calendar_day(int(float(self._bar_time())))
+        except (TypeError, ValueError):
+            pass
         allow = (st.allow_entry_in or "all").lower()
         if allow in {"long", "strategy.long"} and direction != "long":
             return False
@@ -1312,7 +1367,7 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         if st.max_cons_loss_days is not None and st.consecutive_loss_days >= int(st.max_cons_loss_days):
             st.entries_blocked = True
             return False
-        # Intraday loss: percent-of-initial-capital or absolute cash; halt is permanent.
+        # Intraday loss: percent-of-initial-capital or absolute cash; resumes next tz day.
         if (
             st.max_intraday_loss is not None
             and math.isfinite(st.max_intraday_loss)
@@ -1330,15 +1385,8 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         ):
             st.entries_blocked = True
             return False
-        # Day-scoped fill cap (resets on day roll; no permanent block).
+        # Day-scoped fill cap (resets on tz calendar day roll; no permanent block).
         if st.max_intraday_filled_orders is not None:
-            try:
-                day = st._day_bucket(int(float(self._bar_time())))
-            except (TypeError, ValueError):
-                day = None
-            if day is not None and (st._fills_day is None or day != st._fills_day):
-                st._fills_day = day
-                st._day_filled_orders = 0
             if st._day_filled_orders >= int(st.max_intraday_filled_orders):
                 return False
         _ = equity
@@ -2537,6 +2585,7 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         if total_close <= 0:
             return
         # One filled order per close call (legs aggregate; compile parity).
+        self._strategy_state._timezone = self._risk_timezone()
         self._strategy_state.note_fill_day(exit_time)
         exit_comm_total = self._calc_commission(total_close, exit_price) if total_close > 0 else 0.0
         self._strategy_state.commission = exit_comm_total

@@ -187,6 +187,28 @@ def timeframe_calendar_id(ts: object, timeframe_str: str | None, tz: object = No
     return d.year * 12 + d.month
 
 
+def calendar_day_bucket(ts: object, tz: object = None) -> int | None:
+    """DST-aware midnight-to-midnight day id in *tz* (UTC default).
+
+    Real epoch timestamps use the same ordinal as ``timeframe.change("D")``.
+    Integers ``<= 10_000_000`` are treated as already-bucketed day ids
+    (consecutive-loss-day helpers). Unusable timestamps return None.
+    Unknown zones fall back to UTC (never raise).
+    """
+    if ts is None:
+        return None
+    current = getattr(ts, "current", None)
+    if current is not None and not isinstance(ts, (int, float, bool, str)):
+        ts = current
+    try:
+        t = int(float(ts))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    if t <= 10_000_000:
+        return t
+    return timeframe_calendar_id(ts, "D", tz)
+
+
 def _period_id(ts: object, timeframe_str: str | None, tz: object = None) -> int | None:
     """Calendar id for bare ``D`` / ``W`` / ``M``, else fixed-width bucket id."""
     if timeframe_is_calendar_tf(timeframe_str):

@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **`strategy.risk.max_intraday_loss` resumes the next `syminfo.timezone` calendar day (D-02).** The halt and the day-scoped `max_intraday_filled_orders` cap now use DST-aware midnight-to-midnight buckets (same rules as `timeframe.change`); a bar that is still yesterday in `America/New_York` stays blocked. `max_drawdown` remains a permanent halt. `max_position_size` is still %-of-equity.
 - **`CCXTProDataFeed.poll_ohlcv` returns the last cached watch/fetch candle.** Sync and network-free so the realtime bar loop can form last-bar ticks from a live CCXT Pro stream without opening a socket per tick. Empty cache is still `None`.
 - **`WS /ws/live` sends `auth.ok` as soon as the upgrade handshake authenticates.** AXIS was blocking connect on that frame while the engine hashed the key; a handshake-authed socket now greets immediately so subscribe is not UNAUTHORIZED.
 - **In-place array / matrix / map / UDT mutations roll back on unconfirmed realtime ticks (D-04).** Intermediate interpret ticks restore container contents into the same objects (aliases keep identity); `varip` containers persist. Object-mode compile copies list/dict contents the same way.
