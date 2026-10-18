@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T19:43:26Z
+  at: 2026-10-18T20:03:30Z
 sources:
   - id: tree
     resource: "tests"
@@ -44,7 +44,7 @@ okf_lock: generated
 * `test_corpus_runtime_residuals.py` — TestCorpusPerceptronDmiScripts, TestCustomMethodDmiDualNamespace, TestIntentionalRuntimeErrorDemos, TestLineGetPriceSoftNaAndSeries, TestTaChangeUnary, TestTaDmiNaLengthSoft, test_corpus_0886_reading_line_values_demo, test_corpus_0951_getprice
 * `test_corpus_sanitize.py` — test_closes_truncated_call_at_eof, test_closes_truncated_call_in_switch_arm, test_closes_truncated_method_definition, test_closes_truncated_nested_open_parens, test_closes_uncontinued_double_quoted_string_in_call, test_closes_uncontinued_single_quoted_string_at_eol, test_curly_apostrophe_prose_stops_after_script, test_dedents_leading_indented_script, test_docs_nav_does_not_cut_tooltip_next_to, test_does_not_fix_intentional_invalid_line_wrap_demo, test_drops_expand_ui_stub, test_empty_if_under_for_in_expression_assignment
 * `test_data_series.py` — FakeExchange, TestAuth, TestCanonicalKey, TestDataSessionCreate, TestDataSessionTick, TestFetch, TestSeriesRoutes, TestSeriesStore, bar, bound, candle, client
-* `test_datafeed.py` — DummyProExchange, test_ccxtpro_poll_ohlcv_none_without_cache, test_ccxtpro_sync_wrappers, test_composite_fallback, test_datafeed_broker, test_evaluator_with_datafeed_request_security, test_get_datafeed_mock, test_get_datafeed_unknown, test_mock_datafeed_streams, test_mock_poll_ohlcv_scripted_no_sleep, test_mock_poll_ohlcv_synthetic_deterministic
+* `test_datafeed.py` — DummyProExchange, test_ccxtpro_fetch_latest_fills_poll_cache, test_ccxtpro_poll_ohlcv_none_without_cache, test_ccxtpro_poll_ohlcv_returns_cached_watch_sample, test_ccxtpro_sync_wrappers, test_composite_fallback, test_datafeed_broker, test_evaluator_with_datafeed_request_security, test_get_datafeed_mock, test_get_datafeed_unknown, test_mock_datafeed_streams, test_mock_poll_ohlcv_scripted_no_sleep
 * `test_datafeed_gateway.py` — TestCandleHelpers, TestCcxtProviderPassThrough, TestHealth, TestMarkets, TestOhlcv, TestRunSecretRefusal, TestSession, TestWatchRestPoll, client
 * `test_datafeed_wiring.py` — test_chart_ohlcv_provider_fetch, test_composite_sync_fetch_delegates, test_evaluator_chart_provider_security_matches_bars, test_get_datafeed_mock_factory, test_resolve_request_sources_chart_default, test_resolve_request_sources_mock_feed, test_runtime_auto_wires_chart_provider_for_request_security, test_runtime_with_explicit_mock_feed
 * `test_debug_stats.py` — TestDebugToggle, TestEngineDebugLogging, TestLoggingPolicy, TestStatsEndpoint, TestStatsRegistry, client

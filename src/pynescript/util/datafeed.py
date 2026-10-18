@@ -233,6 +233,7 @@ class CCXTProDataFeed(DataFeed):
         self._sandbox = sandbox
         self._options = options
         self._exchange: Any | None = None
+        self._ohlcv_cache: dict[tuple[str, str], list[Any]] = {}
         _dbg(
             "CCXTProDataFeed init exchange=%s sandbox=%s has_key=%s options=%s",
             self._exchange_name,
@@ -294,6 +295,43 @@ class CCXTProDataFeed(DataFeed):
 
         return self._exchange
 
+    def _cache_ohlcv_bars(self, symbol: str, timeframe: str, ohlcv: Any) -> None:
+        """Store the last candle from a watch/fetch payload (sync, never raises)."""
+        if not ohlcv:
+            return
+        candle: Any = ohlcv
+        try:
+            if isinstance(ohlcv[0], (list, tuple)):
+                candle = ohlcv[-1]
+        except (TypeError, IndexError):
+            return
+        try:
+            cached = [
+                int(candle[0]),
+                float(candle[1]),
+                float(candle[2]),
+                float(candle[3]),
+                float(candle[4]),
+                float(candle[5]) if len(candle) > 5 else 0.0,
+            ]
+        except (TypeError, ValueError, IndexError):
+            return
+        key = (str(symbol or ""), str(timeframe or "1m"))
+        self._ohlcv_cache[key] = cached
+
+    def poll_ohlcv(self, symbol: str, timeframe: str = "1m") -> list[Any] | None:
+        """Last cached watch/fetch candle for *symbol*/*timeframe*, or ``None``.
+
+        Sync and network-free: the bar loop must not open sockets. A live
+        ``watch_ohlcv`` (or ``fetch_latest_ohlcv``) fills the cache; until then
+        this is a no-op like the ABC default.
+        """
+        key = (str(symbol or ""), str(timeframe or "1m"))
+        cached = self._ohlcv_cache.get(key)
+        if cached is None:
+            return None
+        return list(cached)
+
     async def supports_for_symbols(self) -> bool:
         """True when the venue implements ``watchOHLCVForSymbols`` (fan-in)."""
         try:
@@ -328,11 +366,14 @@ class CCXTProDataFeed(DataFeed):
                         if isinstance(per_tf, dict):
                             for tf, candles in per_tf.items():
                                 if candles:
+                                    self._cache_ohlcv_bars(str(sym), str(tf), candles)
                                     yield (sym, tf, candles)
                         elif per_tf:
+                            self._cache_ohlcv_bars(str(sym), "1m", per_tf)
                             yield (sym, "", per_tf)
                 elif grouped:
                     for sym, tf in symbols:
+                        self._cache_ohlcv_bars(str(sym), str(tf), grouped)
                         yield (sym, tf, grouped)
             except Exception as e:  # noqa: BLE001
                 if "closed" in str(e).lower() or "connection" in str(e).lower():
@@ -362,6 +403,7 @@ class CCXTProDataFeed(DataFeed):
             try:
                 ohlcv = await exchange.watch_ohlcv(symbol, timeframe, limit=limit)
                 if ohlcv:
+                    self._cache_ohlcv_bars(symbol, timeframe, ohlcv)
                     n_updates += 1
                     if _debug_scope(__name__) and n_updates <= 3:
                         # First few only — steady state would flood the log.
@@ -485,11 +527,14 @@ class CCXTProDataFeed(DataFeed):
         # Use watch once to get fresh data, fallback to fetch if needed
         try:
             ohlcv = await exchange.watch_ohlcv(symbol, timeframe, limit=limit)
-            return ohlcv[-limit:] if ohlcv else []
+            out = ohlcv[-limit:] if ohlcv else []
         except Exception:
             # Fallback to REST fetch_ohlcv for latest
             ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            return ohlcv or []
+            out = ohlcv or []
+        if out:
+            self._cache_ohlcv_bars(symbol, timeframe, out)
+        return out
 
     def fetch_latest_ticker(self, symbol: str) -> dict[str, Any]:
         """Synchronous fetch of latest ticker."""

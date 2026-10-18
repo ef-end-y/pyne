@@ -20,7 +20,7 @@ when moving it between tables.
 | D-01 | Strategy exits | Trail stops (`trail_*`) are OHLC-path approximations — no tick path | [§ Strategy → exits](#sec-exit-brackets) |
 | D-02 | Strategy risk | No full reference risk engine: `max_position_size` is %-of-equity (reference: contracts); cash thresholds in account units without FX conversion; tick-accurate accounting | [§ Strategy → risk](#sec-risk-compile) |
 | D-03 | Trade queries | Per-trade `max_drawdown` / `max_runup` are OHLC-path approximations, not tick-accurate | [§ Strategy → trade queries](#sec-trade-queries) |
-| D-04 | Realtime `var` / `varip` | `CCXTProDataFeed.poll_ohlcv` is still `None`. Unconfirmed ticks roll back in-place array/matrix/map/UDT mutations and broker fills. Last-bar ticks pull forming OHLCV from `DataFeed.poll_ohlcv` on interpret and object-mode compile when a feed is passed | [§ Evaluator → var/varip](#sec-varip) |
+| D-04 | Realtime `var` / `varip` | Numeric nopython does not poll. `CCXTProDataFeed.poll_ohlcv` is the last cached watch/fetch candle (no REST in the bar loop). Unconfirmed ticks roll back in-place array/matrix/map/UDT mutations and broker fills | [§ Evaluator → var/varip](#sec-varip) |
 | D-06 | `request.security` | No full HTF expression re-eval engine; `gaps` / `lookahead` still unused on passthrough / provider / complex-na paths and for LTF requests | [§ Request → security](#sec-security) |
 
 ### Fixed
@@ -149,9 +149,7 @@ Full-list `_ema` / `_ema_state_step` and incremental / Numba paths all use **SMA
 
 **Compile multi-pass (D-04):** object-mode `execute_script_compiled(..., rt_first=None, rt_ticks=1, data_feed=None, feed_symbol="")` re-visits bars in `[rt_first, n_bars)` `rt_ticks` times with `__isrealtime` / `__isconfirmed` / `__ishistory` / `__isnew` per tick. Intermediate ticks overwrite the same plot cell (series length stays one sample per bar) and do not latch `once`. `varip` re-inits while `var` commits on the confirmed tick. List/dict locals are content-copied (`.copy()` / slice restore) so `array.push` / `map.put` on a `var` handle roll back; `varip` names are skipped. `__strategy.snapshot()` / `restore()` run on unconfirmed ticks; `begin_bar` stays outside the tick loop. Host `_run_compiled` forwards the same `Runtime.run` realtime kwargs and `data_feed`; an active window re-emits object mode so numeric scripts can opt in without changing the historical nopython path. Disk IR cache v21.
 
-**Feed-driven ticks (D-04):** when `Runtime.run(..., data_feed=)` is set and a realtime window is active, each last-bar tick (interpret and object-mode compile) calls sync `DataFeed.poll_ohlcv` / `poll_forming_ohlcv` and evaluates against that forming OHLCV (`MockDataFeed` is deterministic / scriptable; a `None` poll is a no-op). Without a feed, ticks still re-visit the same historical last-bar OHLC. `InterpretSession.update_last_bar` is unchanged (host still pushes forming bars). Numeric nopython does not poll. `CCXTProDataFeed.poll_ohlcv` is still `None`.
-
-**Not yet:** `CCXTProDataFeed.poll_ohlcv` cached watch sample.
+**Feed-driven ticks (D-04):** when `Runtime.run(..., data_feed=)` is set and a realtime window is active, each last-bar tick (interpret and object-mode compile) calls sync `DataFeed.poll_ohlcv` / `poll_forming_ohlcv` and evaluates against that forming OHLCV (`MockDataFeed` is deterministic / scriptable; a `None` poll is a no-op). Without a feed, ticks still re-visit the same historical last-bar OHLC. `InterpretSession.update_last_bar` is unchanged (host still pushes forming bars). Numeric nopython does not poll. `CCXTProDataFeed.poll_ohlcv` returns the last candle cached from `watch_ohlcv` / `watch_ohlcv_for_symbols` / `fetch_latest_ohlcv` (sync, no new socket). Until a watch/fetch has run, it is `None`.
 
 **Track:** audit AGENT_02; host kwargs in `pynescript.runtime.host.Runtime.run`; dual-host tests in `tests/test_compiler_realtime.py`.
 

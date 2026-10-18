@@ -93,6 +93,62 @@ def test_ccxtpro_poll_ohlcv_none_without_cache():
     assert feed.poll_ohlcv("BTC/USDT") is None
 
 
+def test_ccxtpro_poll_ohlcv_returns_cached_watch_sample():
+    """``poll_ohlcv`` is the last watch candle — sync, no new socket."""
+    import pynescript.util.datafeed as dfmod
+
+    original_get = dfmod.CCXTProDataFeed._get_exchange
+
+    async def fake_get(self):
+        return DummyProExchange()
+
+    dfmod.CCXTProDataFeed._get_exchange = fake_get
+    feed = CCXTProDataFeed(exchange="binance")
+    try:
+        async def _one():
+            async for payload in feed.watch_ohlcv("BTC/USDT", "1m"):
+                return payload
+
+        payload = asyncio.run(_one())
+        assert payload
+        polled = feed.poll_ohlcv("BTC/USDT", "1m")
+        assert polled == DummyProExchange()._candle
+        again = feed.poll_ohlcv("BTC/USDT", "1m")
+        assert again == polled
+        again[4] = 0.0
+        assert feed.poll_ohlcv("BTC/USDT", "1m")[4] == DummyProExchange()._candle[4]
+        assert feed.poll_ohlcv("ETH/USDT", "1m") is None
+        assert feed.poll_ohlcv("BTC/USDT", "5m") is None
+    finally:
+        dfmod.CCXTProDataFeed._get_exchange = original_get
+        try:
+            asyncio.run(feed.close())
+        except Exception:  # noqa: S110 - test cleanup
+            pass
+
+
+def test_ccxtpro_fetch_latest_fills_poll_cache(monkeypatch):
+    import pynescript.util.datafeed as dfmod
+
+    original_get = dfmod.CCXTProDataFeed._get_exchange
+
+    async def fake_get(self):
+        return DummyProExchange()
+
+    dfmod.CCXTProDataFeed._get_exchange = fake_get
+    feed = CCXTProDataFeed(exchange="binance")
+    try:
+        rows = feed.fetch_latest_ohlcv("BTC/USDT", "1m")
+        assert rows
+        assert feed.poll_ohlcv("BTC/USDT", "1m") == DummyProExchange()._candle
+    finally:
+        dfmod.CCXTProDataFeed._get_exchange = original_get
+        try:
+            asyncio.run(feed.close())
+        except Exception:  # noqa: S110 - test cleanup
+            pass
+
+
 def test_get_datafeed_unknown():
     with pytest.raises(DataFeedError):
         get_datafeed("nonexistent")
