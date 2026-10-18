@@ -194,6 +194,15 @@ class AdvancedIndicators(TechnicalHelpers):
             msg = "Ichimoku periods must be >= 1"
             self._error(msg)
 
+        if self._use_incremental_ta():
+            return self._ichimoku_inc_update(
+                self._context_source("high"),
+                self._context_source("low"),
+                fast_period,
+                slow_period,
+                ICHIMOKU_SENKOU_B_PERIOD,
+            )
+
         highs = (getattr(self, "current_series", None) or {}).get("high", [])
         lows = (getattr(self, "current_series", None) or {}).get("low", [])
 

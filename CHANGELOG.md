@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- **Bar-mode incremental `ta.ichimoku` / `ta.apo` / `ta.emv` (T2).** Last-sample kernels match full recompute: Ichimoku reuses highest/lowest windows (stable six-slot order), APO is `EMA(fast) - EMA(slow)`, EMV is the last-N mean of per-bar ease-of-movement (na on bar 0 / zero volume / flat range).
+
 ## [0.6.13] — 2026-10-18
 
 ### Added

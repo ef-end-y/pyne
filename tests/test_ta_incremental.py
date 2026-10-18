@@ -3871,3 +3871,191 @@ plot(adx, "adx")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: ichimoku / apo / emv incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _vols(n: int, seed: float = 1000.0) -> list[float]:
+    """Synthetic volume, strictly positive (EMV treats 0 as na)."""
+    return [seed + i * 3.0 + abs(math.sin(i / 4.0)) * 80.0 for i in range(n)]
+
+
+def _bar_walk_full_ichimoku(
+    highs: list[float], lows: list[float], fast: int, slow: int
+) -> list[dict[str, float | None]]:
+    ev = _FullTA()
+    out: list[dict[str, float | None]] = []
+    for i in range(len(highs)):
+        ev.current_series = {"high": highs[: i + 1], "low": lows[: i + 1]}
+        out.append(ev._builtin_ta_ichimoku([fast, slow]))
+    return out
+
+
+def _bar_walk_inc_ichimoku(
+    highs: list[float], lows: list[float], fast: int, slow: int
+) -> list[dict[str, float | None]]:
+    ev = _IncTA()
+    out: list[dict[str, float | None]] = []
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev.current_series = {"high": highs[: i + 1], "low": lows[: i + 1]}
+        out.append(ev._ichimoku_inc_update(highs[: i + 1], lows[: i + 1], fast, slow))
+    return out
+
+
+def test_incremental_ichimoku_matches_full() -> None:
+    highs, lows, _closes = _ohlc(120)
+    for fast, slow in ((9, 26), (7, 22)):
+        got = _bar_walk_inc_ichimoku(highs, lows, fast, slow)
+        exp = _bar_walk_full_ichimoku(highs, lows, fast, slow)
+        assert len(got) == len(exp)
+        for i, (g, e) in enumerate(zip(got, exp, strict=True)):
+            for key in ("tenkan_sen", "kijun_sen", "senkou_span_a", "senkou_span_b"):
+                _assert_num_close(g.get(key), e.get(key), i=i)
+
+
+def test_incremental_ichimoku_slot_count_stable() -> None:
+    """Four components always consume six highest/lowest slots, including warmup."""
+    ev = _IncTA()
+    highs, lows, _closes = _ohlc(60)
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._ichimoku_inc_update(highs[: i + 1], lows[: i + 1], 9, 26)
+        assert ev._ta_call_i == 6, f"bar {i}: expected 6 slots, got {ev._ta_call_i}"
+
+
+def _bar_walk_full_apo(src: list[float], fast: int, slow: int) -> list[float | None]:
+    ev = _FullTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        full = ev._apo(src[: i + 1], fast, slow)
+        out.append(full[-1] if full else None)
+    return out
+
+
+def _bar_walk_inc_apo(src: list[float], fast: int, slow: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._apo_inc_update(src[: i + 1], fast, slow))
+    return out
+
+
+def test_incremental_apo_matches_full() -> None:
+    src = _series(150)
+    for fast, slow in ((12, 26), (10, 20)):
+        _assert_series_close(_bar_walk_inc_apo(src, fast, slow), _bar_walk_full_apo(src, fast, slow))
+
+
+def test_incremental_apo_slot_count_stable() -> None:
+    ev = _IncTA()
+    src = _series(40)
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._apo_inc_update(src[: i + 1], 12, 26)
+        assert ev._ta_call_i == 2, f"bar {i}: expected 2 EMA slots, got {ev._ta_call_i}"
+
+
+def _bar_walk_full_emv(
+    highs: list[float], lows: list[float], vols: list[float], length: int
+) -> list[float | None]:
+    ev = _FullTA()
+    out: list[float | None] = []
+    for i in range(len(highs)):
+        ev.current_series = {
+            "high": highs[: i + 1],
+            "low": lows[: i + 1],
+            "volume": vols[: i + 1],
+        }
+        out.append(ev._builtin_ta_emv([length]))
+    return out
+
+
+def _bar_walk_inc_emv(
+    highs: list[float], lows: list[float], vols: list[float], length: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev.current_series = {
+            "high": highs[: i + 1],
+            "low": lows[: i + 1],
+            "volume": vols[: i + 1],
+        }
+        out.append(ev._emv_inc_update(highs[: i + 1], lows[: i + 1], vols[: i + 1], length))
+    return out
+
+
+def test_incremental_emv_matches_full() -> None:
+    highs, lows, _closes = _ohlc(120)
+    vols = _vols(120)
+    for length in (10, 14):
+        _assert_series_close(
+            _bar_walk_inc_emv(highs, lows, vols, length),
+            _bar_walk_full_emv(highs, lows, vols, length),
+        )
+
+
+def test_incremental_emv_skips_zero_volume_and_flat_bars() -> None:
+    """Zero volume / zero box-height are na samples; SMA uses last-N valid."""
+    highs, lows, _closes = _ohlc(80)
+    vols = _vols(80)
+    vols[8] = 0.0
+    highs[15] = lows[15]  # box_height == 0
+    _assert_series_close(
+        _bar_walk_inc_emv(highs, lows, vols, 10),
+        _bar_walk_full_emv(highs, lows, vols, 10),
+    )
+
+
+def test_runtime_ichimoku_apo_emv_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("ichimoku apo emv")
+i = ta.ichimoku(9, 26)
+plot(i.tenkan_sen, "tenkan")
+plot(i.kijun_sen, "kijun")
+plot(i.senkou_span_a, "span_a")
+plot(i.senkou_span_b, "span_b")
+plot(ta.apo(close, 12, 26), "apo")
+plot(ta.emv(14), "emv")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"tenkan", "kijun", "span_a", "span_b", "apo", "emv"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

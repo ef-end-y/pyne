@@ -725,22 +725,28 @@ class VolumeIndicators(TechnicalHelpers):
         volume_series = args[3] if isinstance(args[3], list) else [args[3]]
         return self._klinger(close_series, volume_series, fast_period, slow_period)
 
-    def _builtin_ta_apo(self, args: list[Any]) -> list[float | None]:
+    def _builtin_ta_apo(self, args: list[Any]) -> Any:
         """Absolute Price Oscillator.
 
         ta.apo(series, fast_period, slow_period)
         APO = EMA(fast) - EMA(slow)
-        Returns APO series.
+        Returns APO series (full) or last scalar (incremental bar mode).
         """
         if len(args) < TERNARY:
             msg = "ta.apo() requires 3 arguments: series, fast_period, slow_period"
             self._error(msg)
 
-        series = args[0] if isinstance(args[0], list) else [args[0]]
         fast = self._expect_int(args[1], "ta.apo fast_period must be integer")
         slow = self._expect_int(args[2], "ta.apo slow_period must be integer")
+        if self._use_incremental_ta():
+            return self._apo_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                fast,
+                slow,
+            )
 
-        return self._apo(series, fast, slow)
+        series = self._as_series(args[0])
+        return self._finalize_series(self._apo(series, fast, slow))
 
     def _builtin_ta_vpt(self, args: list[Any]) -> float | None:
         """Volume Price Trend / Price Volume Trend.
@@ -814,6 +820,14 @@ class VolumeIndicators(TechnicalHelpers):
         if length < unary:
             msg = "EMV length must be >= 1"
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._emv_inc_update(
+                self._context_source("high"),
+                self._context_source("low"),
+                self._context_source("volume"),
+                length,
+            )
 
         highs = (getattr(self, "current_series", None) or {}).get("high", [])
         lows = (getattr(self, "current_series", None) or {}).get("low", [])

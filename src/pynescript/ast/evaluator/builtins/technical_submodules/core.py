@@ -3524,6 +3524,148 @@ class TechnicalHelpers:
         st["value"] = kst_val
         return kst_val
 
+    def _ichimoku_inc_update(
+        self,
+        highs: list[Any],
+        lows: list[Any],
+        fast_period: int,
+        slow_period: int,
+        senkou_b_period: int = 52,
+    ) -> dict[str, float | None]:
+        """Incremental Ichimoku matching full ``ta.ichimoku`` last window.
+
+        Tenkan / kijun / senkou_b are midpoints of highest(high) and
+        lowest(low) over ``fast`` / ``slow`` / ``senkou_b_period`` (52).
+        Senkou A is the midpoint of tenkan and kijun. The six highest/lowest
+        call sites always run so later TA on the same bar keeps its slots.
+        """
+        empty: dict[str, float | None] = {
+            "tenkan_sen": None,
+            "kijun_sen": None,
+            "senkou_span_a": None,
+            "senkou_span_b": None,
+        }
+        # Always consume six highest/lowest slots, even on warmup / na.
+        hi_fast = self._highest_inc_update(highs, fast_period)
+        lo_fast = self._lowest_inc_update(lows, fast_period)
+        hi_slow = self._highest_inc_update(highs, slow_period)
+        lo_slow = self._lowest_inc_update(lows, slow_period)
+        hi_b = self._highest_inc_update(highs, senkou_b_period)
+        lo_b = self._lowest_inc_update(lows, senkou_b_period)
+
+        def _mid(a: Any, b: Any) -> float | None:
+            if a is None or b is None:
+                return None
+            try:
+                return (float(a) + float(b)) / 2.0
+            except (TypeError, ValueError):
+                return None
+
+        tenkan = _mid(hi_fast, lo_fast)
+        kijun = _mid(hi_slow, lo_slow)
+        senkou_a = _mid(tenkan, kijun)
+        senkou_b = _mid(hi_b, lo_b)
+        if tenkan is None and kijun is None and senkou_a is None and senkou_b is None:
+            return empty
+        return {
+            "tenkan_sen": tenkan,
+            "kijun_sen": kijun,
+            "senkou_span_a": senkou_a,
+            "senkou_span_b": senkou_b,
+        }
+
+    def _apo_inc_update(self, series: list[Any], fast: int, slow: int) -> float | None:
+        """Incremental APO: ``EMA(fast) - EMA(slow)`` matching full ``_apo``.
+
+        Fast EMA then slow EMA every bar so the two call-site slots stay put.
+        """
+        fast_v = self._ema_inc_update(series, fast)
+        slow_v = self._ema_inc_update(series, slow)
+        if fast_v is None or slow_v is None:
+            return None
+        try:
+            return float(fast_v) - float(slow_v)
+        except (TypeError, ValueError):
+            return None
+
+    def _emv_inc_update(
+        self,
+        highs: list[Any],
+        lows: list[Any],
+        volumes: list[Any],
+        length: int,
+    ) -> float | None:
+        """Incremental Ease of Movement matching full ``_emv`` last-N valid mean.
+
+        Per-bar sample is na on bar 0, zero volume, or zero box height.
+        The SMA skips those na samples (last ``length`` valid values).
+        """
+        if length < 1:
+            return None
+        slot = self._ta_next_slot()
+        key = ("emv", slot, int(length))
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "prev_h": None,
+                "prev_l": None,
+                "window": deque(maxlen=int(length)),
+                "started": False,
+                "value": None,
+            }
+            bucket[key] = st
+
+        def _num(raw: Any) -> float | None:
+            if raw is None:
+                return None
+            try:
+                v = float(raw)
+            except (TypeError, ValueError):
+                return None
+            if v != v:
+                return None
+            return v
+
+        h = _num(self._series_last(highs))
+        l = _num(self._series_last(lows))
+        vol = _num(self._series_last(volumes))
+        if not st["started"]:
+            st["started"] = True
+            st["prev_h"] = h
+            st["prev_l"] = l
+            st["value"] = None
+            return None
+
+        sample: float | None = None
+        prev_h = st["prev_h"]
+        prev_l = st["prev_l"]
+        if (
+            h is not None
+            and l is not None
+            and prev_h is not None
+            and prev_l is not None
+            and vol is not None
+            and vol != 0.0
+        ):
+            distance_moved = ((h + l) / 2.0) - ((prev_h + prev_l) / 2.0)
+            box_height = h - l
+            if box_height != 0.0:
+                sample = (distance_moved / box_height) * (h - l) / vol
+        if h is not None:
+            st["prev_h"] = h
+        if l is not None:
+            st["prev_l"] = l
+        window: deque[float] = st["window"]
+        if sample is not None:
+            window.append(sample)
+        if len(window) < length:
+            st["value"] = None
+            return None
+        emv_sma = sum(window) / length
+        st["value"] = emv_sma
+        return emv_sma
+
     def _finalize_series(self, values: list[Any]) -> Any:
         """Return full series list, or current scalar in bar mode."""
         if not self._bar_mode():
