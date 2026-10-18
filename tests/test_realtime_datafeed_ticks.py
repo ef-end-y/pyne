@@ -17,7 +17,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Live DataFeed.poll_ohlcv drives interpret realtime ticks (D-04).
+"""Live DataFeed.poll_ohlcv drives interpret and compile realtime ticks (D-04).
 
 Without a feed, last-bar ticks re-visit the same historical OHLC.
 With a feed, each last-bar tick evaluates the next polled forming candle.
@@ -126,3 +126,74 @@ def test_historical_ticks_one_ignores_feed() -> None:
     assert "error" not in out, out.get("error")
     assert float(out["series"]["c"][-1]) == hist_close
     assert feed.poll_ohlcv("RT") == candles[0]
+
+
+def test_compile_feed_ticks_use_third_polled_close() -> None:
+    """Compile object-mode last-bar ticks poll the same forming OHLC as interpret."""
+    candles = _scripted_closes(210.0, 220.0, 230.0)
+    feed = MockDataFeed(scripted=candles)
+    bars = _bars(5)
+    hist_close = float(bars[-1]["close"])
+    out = Runtime(symbol="RT").run(
+        _PLOT_CLOSE,
+        bars,
+        mode="compile",
+        realtime_ticks=3,
+        data_feed=feed,
+    )
+    assert "error" not in out, out.get("error")
+    plotted = [float(v) for v in out["series"]["c"]]
+    assert plotted[-1] == 230.0, plotted
+    assert plotted[-1] != hist_close
+    assert plotted[:-1] == [float(b["close"]) for b in bars[:-1]]
+
+
+def test_compile_matches_interpret_feed_ticks() -> None:
+    """Dual-host: last plotted close is the third polled candle on both backends."""
+    candles = _scripted_closes(210.0, 220.0, 230.0)
+    bars = _bars(5)
+    interp = Runtime(symbol="RT").run(
+        _PLOT_CLOSE,
+        bars,
+        mode="interpret",
+        realtime_ticks=3,
+        data_feed=MockDataFeed(scripted=list(candles)),
+    )
+    compiled = Runtime(symbol="RT").run(
+        _PLOT_CLOSE,
+        bars,
+        mode="compile",
+        realtime_ticks=3,
+        data_feed=MockDataFeed(scripted=list(candles)),
+    )
+    assert "error" not in interp, interp.get("error")
+    assert "error" not in compiled, compiled.get("error")
+    assert float(interp["series"]["c"][-1]) == 230.0
+    assert float(compiled["series"]["c"][-1]) == 230.0
+    assert [float(v) for v in compiled["series"]["c"]] == [float(v) for v in interp["series"]["c"]]
+
+
+def test_compile_no_feed_keeps_historical_close() -> None:
+    bars = _bars(5)
+    hist_close = float(bars[-1]["close"])
+    out = Runtime(symbol="RT").run(_PLOT_CLOSE, bars, mode="compile", realtime_ticks=3)
+    assert "error" not in out, out.get("error")
+    assert float(out["series"]["c"][-1]) == hist_close
+
+
+def test_compile_poll_none_is_noop() -> None:
+    class _NonePoll:
+        def poll_ohlcv(self, symbol: str, timeframe: str = "1m"):
+            return None
+
+    bars = _bars(5)
+    hist_close = float(bars[-1]["close"])
+    out = Runtime(symbol="RT").run(
+        _PLOT_CLOSE,
+        bars,
+        mode="compile",
+        realtime_ticks=3,
+        data_feed=_NonePoll(),
+    )
+    assert "error" not in out, out.get("error")
+    assert float(out["series"]["c"][-1]) == hist_close

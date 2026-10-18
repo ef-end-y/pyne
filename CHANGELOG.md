@@ -3,7 +3,7 @@
 ### Added
 
 - **Compile-mode realtime multi-pass (D-04).** Object-mode compile honors `Runtime.run` `realtime_ticks` / `realtime_bars` / `realtime_from_bar` / `realtime_last_bar`: last-bar `barstate.isrealtime`, intermediate ticks overwrite the same plot cell, `var` commits once, `varip` re-inits, `once` latches only when confirmed. Numeric nopython stays historical unless the script already forced object mode (an active realtime window re-emits object mode).
-- **Interpret realtime ticks from `DataFeed.poll_ohlcv` (D-04).** When `Runtime.run(..., data_feed=)` is passed and a realtime window is active, each last-bar tick evaluates the latest forming OHLCV from a sync poll (`MockDataFeed` is scriptable / no sleep; `None` is a no-op). Without a feed, ticks still re-visit the same historical OHLC. `InterpretSession.update_last_bar` is unchanged. Compile does not poll.
+- **Realtime ticks from `DataFeed.poll_ohlcv` (D-04).** When `Runtime.run(..., data_feed=)` is passed and a realtime window is active, each last-bar tick evaluates the latest forming OHLCV from a sync poll (`MockDataFeed` is scriptable / no sleep; `None` is a no-op) on **interpret and object-mode compile**. Without a feed, ticks still re-visit the same historical OHLC. `InterpretSession.update_last_bar` is unchanged. `CCXTProDataFeed.poll_ohlcv` is still `None`.
 - **Bar-mode incremental `ta.ichimoku` / `ta.apo` / `ta.emv` (T2).** Last-sample kernels match full recompute: Ichimoku reuses highest/lowest windows (stable six-slot order), APO is `EMA(fast) - EMA(slow)`, EMV is the last-N mean of per-bar ease-of-movement (na on bar 0 / zero volume / flat range).
 
 ### Fixed

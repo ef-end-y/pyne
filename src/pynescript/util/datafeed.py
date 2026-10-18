@@ -158,6 +158,42 @@ class DataFeed(ABC):
         await self.close()
 
 
+def poll_forming_ohlcv(
+    data_feed: Any,
+    symbol: str,
+    timeframe: str = "1m",
+) -> tuple[float, float, float, float, float, float] | None:
+    """Sync poll → ``(time, open, high, low, close, volume)`` or ``None``.
+
+    Shared by interpret ``_apply_feed_forming_bar`` and object-mode compile
+    realtime ticks. Never raises; malformed candles and missing ``poll_ohlcv``
+    are no-ops.
+    """
+    if data_feed is None:
+        return None
+    poll = getattr(data_feed, "poll_ohlcv", None)
+    if not callable(poll):
+        return None
+    try:
+        candle = poll(symbol or "", timeframe)
+    except Exception:
+        return None
+    if not candle:
+        return None
+    try:
+        if isinstance(candle[0], (list, tuple)):
+            candle = candle[-1]
+        ts = float(int(candle[0]))
+        o = float(candle[1])
+        h = float(candle[2])
+        low = float(candle[3])
+        c = float(candle[4])
+        vol = float(candle[5]) if len(candle) > 5 else 0.0
+    except (TypeError, ValueError, IndexError):
+        return None
+    return (ts, o, h, low, c, vol)
+
+
 class CCXTProDataFeed(DataFeed):
     """Real-time data feed powered by CCXT Pro WebSockets.
 

@@ -7,7 +7,7 @@ tags: [code, pynescript, util]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-17T03:45:33Z
+  at: 2026-10-18T19:43:26Z
 sources:
   - id: tree
     resource: "src/pynescript/util"
@@ -21,7 +21,7 @@ okf_lock: generated
 * `__init__.py`
 * `corpus_sanitize.py` — sanitize_corpus_source
 * `data.py` — AlphaVantageProvider, CCXTProvider, ChartOHLCVProvider, DataProvider, DataProviderError, MockDataProvider, YahooFinanceProvider, geo_block_message, get_provider, normalize_ccxt_symbol, resolve_request_sources, tune_ccxt_public_urls
-* `datafeed.py` — CCXTProDataFeed, CompositeDataFeed, DataFeed, DataFeedBroker, DataFeedError, MockDataFeed, Order, get_datafeed
+* `datafeed.py` — CCXTProDataFeed, CompositeDataFeed, DataFeed, DataFeedBroker, DataFeedError, MockDataFeed, Order, get_datafeed, poll_forming_ohlcv
 * `itertools.py` — grouper
 * `pine_convert.py` — convert_pine, convert_to_v6, convert_v3_to_v4, convert_v4_to_v5, convert_v5_to_v6, convert_v6_to_v5, detect_version
 * `runner_cli.py` — api_request, delete_cmd, deploy_cmd, disable_cmd, enable_cmd, jobs_cmd, list_cmd, runner_group, show_cmd, tick_cmd

@@ -37,7 +37,8 @@ Host packing / contracts
   ``execute_script_compiled(open, high, low, close, vol, time)`` — the host
   is :mod:`pynescript.compiler.engine` (synthetic ``bar*60_000`` ms when time
   omitted; Runtime passes real OHLCV bar-open ms). Object-mode adds optional
-  ``rt_first=None, rt_ticks=1`` kwargs (defaults keep 6-arg calls valid).
+  ``rt_first=None, rt_ticks=1, data_feed=None, feed_symbol=""`` kwargs
+  (defaults keep 6-arg calls valid).
 - ``request.security`` / ``security``: same-symbol allowlisted HTF OHLCV /
   ``close[1]`` / simple ``ta.*`` resample in object mode (interpret helpers);
   same-TF / LTF simple OHLCV still passthrough. Foreign tickers and complex
@@ -1114,6 +1115,7 @@ class CompilerVisitor(NodeVisitor):
         lines = [
             "import numpy as np",
             "from pynescript.compiler.numba_builtins import *",
+            "from pynescript.util.datafeed import poll_forming_ohlcv",
             "",
         ]
         if self.uses_strategy:
@@ -1134,7 +1136,7 @@ class CompilerVisitor(NodeVisitor):
 
         lines.extend(
             [
-                "def execute_script_compiled(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, rt_first=None, rt_ticks=1):",
+                "def execute_script_compiled(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, rt_first=None, rt_ticks=1, data_feed=None, feed_symbol=''):",
                 "    n_bars = len(close_arr)",
                 "    open_arr = np.asarray(open_arr, dtype=np.float64)",
                 "    high_arr = np.asarray(high_arr, dtype=np.float64)",
@@ -1142,6 +1144,13 @@ class CompilerVisitor(NodeVisitor):
                 "    close_arr = np.asarray(close_arr, dtype=np.float64)",
                 "    vol_arr = np.asarray(vol_arr, dtype=np.float64)",
                 "    time_arr = np.asarray(time_arr, dtype=np.float64)",
+                "    if data_feed is not None:",
+                "        open_arr = np.array(open_arr, dtype=np.float64, copy=True)",
+                "        high_arr = np.array(high_arr, dtype=np.float64, copy=True)",
+                "        low_arr = np.array(low_arr, dtype=np.float64, copy=True)",
+                "        close_arr = np.array(close_arr, dtype=np.float64, copy=True)",
+                "        vol_arr = np.array(vol_arr, dtype=np.float64, copy=True)",
+                "        time_arr = np.array(time_arr, dtype=np.float64, copy=True)",
                 "    __drawings = []",
                 "    __alerts = []",
                 "    __alert_fire_bars = {}",
@@ -1436,6 +1445,15 @@ class CompilerVisitor(NodeVisitor):
         lines.append("            __ishistory = (not __bar_rt)")
         lines.append("            __isnew = (not __bar_rt) or (__tick_i == 0)")
         lines.append("            __isconfirmed = (not __bar_rt) or (__tick_i == __n_ticks - 1)")
+        lines.append("            if __bar_rt and data_feed is not None:")
+        lines.append("                __polled = poll_forming_ohlcv(data_feed, feed_symbol)")
+        lines.append("                if __polled is not None:")
+        lines.append("                    time_arr[__bar_idx] = __polled[0]")
+        lines.append("                    open_arr[__bar_idx] = __polled[1]")
+        lines.append("                    high_arr[__bar_idx] = __polled[2]")
+        lines.append("                    low_arr[__bar_idx] = __polled[3]")
+        lines.append("                    close_arr[__bar_idx] = __polled[4]")
+        lines.append("                    vol_arr[__bar_idx] = __polled[5]")
         lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
         if self.uses_strategy:
             lines.append("                __st_snap = __strategy.snapshot()")

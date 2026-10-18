@@ -1540,9 +1540,6 @@ def _apply_feed_forming_bar(
     """
     if data_feed is None or not ohlcv_data:
         return
-    poll = getattr(data_feed, "poll_ohlcv", None)
-    if not callable(poll):
-        return
     tf = "1m"
     ctx = getattr(evaluator, "context", None)
     try:
@@ -1552,22 +1549,14 @@ def _apply_feed_forming_bar(
     except Exception:
         pass
     try:
-        candle = poll(symbol or "", tf)
+        from pynescript.util.datafeed import poll_forming_ohlcv
     except Exception:
         return
-    if not candle:
+    polled = poll_forming_ohlcv(data_feed, symbol or "", tf)
+    if polled is None:
         return
-    try:
-        if isinstance(candle[0], (list, tuple)):
-            candle = candle[-1]
-        ts = int(candle[0])
-        o = float(candle[1])
-        h = float(candle[2])
-        low = float(candle[3])
-        c = float(candle[4])
-        vol = float(candle[5]) if len(candle) > 5 else None
-    except (TypeError, ValueError, IndexError):
-        return
+    ts, o, h, low, c, vol = polled
+    ts = int(ts)
     try:
         bar = ohlcv_data[bar_index]
         if isinstance(bar, dict):
@@ -3164,6 +3153,7 @@ class Runtime:
             return self._run_compiled(
                 source_code,
                 ohlcv_data,
+                data_feed=data_feed,
                 realtime_last_bar=realtime_last_bar,
                 realtime_ticks=realtime_ticks,
                 realtime_bars=realtime_bars,
@@ -4147,6 +4137,7 @@ class Runtime:
             compiled_result = self._run_compiled(
                 source_code,
                 ohlcv_data,
+                data_feed=data_feed,
                 realtime_last_bar=realtime_last_bar,
                 realtime_ticks=realtime_ticks,
                 realtime_bars=realtime_bars,
@@ -4194,6 +4185,7 @@ class Runtime:
         source_code: str,
         ohlcv_data: list[dict],
         *,
+        data_feed: Any = None,
         realtime_last_bar: bool = False,
         realtime_ticks: int = 1,
         realtime_bars: int = 0,
@@ -4207,7 +4199,8 @@ class Runtime:
 
         Realtime window kwargs match :meth:`Runtime.run`. Numeric nopython
         stays historical; an active window re-emits object mode so the tick
-        loop can honor ``var`` / ``varip`` / ``barstate`` / ``once``.
+        loop can honor ``var`` / ``varip`` / ``barstate`` / ``once`` and
+        ``DataFeed.poll_ohlcv`` when *data_feed* is set.
         """
         t_total0 = time.perf_counter()
         _clear_pine_logger()
@@ -4341,6 +4334,8 @@ class Runtime:
                 time=times,
                 rt_first=rt_first,
                 rt_ticks=rt_ticks,
+                data_feed=data_feed,
+                feed_symbol=str(getattr(self, "symbol", "") or ""),
             )
         except Exception as e:
             run_ms = (time.perf_counter() - t_run0) * 1000.0

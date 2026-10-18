@@ -179,7 +179,7 @@ _BUILTINS_WARMED = False
 # Bump when generated IR semantics change so source→IR disk index is invalidated
 # (source hash alone is stable across compiler fixes, e.g. fill() series keys).
 # v5: strategy series history + Pine na-aware ==/!=
-_DISK_META_VERSION = 20  # v20: object-mode rt tick list/dict content snapshot (D-04)
+_DISK_META_VERSION = 21  # v21: object-mode realtime DataFeed.poll_ohlcv (D-04)
 _NJIT_CACHE_FALSE = "@numba.njit(cache=False)"
 _NJIT_CACHE_TRUE = "@numba.njit(cache=True)"
 
@@ -691,6 +691,8 @@ class CompiledScript:
         *,
         rt_first: int | None = None,
         rt_ticks: int = 1,
+        data_feed: Any = None,
+        feed_symbol: str = "",
     ) -> dict[str, Any]:
         """Execute over full series; returns plots (+ optional ``__drawings`` / strategy).
 
@@ -702,7 +704,9 @@ class CompiledScript:
         real OHLCV timestamps for calendar/``timestamp``/``time[n]`` parity.
 
         *rt_first* / *rt_ticks* are object-mode realtime window kwargs (defaults
-        keep historical 6-arg execute). Numeric nopython ignores them.
+        keep historical 6-arg execute). *data_feed* / *feed_symbol* drive
+        last-bar ``poll_forming_ohlcv`` on object-mode ticks. Numeric nopython
+        ignores them.
         """
         o = _as_f64(open_)
         h = _as_f64(high)
@@ -727,6 +731,9 @@ class CompiledScript:
         if self.object_mode:
             rt_kw["rt_first"] = rt_first
             rt_kw["rt_ticks"] = rt_ticks
+            if data_feed is not None:
+                rt_kw["data_feed"] = data_feed
+                rt_kw["feed_symbol"] = feed_symbol or ""
         # Recover from truncated Numba .nbi/.nbc left after code edits / crashes.
         try:
             raw = _call_execute_with_recovery(self.execute, o, h, l, c, v, t, **rt_kw)
@@ -735,7 +742,19 @@ class CompiledScript:
             # on real bars / object values. Do not leak TypingError to the host.
             if self.object_mode or not _is_numba_nopython_failure(exc):
                 raise
-            raw = self._recover_nopython_at_run(exc, o, h, l, c, v, t, rt_first=rt_first, rt_ticks=rt_ticks)
+            raw = self._recover_nopython_at_run(
+                exc,
+                o,
+                h,
+                l,
+                c,
+                v,
+                t,
+                rt_first=rt_first,
+                rt_ticks=rt_ticks,
+                data_feed=data_feed,
+                feed_symbol=feed_symbol,
+            )
         return self._pack_result(raw)
 
     def _recover_nopython_at_run(
@@ -750,6 +769,8 @@ class CompiledScript:
         *,
         rt_first: int | None = None,
         rt_ticks: int = 1,
+        data_feed: Any = None,
+        feed_symbol: str = "",
     ) -> Any:
         """Re-emit object mode after a run-time nopython failure and retry once.
 
@@ -781,9 +802,11 @@ class CompiledScript:
         self.plot_titles = list(recovered.plot_titles)
         self.plot_kinds = list(recovered.plot_kinds)
         self.plot_attrs = [dict(a) for a in recovered.plot_attrs]
-        return _call_execute_with_recovery(
-            self.execute, o, h, l, c, v, t, rt_first=rt_first, rt_ticks=rt_ticks
-        )
+        rec_kw: dict[str, Any] = {"rt_first": rt_first, "rt_ticks": rt_ticks}
+        if data_feed is not None:
+            rec_kw["data_feed"] = data_feed
+            rec_kw["feed_symbol"] = feed_symbol or ""
+        return _call_execute_with_recovery(self.execute, o, h, l, c, v, t, **rec_kw)
 
     def _pack_result(self, raw: Any) -> dict[str, Any]:
         """Map execute() output to the public plot-title dict.
@@ -824,8 +847,9 @@ def _call_execute_with_recovery(
     """Call ``execute_script_compiled`` with Numba cache + legacy arity recovery.
 
     Current IR is ``(open, high, low, close, volume, time)`` plus optional
-    object-mode ``rt_first`` / ``rt_ticks`` kwargs. Disk modules from older
-    engines may still be 6-arg (no realtime kwargs) or 5-arg (no ``time_arr``).
+    object-mode ``rt_first`` / ``rt_ticks`` / ``data_feed`` / ``feed_symbol``
+    kwargs. Disk modules from older engines may still be 6-arg (no realtime
+    kwargs) or 5-arg (no ``time_arr``).
     On that TypeError, retry without kwargs then without *t* so stale disk IR
     still runs instead of hard-failing the host.
     """
