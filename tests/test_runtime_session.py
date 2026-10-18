@@ -290,3 +290,43 @@ plot(barstate.isconfirmed ? 1 : 0, "conf")
     assert out2["series"]["f"][-2] == 0
     assert out2["series"]["f"][-1] == 1
     assert out2["series"]["conf"][-2] == 1
+
+
+def test_session_update_last_bar_entry_fills_once() -> None:
+    """Last-bar ``strategy.entry`` on three forming ticks commits one fill, not three."""
+    src = """
+//@version=6
+strategy("sess broker", pyramiding=5)
+if barstate.islast
+    strategy.entry("L", strategy.long, qty=1)
+plot(strategy.opentrades, "ot")
+plot(strategy.position_size, "ps")
+"""
+    rt = Runtime(symbol="TEST")
+    sess = rt.create_session(src, _bars(5), mode="interpret")
+    last = dict(_bars(5)[-1])
+    tick = last
+    for close in (110.0, 111.0, 112.0):
+        tick = dict(last)
+        tick["close"] = close
+        tick["high"] = max(float(last["high"]), close)
+        out = sess.update_last_bar(tick)
+        assert "error" not in out, out.get("error")
+        assert out["series"]["ot"][-1] == 1, out["series"]["ot"]
+        assert out["series"]["ps"][-1] == 1, out["series"]["ps"]
+        kinds = [str(e.get("kind")) for e in (out.get("events") or [])]
+        assert kinds.count("entry") == 1, kinds
+    out2 = sess.append_bars(_bars(1, offset=5))
+    assert "error" not in out2, out2.get("error")
+    assert out2["series"]["ot"][-1] == 1, out2["series"]["ot"]
+    assert out2["series"]["ps"][-1] == 1, out2["series"]["ps"]
+    revised = _bars(5)
+    revised[-1] = dict(tick)
+    full = Runtime(symbol="TEST").run(src, revised + _bars(1, offset=5), mode="interpret")
+    assert "error" not in full, full.get("error")
+    assert out2["series"]["ot"] == full["series"]["ot"]
+    assert out2["series"]["ps"] == full["series"]["ps"]
+    full_kinds = [str(e.get("kind")) for e in (full.get("events") or [])]
+    out_kinds = [str(e.get("kind")) for e in (out2.get("events") or [])]
+    assert out_kinds.count("entry") == 1
+    assert out_kinds.count("entry") == full_kinds.count("entry")

@@ -1844,7 +1844,8 @@ class InterpretSession:
     committed bars stay confirmed.
 
     Use :meth:`update_last_bar` for forming-bar tick updates on the current
-    last bar (overwrites in place, ``var`` rolls back per tick).
+    last bar (overwrites in place; ``var``, TA, and broker fills roll back
+    per tick).
     """
 
     def __init__(
@@ -2095,6 +2096,7 @@ class InterpretSession:
         # Captured before the last bar's first visit; refreshed on append.
         self._last_open_var_snap: dict[str, Any] | None = None
         self._last_open_ta_snap: tuple[Any, Any] | None = None
+        self._last_open_broker_snap: dict[str, Any] | None = None
         self._last_open_event_len = 0
         self._last_open_alert_len = 0
         self._last_open_cond_len = 0
@@ -2303,11 +2305,12 @@ class InterpretSession:
                     _stats.count("interpret.errors", dim="order_fill")
                     return
             # Bar-open rollback state for the session's current last bar.
-            # update_last_bar restores var scope + TA windows to these so a
-            # forming bar re-tick starts from bar-open (varip persists).
+            # update_last_bar restores var scope + TA windows + broker to
+            # these so a forming bar re-tick starts from bar-open (varip persists).
             if is_last:
                 self._last_open_var_snap = _snapshot_realtime_scope(ev)
                 self._last_open_ta_snap = _snapshot_ta_state(ev)
+                self._last_open_broker_snap = strategy_state.snapshot() if self._need_strategy else None
                 self._last_open_event_len = len(self._all_events)
                 try:
                     self._last_open_alert_len = len(getattr(ev, "_triggered_alerts", None) or [])
@@ -2480,14 +2483,14 @@ class InterpretSession:
         """Re-tick the forming last bar with revised OHLCV (O(1) bars).
 
         Overwrites the last committed cell in place — bar count and bar
-        index do not advance. ``var`` scope and incremental TA windows roll
-        back to bar-open before each tick (``varip`` persists), so repeated
-        ticks behave like intermediate realtime ticks in :meth:`Runtime.run`
-        and a later :meth:`append_bars` stays exact.
+        index do not advance. ``var`` scope, incremental TA windows, and
+        broker fills / pending-book / strategy events roll back to bar-open
+        before each tick (``varip`` persists), so repeated ticks behave like
+        intermediate realtime ticks in :meth:`Runtime.run` and a later
+        :meth:`append_bars` stays exact.
 
-        Strategy fills are not rolled back across ticks (same limitation as
-        the realtime tick loop in :meth:`Runtime.run`); strategy series
-        history (``_size_hist`` …) is overwritten, not appended.
+        Confirmed :meth:`append_bars` commits (does not restore). Strategy
+        series history (``_size_hist`` …) is overwritten, not appended.
         """
         if self._error_result is not None:
             return self._error_result
@@ -2505,9 +2508,11 @@ class InterpretSession:
         ctx = self.context
         barstate = self._barstate
 
-        # Roll back to bar-open: var scope (varip persists) + TA windows.
+        # Roll back to bar-open: var scope (varip persists) + TA windows + broker.
         _restore_realtime_scope(ev, self._last_open_var_snap)
         _restore_ta_state(ev, self._last_open_ta_snap)
+        if self._last_open_broker_snap is not None:
+            ev._strategy_state.restore(self._last_open_broker_snap)
         # Drop this bar's events/alerts/conditions; the re-visit re-emits.
         try:
             del self._all_events[self._last_open_event_len :]
@@ -2654,19 +2659,9 @@ class InterpretSession:
             _stats.latency("delta.update_last_bar", time.perf_counter() - _dbg_t0)
         self._last_bar_unconfirmed = True
         # Overwrite (not append) strategy series history for this bar.
+        # Broker restore rewinds hist to bar-open (no last-bar slot yet).
         if self._need_strategy:
-            try:
-                if strategy_state._size_hist:
-                    strategy_state._size_hist[-1] = strategy_state.signed_position_size()
-                if strategy_state._avg_price_hist:
-                    if strategy_state.position_direction == "flat":
-                        strategy_state._avg_price_hist[-1] = float("nan")
-                    else:
-                        strategy_state._avg_price_hist[-1] = float(strategy_state.entry_price)
-                if strategy_state._closed_trades_hist:
-                    strategy_state._closed_trades_hist[-1] = float(len(strategy_state.closed_trades))
-            except Exception:
-                pass
+            self._commit_last_bar_strategy_hist(strategy_state)
         ev.finish_bar_plots()
         if self._need_strategy and strategy_events:
             for e in strategy_state.drain_events():
@@ -2675,6 +2670,24 @@ class InterpretSession:
                 d["run_id"] = self.run_id
                 self._all_events.append(d)
         return self.result()
+
+    def _commit_last_bar_strategy_hist(self, strategy_state: Any) -> None:
+        """Write this bar's strategy series slot (overwrite, or append after restore)."""
+        try:
+            if len(strategy_state._size_hist) < self._n_bars:
+                strategy_state.snapshot_bar_series()
+                return
+            if strategy_state._size_hist:
+                strategy_state._size_hist[-1] = strategy_state.signed_position_size()
+            if strategy_state._avg_price_hist:
+                if strategy_state.position_direction == "flat":
+                    strategy_state._avg_price_hist[-1] = float("nan")
+                else:
+                    strategy_state._avg_price_hist[-1] = float(strategy_state.entry_price)
+            if strategy_state._closed_trades_hist:
+                strategy_state._closed_trades_hist[-1] = float(len(strategy_state.closed_trades))
+        except Exception:
+            pass
 
     def _confirm_forming_last_bar(self, *, more_bars: bool = False) -> None:  # noqa: C901, PLR0915
         """Re-visit the last bar as confirmed after unconfirmed forming ticks."""
@@ -2686,6 +2699,8 @@ class InterpretSession:
         bar_time = self._col_time[idx] if self._col_time else 0
         _restore_realtime_scope(ev, self._last_open_var_snap)
         _restore_ta_state(ev, self._last_open_ta_snap)
+        if self._last_open_broker_snap is not None:
+            ev._strategy_state.restore(self._last_open_broker_snap)
         try:
             del self._all_events[self._last_open_event_len :]
         except Exception:
@@ -2758,19 +2773,9 @@ class InterpretSession:
             )
             return
         # Overwrite (not append) — the forming bar already has a history slot.
+        # Broker restore rewinds hist to bar-open (no last-bar slot yet).
         if self._need_strategy:
-            try:
-                if strategy_state._size_hist:
-                    strategy_state._size_hist[-1] = strategy_state.signed_position_size()
-                if strategy_state._avg_price_hist:
-                    if strategy_state.position_direction == "flat":
-                        strategy_state._avg_price_hist[-1] = float("nan")
-                    else:
-                        strategy_state._avg_price_hist[-1] = float(strategy_state.entry_price)
-                if strategy_state._closed_trades_hist:
-                    strategy_state._closed_trades_hist[-1] = float(len(strategy_state.closed_trades))
-            except Exception:
-                pass
+            self._commit_last_bar_strategy_hist(strategy_state)
         ev.finish_bar_plots()
         if self._need_strategy and strategy_events:
             for e in strategy_state.drain_events():
