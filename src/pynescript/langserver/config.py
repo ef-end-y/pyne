@@ -65,6 +65,10 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
         ),
         definition_provider=True,
         references_provider=True,
+        document_highlight_provider=True,
+        rename_provider=lsp.RenameOptions(
+            prepare_provider=True,
+        ),
         document_symbol_provider=lsp.DocumentSymbolOptions(
             work_done_progress=True,
         ),

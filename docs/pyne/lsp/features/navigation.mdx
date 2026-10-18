@@ -19,14 +19,14 @@
 
 ---
 title: "Navigation"
-description: "Go-to-definition, find-references, document outline, and workspace symbol search over the ASDL AST."
+description: "Go-to-definition, find-references, document highlight, same-document rename, document outline, and workspace symbol search over the ASDL AST."
 ---
 
 # Navigation
 
 ## Abstract
 
-Navigation features operate on **user AST symbols**, not the builtin catalog. Definition and references walk a freshly parsed tree with `NodeVisitor` subclasses; document symbols build a hierarchical outline; workspace symbols scan all **open** documents. Locations currently anchor to line starts (coarse ranges) — enough for jump lists, not character-precise rename.
+Navigation features operate on **user AST symbols**, not the builtin catalog. Definition and references walk a freshly parsed tree with `NodeVisitor` subclasses; document highlight and rename reuse the same ident-at-cursor + AST walk with character-precise ranges; document symbols build a hierarchical outline; workspace symbols scan all **open** documents. Definition/reference locations still anchor to line starts (coarse ranges) — highlight and rename do not.
 
 ## Conceptual model
 
@@ -49,10 +49,13 @@ flowchart TB
 | --- | --- | --- |
 | `textDocument/definition` | `definitions.handle_definition` | `list[Location] \| None` |
 | `textDocument/references` | `references.handle_references` | `list[Location]` (possibly empty) |
+| `textDocument/documentHighlight` | `highlight.handle_document_highlight` | `list[DocumentHighlight]` |
+| `textDocument/prepareRename` | `rename.handle_prepare_rename` | `Range \| None` |
+| `textDocument/rename` | `rename.handle_rename` | `WorkspaceEdit \| None` (this document) |
 | `textDocument/documentSymbol` | `symbols.handle_document_symbols` | `list[DocumentSymbol]` |
 | `workspace/symbol` | `server._collect_workspace_symbols` | `list[SymbolInformation]` |
 
-Capabilities: `definition_provider`, `references_provider`, document + workspace symbol options with work-done progress flags.
+Capabilities: `definition_provider`, `references_provider`, `document_highlight_provider`, `rename_provider` (`prepare_provider=True`), document + workspace symbol options with work-done progress flags.
 
 ### Definition (`DefinitionFinder`)
 
@@ -95,6 +98,8 @@ Flat `SymbolInformation` for functions, types, and assigned names across open bu
 | --- | --- |
 | `features/definitions.py` | Go-to-definition visitor |
 | `features/references.py` | Find-all-references visitor |
+| `features/highlight.py` | Document highlight + ident occurrence collector |
+| `features/rename.py` | prepareRename + same-document rename |
 | `features/symbols.py` | Document outline |
 | `server.py` | Workspace symbol aggregation |
 
@@ -104,7 +109,7 @@ Handlers accept the **workspace-cached AST** (`tree=doc.ast` from `server.py`). 
 
 1. **Parse failure → empty / null** (definition `None`, others `[]`).
 2. **Builtin names** have no definition in-file; clients should not expect `ta.sma` to resolve to a library file URI.
-3. **Ranges are line-coarse** for many locations (`character=0`); selection ranges for document symbols use `col_offset` when present.
+3. **Ranges are line-coarse** for definition/reference locations (`character=0`); highlight and rename use character-precise ident ranges (`col_offset` / line scan). Selection ranges for document symbols use `col_offset` when present.
 4. **Scope is naive** — same identifier in nested functions may collect multiple definitions; no shadowing analysis.
 5. **Closed documents** disappear from workspace symbol search.
 

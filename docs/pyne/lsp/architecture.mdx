@@ -103,13 +103,14 @@ From `config.py`:
 
 - Diagnostic provider (`identifier="pynescript-diagnostics"`, `workspace_diagnostics=False` in options; workspace pull handler still exists)
 - Completion: trigger `"."`, `resolve_provider=True`
-- Hover, definition, references
+- Hover, definition, references, document highlight
+- Rename with `prepareProvider` (same-document; keywords / builtin namespaces refused)
 - Document + workspace symbols
 - Full + range formatting
 - Code action (Convert to Pine v6) + executeCommand `pynescript.convertToV6`
 - Inlay hints (`resolve_provider=False`)
 - Semantic tokens full (legend of standard token types/modifiers; range=false)
-- Signature help is **not** advertised.
+- Signature help (`(` / `,`)
 
 File filters (`get_filter_options`): `*.pine`, `*.pinev5`, `*.pinev6` under language id `pinescript`. **`.pyne` is not in this helper** — VS Code still maps it via the extension contribution (`extensions: .pyne` first).
 

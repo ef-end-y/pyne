@@ -76,7 +76,9 @@ flowchart TB
 | Diagnostics (push + pull) | `publishDiagnostics`, `textDocument/diagnostic` | `workspace.py`, `features/diagnostics.py` |
 | Completion (+ resolve) | `textDocument/completion`, `completionItem/resolve` | `features/completion.py` |
 | Hover | `textDocument/hover` | `features/hover.py` |
+| Signature help | `textDocument/signatureHelp` | `features/signature_help.py` |
 | Definition / references | `textDocument/definition`, `textDocument/references` | `definitions.py`, `references.py` |
+| Highlight / rename | `textDocument/documentHighlight`, `prepareRename`, `rename` | `highlight.py`, `rename.py` |
 | Symbols | `textDocument/documentSymbol`, `workspace/symbol` | `symbols.py`, `server.py` |
 | Formatting | `textDocument/formatting`, `rangeFormatting` | `features/formatting.py` |
 | Inlay hints | `textDocument/inlayHint` | `features/inlay_hints.py` |

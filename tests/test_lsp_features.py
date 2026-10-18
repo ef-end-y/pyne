@@ -30,8 +30,11 @@ from pynescript.langserver.features.convert import handle_convert_to_v6
 from pynescript.langserver.features.definitions import handle_definition
 from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
+from pynescript.langserver.features.highlight import handle_document_highlight
 from pynescript.langserver.features.hover import handle_hover
 from pynescript.langserver.features.references import handle_references
+from pynescript.langserver.features.rename import handle_prepare_rename
+from pynescript.langserver.features.rename import handle_rename
 from pynescript.langserver.features.signature_help import handle_signature_help
 from pynescript.langserver.features.symbols import handle_document_symbols
 from pynescript.langserver.providers.builtin_metadata import get_builtin
@@ -1065,6 +1068,157 @@ class TestCapabilities:
         assert "pynescript.convertToV6" in (caps.execute_command_provider.commands or [])
         assert caps.hover_provider is True
         assert caps.definition_provider is True
+        assert caps.document_highlight_provider is True
+        assert caps.rename_provider is not None
+        assert caps.rename_provider.prepare_provider is True
         assert caps.semantic_tokens_provider is not None
         assert caps.semantic_tokens_provider.full is True
         assert caps.semantic_tokens_provider.range is False
+
+
+_FOO_SOURCE = """//@version=6
+indicator("T")
+foo = close
+plot(foo)
+"""
+
+_FOO_IF_SOURCE = """//@version=6
+indicator("T")
+foo = close
+if bar_index > 0
+    plot(foo)
+"""
+
+_FOO_TA_SOURCE = """//@version=6
+indicator("T")
+foo = close
+plot(ta.sma(foo, 14))
+"""
+
+
+def _highlight_params(source: str, prefix: str) -> lsp.DocumentHighlightParams:
+    return lsp.DocumentHighlightParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        position=_position_after(source, prefix),
+    )
+
+
+def _prepare_rename_params(source: str, prefix: str) -> lsp.PrepareRenameParams:
+    return lsp.PrepareRenameParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        position=_position_after(source, prefix),
+    )
+
+
+def _rename_params(source: str, prefix: str, new_name: str) -> lsp.RenameParams:
+    return lsp.RenameParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        position=_position_after(source, prefix),
+        new_name=new_name,
+    )
+
+
+def _apply_text_edits(source: str, edits: list[lsp.TextEdit]) -> str:
+    """Apply LSP text edits (same-line only) from last to first."""
+    ordered = sorted(
+        edits,
+        key=lambda e: (e.range.start.line, e.range.start.character),
+        reverse=True,
+    )
+    lines = source.split("\n")
+    for edit in ordered:
+        start = edit.range.start
+        end = edit.range.end
+        assert start.line == end.line
+        line = lines[start.line]
+        lines[start.line] = line[: start.character] + edit.new_text + line[end.character :]
+    return "\n".join(lines)
+
+
+class TestDocumentHighlightHandler:
+    """textDocument/documentHighlight for same-document ident occurrences."""
+
+    def test_highlight_declaration_and_use(self) -> None:
+        result = handle_document_highlight(_highlight_params(_FOO_SOURCE, "foo"), _FOO_SOURCE)
+        assert result is not None
+        assert len(result) >= 2
+        texts = [_range_text(_FOO_SOURCE, h.range) for h in result]
+        assert texts.count("foo") >= 2
+
+    def test_highlight_same_line_twice(self) -> None:
+        source = '//@version=6\nindicator("T")\nfoo = close\nplot(foo + foo)\n'
+        result = handle_document_highlight(_highlight_params(source, "foo"), source)
+        assert result is not None
+        assert len(result) >= 3
+        texts = [_range_text(source, h.range) for h in result]
+        assert texts.count("foo") >= 3
+
+    def test_highlight_empty_source(self) -> None:
+        params = lsp.DocumentHighlightParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=0, character=0),
+        )
+        assert handle_document_highlight(params, "") == []
+        assert handle_document_highlight(params, None) == []
+
+
+class TestRenameHandler:
+    """textDocument/prepareRename and textDocument/rename (same document)."""
+
+    def test_prepare_rename_user_ident(self) -> None:
+        result = handle_prepare_rename(_prepare_rename_params(_FOO_SOURCE, "foo"), _FOO_SOURCE)
+        assert result is not None
+        rng = result if isinstance(result, lsp.Range) else result.range
+        assert _range_text(_FOO_SOURCE, rng) == "foo"
+
+    def test_prepare_rename_keyword_null(self) -> None:
+        result = handle_prepare_rename(_prepare_rename_params(_FOO_IF_SOURCE, "if"), _FOO_IF_SOURCE)
+        assert result is None
+
+    def test_prepare_rename_builtin_namespace_null(self) -> None:
+        result = handle_prepare_rename(_prepare_rename_params(_FOO_TA_SOURCE, "ta"), _FOO_TA_SOURCE)
+        assert result is None
+
+    def test_rename_declaration_and_uses(self) -> None:
+        params = _rename_params(_FOO_SOURCE, "foo", "bar")
+        result = handle_rename(params, _FOO_SOURCE, params.text_document.uri)
+        assert result is not None
+        edits = list((result.changes or {}).get(params.text_document.uri, []))
+        assert len(edits) >= 2
+        rewritten = _apply_text_edits(_FOO_SOURCE, edits)
+        assert "bar = close" in rewritten
+        assert "plot(bar)" in rewritten
+        assert "foo" not in rewritten.split("indicator", 1)[-1]
+
+    def test_rename_leaves_keywords_and_other_idents(self) -> None:
+        source = """//@version=6
+indicator("T")
+foo = close
+foobar = 1
+if bar_index > 0
+    plot(foo)
+"""
+        params = _rename_params(source, "foo", "bar")
+        result = handle_rename(params, source, params.text_document.uri)
+        assert result is not None
+        edits = list((result.changes or {}).get(params.text_document.uri, []))
+        rewritten = _apply_text_edits(source, edits)
+        assert "bar = close" in rewritten
+        assert "foobar = 1" in rewritten
+        assert "if bar_index > 0" in rewritten
+        assert "plot(bar)" in rewritten
+
+    def test_rename_rejects_invalid_new_name(self) -> None:
+        uri = "file:///test.pine"
+        assert handle_rename(_rename_params(_FOO_SOURCE, "foo", "if"), _FOO_SOURCE, uri) is None
+        assert handle_rename(_rename_params(_FOO_SOURCE, "foo", "ta"), _FOO_SOURCE, uri) is None
+        assert handle_rename(_rename_params(_FOO_SOURCE, "foo", "1bar"), _FOO_SOURCE, uri) is None
+
+    def test_rename_keyword_is_noop(self) -> None:
+        assert handle_rename(_rename_params(_FOO_IF_SOURCE, "if", "iff"), _FOO_IF_SOURCE, "file:///test.pine") is None
+
+
+def _range_text(source: str, rng: lsp.Range) -> str:
+    lines = source.split("\n")
+    assert rng.start.line == rng.end.line
+    return lines[rng.start.line][rng.start.character : rng.end.character]

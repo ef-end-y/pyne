@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Navigation"
-description: "Go-to-definition, find-references, document outline, and workspace symbol search over the ASDL AST."
+description: "Go-to-definition, find-references, document highlight, same-document rename, document outline, and workspace symbol search over the ASDL AST."
 resource: "docs/pyne/lsp/features/navigation.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-18T20:57:31Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/navigation.mdx"

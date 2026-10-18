@@ -33,6 +33,7 @@
 **Feature handlers** (delegated to :mod:`pynescript.langserver.features`)
 
 - completion (+ resolve), hover, signatureHelp, definition, references
+- documentHighlight, prepareRename, rename (same-document)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full
@@ -63,9 +64,11 @@ from pynescript.langserver.features import completion as completion_feature
 from pynescript.langserver.features import convert as convert_feature
 from pynescript.langserver.features import definitions as definitions_feature
 from pynescript.langserver.features import formatting as formatting_feature
+from pynescript.langserver.features import highlight as highlight_feature
 from pynescript.langserver.features import hover as hover_feature
 from pynescript.langserver.features import inlay_hints as inlay_hints_feature
 from pynescript.langserver.features import references as references_feature
+from pynescript.langserver.features import rename as rename_feature
 from pynescript.langserver.features import semantic_tokens as semantic_tokens_feature
 from pynescript.langserver.features import signature_help as signature_help_feature
 from pynescript.langserver.features import symbols as symbols_feature
@@ -359,6 +362,39 @@ class PynescriptLanguageServer(LanguageServer):
             if not doc:
                 return references_feature.handle_references(params, None, uri)
             return references_feature.handle_references(params, doc.source, uri, tree=doc.ast)
+
+        @self.feature(lsp.TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT)
+        def text_document_highlight(
+            params: lsp.DocumentHighlightParams,
+        ) -> list[lsp.DocumentHighlight]:
+            """Handle textDocument/documentHighlight request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return highlight_feature.handle_document_highlight(params, None)
+            return highlight_feature.handle_document_highlight(params, doc.source, tree=doc.ast)
+
+        @self.feature(lsp.TEXT_DOCUMENT_PREPARE_RENAME)
+        def text_prepare_rename(
+            params: lsp.PrepareRenameParams,
+        ) -> lsp.Range | None:
+            """Handle textDocument/prepareRename request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return rename_feature.handle_prepare_rename(params, None)
+            return rename_feature.handle_prepare_rename(params, doc.source, tree=doc.ast)
+
+        @self.feature(lsp.TEXT_DOCUMENT_RENAME)
+        def text_rename(
+            params: lsp.RenameParams,
+        ) -> lsp.WorkspaceEdit | None:
+            """Handle textDocument/rename request (same-document)."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return rename_feature.handle_rename(params, None, uri)
+            return rename_feature.handle_rename(params, doc.source, uri, tree=doc.ast)
 
         @self.feature(lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
         def text_document_symbol(

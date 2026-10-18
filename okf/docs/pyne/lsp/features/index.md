@@ -7,5 +7,5 @@
 * [Formatting](formatting.md) - Document and range formatting via AST parse → NodeUnparser round-trip.
 * [Hover](hover.md) - textDocument/hover — Markdown documentation cards for Pine builtins from metadata.
 * [Inlay Hints](inlay-hints.md) - Inferred type annotations on simple assignments — const, series, and input kinds.
-* [Navigation](navigation.md) - Go-to-definition, find-references, document outline, and workspace symbol search over the ASDL AST.
+* [Navigation](navigation.md) - Go-to-definition, find-references, document highlight, same-document rename, document outline, and workspace symbol search over the ASDL AST.
 * [Semantic Tokens](semantic-tokens.md) - textDocument/semanticTokens/full — AST visitor, custom legend, and LSP delta encoding.

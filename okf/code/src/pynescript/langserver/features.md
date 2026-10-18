@@ -7,7 +7,7 @@ tags: [code, features, langserver, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T14:31:16Z
+  at: 2026-10-18T20:57:31Z
 sources:
   - id: tree
     resource: "src/pynescript/langserver/features"
@@ -24,9 +24,11 @@ okf_lock: generated
 * `definitions.py` — DefinitionFinder, handle_definition
 * `diagnostics.py` — create_diagnostic_related_info, create_quick_fix, lint_warnings_to_diagnostics
 * `formatting.py` — handle_formatting, handle_range_formatting
+* `highlight.py` — IdentHit, collect_ident_hits, cursor_ident, handle_document_highlight, is_renamable_ident, is_valid_pine_ident, resolve_tree
 * `hover.py` — handle_hover
 * `inlay_hints.py` — handle_inlay_hints
 * `references.py` — ReferencesFinder, handle_references
+* `rename.py` — handle_prepare_rename, handle_rename
 * `semantic_tokens.py` — handle_semantic_tokens
 * `signature_help.py` — handle_signature_help
 * `symbols.py` — DocumentSymbolCollector, handle_document_symbols

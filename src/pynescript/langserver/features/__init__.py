@@ -33,6 +33,8 @@ Modules:
 - :mod:`.formatting` — ``textDocument/formatting``, ``rangeFormatting``
 - :mod:`.definitions` — ``textDocument/definition``
 - :mod:`.references` — ``textDocument/references``
+- :mod:`.highlight` — ``textDocument/documentHighlight``
+- :mod:`.rename` — ``textDocument/prepareRename``, ``textDocument/rename``
 - :mod:`.symbols` — ``textDocument/documentSymbol``
 - :mod:`.semantic_tokens` — ``textDocument/semanticTokens/full``
 - :mod:`.inlay_hints` — ``textDocument/inlayHint``
