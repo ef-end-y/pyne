@@ -193,6 +193,33 @@ plot(ta.stdev(close, 3), title="cstdev")
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["stdev"][-1]) - float(sc["series"]["cstdev"][-1])) > 1e-6
 
+    def test_htf_cci_roc_mom_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed cci/roc/mom: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.cci(close, 3)), title="cci")
+plot(request.security(syminfo.tickerid, "D", ta.roc(close, 3)), title="roc")
+plot(request.security(syminfo.tickerid, "D", ta.mom(close, 3)), title="mom")
+plot(ta.cci(close, 3), title="ccci")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("cci", "roc", "mom"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = sc["series"]["cci"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        # Daily CCI of this walk saturates at 100 like a short chart window;
+        # HTF is stepwise, chart CCI is not.
+        ccci_day5 = sc["series"]["ccci"][5 * 24 : 6 * 24]
+        assert any(not _is_na(v) and abs(float(v) - float(ccci_day5[0])) > 1e-6 for v in ccci_day5)
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -273,11 +300,14 @@ class TestCompileSecurityKeepLimits:
         src = """//@version=6
 indicator("t")
 plot(request.security(syminfo.tickerid, "60", ta.sma(ta.ema(close, 3), 3)), title="nested")
-plot(request.security(syminfo.tickerid, "60", ta.cci(close, 5)), title="cci")
+plot(request.security(syminfo.tickerid, "60", ta.cci(5)), title="cci1")
+plot(request.security(syminfo.tickerid, "60", ta.cci(high, low, close, 5)), title="cci4")
 """
         si, sc = _run_both(src, bars)
-        assert all(_is_na(x) for x in sc["series"]["cci"])
-        _assert_series_match(si, sc, "cci")
+        assert all(_is_na(x) for x in sc["series"]["cci1"])
+        assert all(_is_na(x) for x in sc["series"]["cci4"])
+        _assert_series_match(si, sc, "cci1")
+        _assert_series_match(si, sc, "cci4")
         # Nested ta is not allowlisted: compile stays na. Interpret may still
         # hit the chart-pre-eval OHLCV heuristic on a few bars — that is not
         # the HTF simple-ta path and is not required to match.
