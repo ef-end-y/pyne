@@ -11,6 +11,7 @@
 - **Bar-mode incremental `ta.r_squared` / `ta.comovement` (T2).** Last-sample kernels match full recompute: r_squared is corr² clipped to [0, 1] (0.0 when either variance is 0; na while the window is short or any slot is non-numeric), comovement is the percent of last-N-1 deltas that share sign.
 - **Bar-mode incremental `ta.volume_weighted_momentum` (T2).** Last-sample kernel matches full recompute: last-N `(Δprice * vol) / sum(vol)` (0.0 when volume_sum is 0; na while the window is short).
 - **Bar-mode incremental `ta.rci` / `ta.bb_pct` / `ta.atr_normalized` (T2).** Last-sample kernels match full recompute: rci is Spearman rho of time vs value ranks (volatility mixin gated), %B is `(close-lower)/(upper-lower)×100` clipped to [0, 100] (50.0 when bands collapse), atr_normalized is ATR/close×100 (na when close is 0).
+- **Bar-mode incremental `ta.cumulative_delta` / `ta.volume_momentum` (T2).** Last-sample kernels match full recompute: cumulative_delta is last-N signed volume (`+vol` if close>prev, `−vol` if close<prev; 0.0 while the window is short), volume_momentum is the period-SMA volume ROC clipped to [-100, 100] (0.0 while the window is short or the old SMA is 0). Duplicate mixin copies in `economics.py` / `advanced.py` stay in sync.
 
 ### Changed
 

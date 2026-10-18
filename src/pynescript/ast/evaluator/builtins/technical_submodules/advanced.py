@@ -1161,28 +1161,37 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.cumulative_delta(close, volume, period)
         Returns: Cumulative signed volume
+        Duplicate of ``EconomicsIndicators._builtin_ta_cumulative_delta`` — keep in sync.
+        Bar-mode incremental last sample uses ``_cumulative_delta_inc_update``.
         """
         msg = "ta.cumulative_delta() requires 3 arguments"
         if len(args) < TERNARY:
             self._error(msg)
 
-        close = self._expect_list(args[0], msg)
-        volume = self._expect_list(args[1], msg)
         period = self._expect_int(args[2], msg)
+        if self._use_incremental_ta():
+            return self._cumulative_delta_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                period,
+            )
 
-        if len(close) < period or len(volume) < period or period <= 0:
+        close = self._as_series(args[0])
+        volume = self._as_series(args[1])
+
+        if len(close) < period or period <= 0:
             return 0.0
 
         delta = 0.0
         for i in range(-period, 0):
             c = close[i] if isinstance(close[i], (int, float)) else 0
+            c_prev = close[i - 1] if i > -len(close) and isinstance(close[i - 1], (int, float)) else c
             v = volume[i] if isinstance(volume[i], (int, float)) else 0
-            if i > -period:
-                prev_c = close[i-1] if isinstance(close[i-1], (int, float)) else c
-                if c > prev_c:
-                    delta += v
-                elif c < prev_c:
-                    delta -= v
+
+            if c > c_prev:
+                delta += v
+            elif c < c_prev:
+                delta -= v
 
         return delta
 
@@ -1191,23 +1200,31 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.volume_momentum(volume, period)
         Returns: Momentum (-100 to 100)
+        Duplicate of ``EconomicsIndicators._builtin_ta_volume_momentum`` — keep in sync.
+        Bar-mode incremental last sample uses ``_volume_momentum_inc_update``.
         """
         msg = "ta.volume_momentum() requires 2 arguments"
         if len(args) < BINARY:
             self._error(msg)
 
-        volume = self._expect_list(args[0], msg)
         period = self._expect_int(args[1], msg)
+        if self._use_incremental_ta():
+            return self._volume_momentum_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        volume = self._as_series(args[0])
 
         if len(volume) < period + 1 or period <= 0:
             return 0.0
 
-        vol_clean = [v for v in volume[-period - 1 :] if isinstance(v, (int, float))]
-        if len(vol_clean) < BINARY:
+        volume = [v for v in volume if isinstance(v, (int, float))]
+        if len(volume) < period + 1:
             return 0.0
 
-        old_vol = sum(vol_clean[:-1]) / len(vol_clean[:-1])
-        new_vol = sum(vol_clean[-1:])
+        old_vol = sum(volume[-period - 1 : -1]) / period if len(volume) > period else 1.0
+        new_vol = sum(volume[-period:]) / period
 
         if old_vol == 0:
             return 0.0

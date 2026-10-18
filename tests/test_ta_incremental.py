@@ -5007,3 +5007,330 @@ plot(ta.atr_normalized(high, low, close, 14), "atrn")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: cumulative_delta / volume_momentum last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_cumulative_delta(
+    close: list[Any], vol: list[Any], period: int
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_cumulative_delta([close[: i + 1], vol[: i + 1], period])
+        for i in range(len(close))
+    ]
+
+
+def _bar_walk_inc_cumulative_delta(
+    close: list[Any], vol: list[Any], period: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._cumulative_delta_inc_update(close[: i + 1], vol[: i + 1], period)
+        )
+    return out
+
+
+def _bar_walk_full_econ_cumulative_delta(
+    close: list[Any], vol: list[Any], period: int
+) -> list[float | None]:
+    """Full-recompute via the economics mixin copy (not the MRO winner)."""
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
+        EconomicsIndicators,
+    )
+
+    ev = _FullTA()
+    return [
+        EconomicsIndicators._builtin_ta_cumulative_delta(
+            ev, [close[: i + 1], vol[: i + 1], period]
+        )
+        for i in range(len(close))
+    ]
+
+
+def _bar_walk_full_adv_cumulative_delta(
+    close: list[Any], vol: list[Any], period: int
+) -> list[float | None]:
+    """Full-recompute via the advanced mixin copy (MRO winner)."""
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
+        AdvancedIndicators,
+    )
+
+    ev = _FullTA()
+    return [
+        AdvancedIndicators._builtin_ta_cumulative_delta(
+            ev, [close[: i + 1], vol[: i + 1], period]
+        )
+        for i in range(len(close))
+    ]
+
+
+def _bar_walk_full_volume_momentum(
+    vol: list[Any], period: int
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        ev._builtin_ta_volume_momentum([vol[: i + 1], period]) for i in range(len(vol))
+    ]
+
+
+def _bar_walk_inc_volume_momentum(
+    vol: list[Any], period: int
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(vol)):
+        ev._ta_call_i = 0
+        out.append(ev._volume_momentum_inc_update(vol[: i + 1], period))
+    return out
+
+
+def _bar_walk_full_econ_volume_momentum(
+    vol: list[Any], period: int
+) -> list[float | None]:
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
+        EconomicsIndicators,
+    )
+
+    ev = _FullTA()
+    return [
+        EconomicsIndicators._builtin_ta_volume_momentum(ev, [vol[: i + 1], period])
+        for i in range(len(vol))
+    ]
+
+
+def _bar_walk_full_adv_volume_momentum(
+    vol: list[Any], period: int
+) -> list[float | None]:
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
+        AdvancedIndicators,
+    )
+
+    ev = _FullTA()
+    return [
+        AdvancedIndicators._builtin_ta_volume_momentum(ev, [vol[: i + 1], period])
+        for i in range(len(vol))
+    ]
+
+
+def test_incremental_cumulative_delta_matches_full() -> None:
+    src = _series(120)
+    vol = _vols(120)
+    for period in (5, 14, 20):
+        _assert_series_close(
+            _bar_walk_inc_cumulative_delta(src, vol, period),
+            _bar_walk_full_cumulative_delta(src, vol, period),
+        )
+
+
+def test_incremental_cumulative_delta_mixin_copies_match_full() -> None:
+    """economics.py and advanced.py last samples ≡ ``_cumulative_delta_inc_update``."""
+    src = _series(80)
+    vol = _vols(80)
+    for period in (10, 14):
+        inc = _bar_walk_inc_cumulative_delta(src, vol, period)
+        _assert_series_close(inc, _bar_walk_full_econ_cumulative_delta(src, vol, period))
+        _assert_series_close(inc, _bar_walk_full_adv_cumulative_delta(src, vol, period))
+
+
+def test_incremental_cumulative_delta_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    vol: list[float | None] = list(_vols(40))
+    vol[7] = None
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._cumulative_delta_inc_update(src[: i + 1], vol[: i + 1], 10)
+        assert ev._ta_call_i == 1, f"cumulative_delta bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_cumulative_delta_warmup_is_zero() -> None:
+    """Window shorter than period → 0.0, matching the full path."""
+    src = _series(20)
+    vol = _vols(20)
+    period = 14
+    got = _bar_walk_inc_cumulative_delta(src, vol, period)
+    _assert_series_close(got, _bar_walk_full_cumulative_delta(src, vol, period))
+    for i in range(period - 1):
+        assert got[i] == pytest.approx(0.0)
+
+
+def test_incremental_cumulative_delta_na_treated_as_zero() -> None:
+    """Non-numeric close/volume is 0.0 in the last-N window (full path)."""
+    src: list[float | None] = list(_series(80))
+    vol: list[float | None] = list(_vols(80))
+    src[15] = None
+    vol[18] = None
+    got = _bar_walk_inc_cumulative_delta(src, vol, 10)
+    _assert_series_close(got, _bar_walk_full_econ_cumulative_delta(src, vol, 10))
+
+
+def test_incremental_cumulative_delta_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtins (MRO + economics + advanced copies) consume the inc slot."""
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
+        AdvancedIndicators,
+    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
+        EconomicsIndicators,
+    )
+
+    src = _series(30)
+    vol = _vols(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        vprefix = vol[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_cumulative_delta([prefix, vprefix, 10])
+        assert ev._ta_call_i == 1, f"cumulative_delta builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        EconomicsIndicators._builtin_ta_cumulative_delta(ev, [prefix, vprefix, 10])
+        assert ev._ta_call_i == 1, f"econ cumulative_delta bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        AdvancedIndicators._builtin_ta_cumulative_delta(ev, [prefix, vprefix, 10])
+        assert ev._ta_call_i == 1, f"adv cumulative_delta bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_volume_momentum_matches_full() -> None:
+    vol = _vols(120)
+    for period in (5, 14, 20):
+        _assert_series_close(
+            _bar_walk_inc_volume_momentum(vol, period),
+            _bar_walk_full_volume_momentum(vol, period),
+        )
+
+
+def test_incremental_volume_momentum_mixin_copies_match_full() -> None:
+    """economics.py and advanced.py last samples ≡ ``_volume_momentum_inc_update``."""
+    vol = _vols(80)
+    for period in (10, 14):
+        inc = _bar_walk_inc_volume_momentum(vol, period)
+        _assert_series_close(inc, _bar_walk_full_econ_volume_momentum(vol, period))
+        _assert_series_close(inc, _bar_walk_full_adv_volume_momentum(vol, period))
+
+
+def test_incremental_volume_momentum_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    vol: list[float | None] = list(_vols(40))
+    vol[4] = None
+    vol[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(vol)):
+        ev._ta_call_i = 0
+        ev._volume_momentum_inc_update(vol[: i + 1], 10)
+        assert ev._ta_call_i == 1, f"volume_momentum bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_volume_momentum_warmup_is_zero() -> None:
+    """Fewer than period+1 numeric samples → 0.0, matching the full path."""
+    vol = _vols(20)
+    period = 14
+    got = _bar_walk_inc_volume_momentum(vol, period)
+    _assert_series_close(got, _bar_walk_full_volume_momentum(vol, period))
+    for i in range(period):
+        assert got[i] == pytest.approx(0.0)
+
+
+def test_incremental_volume_momentum_na_dropped() -> None:
+    """Non-numeric volume is filtered (full path); short numeric window → 0.0."""
+    vol: list[float | None] = list(_vols(80))
+    vol[15] = None
+    got = _bar_walk_inc_volume_momentum(vol, 10)
+    _assert_series_close(got, _bar_walk_full_econ_volume_momentum(vol, 10))
+
+
+def test_incremental_volume_momentum_zero_old_sma() -> None:
+    """old SMA == 0 → 0.0; mixed zeros still match the full last-N path."""
+    vol = [0.0] * 40
+    got = _bar_walk_inc_volume_momentum(vol, 10)
+    _assert_series_close(got, _bar_walk_full_econ_volume_momentum(vol, 10))
+    for i in range(10, 40):
+        assert got[i] == pytest.approx(0.0)
+
+
+def test_incremental_volume_momentum_clips_to_range() -> None:
+    """Result is clipped to [-100, 100], matching the full path."""
+    rising = [1.0 * (i + 1) for i in range(40)]
+    falling = [40.0 - i for i in range(40)]
+    for vol in (rising, falling):
+        got = _bar_walk_inc_volume_momentum(vol, 5)
+        _assert_series_close(got, _bar_walk_full_econ_volume_momentum(vol, 5))
+        for v in got:
+            assert v is not None
+            assert -100.0 <= v <= 100.0, v
+
+
+def test_incremental_volume_momentum_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtins (MRO + economics + advanced copies) consume the inc slot."""
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
+        AdvancedIndicators,
+    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
+        EconomicsIndicators,
+    )
+
+    vol = _vols(30)
+    ev = _IncTA()
+    for i in range(len(vol)):
+        prefix = vol[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_volume_momentum([prefix, 10])
+        assert ev._ta_call_i == 1, f"volume_momentum builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        EconomicsIndicators._builtin_ta_volume_momentum(ev, [prefix, 10])
+        assert ev._ta_call_i == 1, f"econ volume_momentum bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        AdvancedIndicators._builtin_ta_volume_momentum(ev, [prefix, 10])
+        assert ev._ta_call_i == 1, f"adv volume_momentum bar {i}: {ev._ta_call_i}"
+
+
+def test_runtime_cumulative_delta_volume_momentum_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("cd vm")
+plot(ta.cumulative_delta(close, volume, 20), "cd")
+plot(ta.volume_momentum(volume, 20), "vm")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"cd", "vm"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

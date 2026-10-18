@@ -4021,6 +4021,104 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _cumulative_delta_inc_update(
+        self,
+        close: list[Any],
+        volume: list[Any],
+        period: int,
+    ) -> float:
+        """Incremental last-N signed volume matching full ``ta.cumulative_delta``.
+
+        ``+vol`` if close>prev, ``-vol`` if close<prev, 0 if equal. Non-numeric
+        close/volume treated as 0 (full path). Window short or ``period<=0``
+        → 0.0. One slot every bar, including warmup / na.
+        """
+        n = int(period)
+        bucket, key = self._ta_key1("cumulative_delta", n)
+        if n <= 0:
+            return 0.0
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "c": deque(maxlen=n + 1),
+                "v": deque(maxlen=n),
+                "count": 0,
+                "value": 0.0,
+            }
+            bucket[key] = st
+        raw_c = self._series_last(close)
+        raw_v = self._series_last(volume)
+        # Keep None for non-numeric close so prev-na skips the signed bar
+        # (full path uses current as prev when close[i-1] is non-numeric).
+        c_v: float | None = float(raw_c) if isinstance(raw_c, (int, float)) else None
+        v_v: float = float(raw_v) if isinstance(raw_v, (int, float)) else 0.0
+        wc: deque[float | None] = st["c"]
+        wv: deque[float] = st["v"]
+        wc.append(c_v)
+        wv.append(v_v)
+        st["count"] = int(st["count"]) + 1
+        if st["count"] < n:
+            st["value"] = 0.0
+            return 0.0
+        cs = list(wc)
+        vs = list(wv)
+        delta = 0.0
+        offset = len(cs) - len(vs)
+        for j in range(len(vs)):
+            c_idx = offset + j
+            c_raw = cs[c_idx]
+            c = 0.0 if c_raw is None else c_raw
+            prev_raw = None if c_idx == 0 else cs[c_idx - 1]
+            c_prev = c if prev_raw is None else prev_raw
+            v = vs[j]
+            if c > c_prev:
+                delta += v
+            elif c < c_prev:
+                delta -= v
+        st["value"] = delta
+        return delta
+
+    def _volume_momentum_inc_update(
+        self,
+        volume: list[Any],
+        period: int,
+    ) -> float:
+        """Incremental volume momentum matching full ``ta.volume_momentum``.
+
+        ROC of the period-SMA of numeric volume: last-N vs the previous last-N
+        (shifted by 1). Non-numeric samples are dropped (full path). Window
+        short or ``period<=0`` → 0.0; old SMA == 0 → 0.0; result clipped to
+        [-100, 100]. One slot every bar, including warmup / na.
+        """
+        n = int(period)
+        bucket, key = self._ta_key1("volume_momentum", n)
+        if n <= 0:
+            return 0.0
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "w": deque(maxlen=n + 1),
+                "value": 0.0,
+            }
+            bucket[key] = st
+        raw_v = self._series_last(volume)
+        w: deque[float] = st["w"]
+        if isinstance(raw_v, (int, float)):
+            w.append(float(raw_v))
+        if len(w) < n + 1:
+            st["value"] = 0.0
+            return 0.0
+        vols = list(w)
+        old_vol = sum(vols[:-1]) / n
+        new_vol = sum(vols[-n:]) / n
+        if old_vol == 0:
+            st["value"] = 0.0
+            return 0.0
+        momentum = ((new_vol - old_vol) / old_vol) * 100.0
+        val = max(-100.0, min(100.0, momentum))
+        st["value"] = val
+        return val
+
     def _finalize_series(self, values: list[Any]) -> Any:
         """Return full series list, or current scalar in bar mode."""
         if not self._bar_mode():

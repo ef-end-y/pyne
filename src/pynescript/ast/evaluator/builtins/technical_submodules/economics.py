@@ -494,14 +494,23 @@ class EconomicsIndicators(TechnicalHelpers):
         """Cumulative Delta.
 
         ta.cumulative_delta(close, volume, period)
+        Duplicate of ``AdvancedIndicators._builtin_ta_cumulative_delta`` — keep in sync.
+        Bar-mode incremental last sample uses ``_cumulative_delta_inc_update``.
         """
         msg = "ta.cumulative_delta() requires 3 arguments"
         if len(args) != 3:
             self._error(msg)
 
-        close = self._expect_list(args[0], msg)
-        volume = self._expect_list(args[1], msg)
         period = self._expect_int(args[2], msg)
+        if self._use_incremental_ta():
+            return self._cumulative_delta_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                period,
+            )
+
+        close = self._as_series(args[0])
+        volume = self._as_series(args[1])
 
         if len(close) < period or period <= 0:
             return 0.0
@@ -523,13 +532,21 @@ class EconomicsIndicators(TechnicalHelpers):
         """Volume Momentum.
 
         ta.volume_momentum(volume, period)
+        Duplicate of ``AdvancedIndicators._builtin_ta_volume_momentum`` — keep in sync.
+        Bar-mode incremental last sample uses ``_volume_momentum_inc_update``.
         """
         msg = "ta.volume_momentum() requires 2 arguments"
         if len(args) != 2:
             self._error(msg)
 
-        volume = self._expect_list(args[0], msg)
         period = self._expect_int(args[1], msg)
+        if self._use_incremental_ta():
+            return self._volume_momentum_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        volume = self._as_series(args[0])
 
         if len(volume) < period + 1 or period <= 0:
             return 0.0
