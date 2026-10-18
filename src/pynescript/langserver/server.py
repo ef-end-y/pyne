@@ -33,7 +33,7 @@
 **Feature handlers** (delegated to :mod:`pynescript.langserver.features`)
 
 - completion (+ resolve), hover, signatureHelp, definition, references
-- documentHighlight, prepareRename, rename (same-document)
+- documentHighlight, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full
@@ -389,12 +389,18 @@ class PynescriptLanguageServer(LanguageServer):
         def text_rename(
             params: lsp.RenameParams,
         ) -> lsp.WorkspaceEdit | None:
-            """Handle textDocument/rename request (same-document)."""
+            """Handle textDocument/rename across currently open documents."""
             uri = params.text_document.uri
             doc = self.pine_workspace.get_document(uri)
             if not doc:
                 return rename_feature.handle_rename(params, None, uri)
-            return rename_feature.handle_rename(params, doc.source, uri, tree=doc.ast)
+            return rename_feature.handle_rename(
+                params,
+                doc.source,
+                uri,
+                tree=doc.ast,
+                workspace=self.pine_workspace,
+            )
 
         @self.feature(lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
         def text_document_symbol(

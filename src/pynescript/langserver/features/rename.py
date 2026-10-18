@@ -20,8 +20,10 @@
 """Rename — ``textDocument/prepareRename`` and ``textDocument/rename``.
 
 Public handlers: :func:`handle_prepare_rename`, :func:`handle_rename`.
-Same-document only. Pine keywords and builtin namespaces are not renamed.
-New names must be a single valid Pine identifier token.
+Rename updates the ident in every currently open workspace document.
+``prepareRename`` stays the cursor document's ident range. Pine keywords
+and builtin namespaces are not renamed. New names must be a single valid
+Pine identifier token. Documents that are not open are not edited.
 """
 
 from __future__ import annotations
@@ -30,11 +32,13 @@ from typing import Any
 
 from lsprotocol import types as lsp
 
+from pynescript.langserver.features.highlight import IdentHit
 from pynescript.langserver.features.highlight import collect_ident_hits
 from pynescript.langserver.features.highlight import cursor_ident
 from pynescript.langserver.features.highlight import is_renamable_ident
 from pynescript.langserver.features.highlight import is_valid_pine_ident
 from pynescript.langserver.features.highlight import resolve_tree
+from pynescript.langserver.workspace import Workspace
 
 
 def handle_prepare_rename(
@@ -66,16 +70,22 @@ def handle_rename(
     source: str | None,
     uri: str,
     tree: Any | None = ...,
+    workspace: Workspace | None = None,
 ) -> lsp.WorkspaceEdit | None:
-    """Rename the ident under the cursor in this document only.
+    """Rename the ident under the cursor in every currently open document.
+
+    Closed files are not scanned. Without *workspace*, only the cursor
+    document is edited (same as a single open buffer).
 
     Args:
         params: Client rename params (position + ``new_name``).
-        source: Document text, or ``None``.
-        uri: Document URI for the returned workspace edit.
+        source: Cursor document text, or ``None``.
+        uri: Cursor document URI.
         tree: Pre-parsed AST from the workspace cache. Pass ``None`` when the
             workspace already failed to parse. Omit (default ``...``) to parse
             from *source*.
+        workspace: Open-document store. Other open buffers that contain the
+            ident are included in the edit. ``None`` limits the edit to *uri*.
 
     Returns:
         :class:`~lsprotocol.types.WorkspaceEdit`, or ``None`` when the ident
@@ -100,5 +110,24 @@ def handle_rename(
     if not hits:
         return None
 
-    edits = [lsp.TextEdit(range=hit.range, new_text=new_name) for hit in hits]
-    return lsp.WorkspaceEdit(changes={uri: edits})
+    changes: dict[str, list[lsp.TextEdit]] = {
+        uri: _edits_for_hits(hits, new_name),
+    }
+    if workspace is not None:
+        for doc in workspace.list_open_documents():
+            if doc.uri == uri or not doc.source or doc.ast is None:
+                continue
+            other_hits = collect_ident_hits(
+                doc.source,
+                doc.ast,
+                segment,
+                include_builtin_attrs=False,
+            )
+            if other_hits:
+                changes[doc.uri] = _edits_for_hits(other_hits, new_name)
+
+    return lsp.WorkspaceEdit(changes=changes)
+
+
+def _edits_for_hits(hits: list[IdentHit], new_name: str) -> list[lsp.TextEdit]:
+    return [lsp.TextEdit(range=hit.range, new_text=new_name) for hit in hits]

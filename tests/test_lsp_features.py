@@ -42,6 +42,7 @@ from pynescript.langserver.providers.builtin_metadata import get_metadata
 from pynescript.langserver.providers.completion_items import build_completion_item
 from pynescript.langserver.providers.completion_items import build_completion_list
 from pynescript.langserver.providers.completion_items import build_module_completion
+from pynescript.langserver.workspace import Workspace
 
 
 class TestBuiltinMetadata:
@@ -1163,7 +1164,7 @@ class TestDocumentHighlightHandler:
 
 
 class TestRenameHandler:
-    """textDocument/prepareRename and textDocument/rename (same document)."""
+    """textDocument/prepareRename and textDocument/rename (open workspace docs)."""
 
     def test_prepare_rename_user_ident(self) -> None:
         result = handle_prepare_rename(_prepare_rename_params(_FOO_SOURCE, "foo"), _FOO_SOURCE)
@@ -1216,6 +1217,75 @@ if bar_index > 0
 
     def test_rename_keyword_is_noop(self) -> None:
         assert handle_rename(_rename_params(_FOO_IF_SOURCE, "if", "iff"), _FOO_IF_SOURCE, "file:///test.pine") is None
+
+    def test_rename_updates_other_open_documents(self) -> None:
+        src_a = _FOO_SOURCE
+        src_b = """//@version=6
+indicator("B")
+foo = close
+plot(foo)
+"""
+        uri_a = "file:///a.pine"
+        uri_b = "file:///b.pine"
+        ws = Workspace()
+        doc_a = ws.put_document(uri_a, src_a)
+        ws.put_document(uri_b, src_b)
+        params = lsp.RenameParams(
+            text_document=lsp.TextDocumentIdentifier(uri=uri_a),
+            position=_position_after(src_a, "foo"),
+            new_name="bar",
+        )
+        result = handle_rename(params, src_a, uri_a, tree=doc_a.ast, workspace=ws)
+        assert result is not None
+        changes = result.changes or {}
+        assert uri_a in changes
+        assert uri_b in changes
+        rewritten_a = _apply_text_edits(src_a, list(changes[uri_a]))
+        rewritten_b = _apply_text_edits(src_b, list(changes[uri_b]))
+        assert "bar = close" in rewritten_a
+        assert "plot(bar)" in rewritten_a
+        assert "bar = close" in rewritten_b
+        assert "plot(bar)" in rewritten_b
+
+    def test_rename_skips_documents_that_are_not_open(self) -> None:
+        src_a = _FOO_SOURCE
+        src_b = """//@version=6
+indicator("B")
+foo = close
+plot(foo)
+"""
+        src_closed = """//@version=6
+indicator("C")
+foo = close
+plot(foo)
+"""
+        uri_a = "file:///a.pine"
+        uri_b = "file:///b.pine"
+        uri_closed = "file:///closed.pine"
+        ws = Workspace()
+        doc_a = ws.put_document(uri_a, src_a)
+        ws.put_document(uri_b, src_b)
+        params = lsp.RenameParams(
+            text_document=lsp.TextDocumentIdentifier(uri=uri_a),
+            position=_position_after(src_a, "foo"),
+            new_name="bar",
+        )
+        result = handle_rename(params, src_a, uri_a, tree=doc_a.ast, workspace=ws)
+        assert result is not None
+        changes = result.changes or {}
+        assert uri_a in changes
+        assert uri_b in changes
+        assert uri_closed not in changes
+        assert "foo" in src_closed
+
+    def test_prepare_rename_stays_cursor_document(self) -> None:
+        ws = Workspace()
+        ws.put_document("file:///a.pine", _FOO_SOURCE)
+        ws.put_document("file:///b.pine", _FOO_SOURCE)
+        result = handle_prepare_rename(_prepare_rename_params(_FOO_SOURCE, "foo"), _FOO_SOURCE)
+        assert result is not None
+        rng = result if isinstance(result, lsp.Range) else result.range
+        assert _range_text(_FOO_SOURCE, rng) == "foo"
 
 
 def _range_text(source: str, rng: lsp.Range) -> str:
