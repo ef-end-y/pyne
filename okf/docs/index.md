@@ -3,7 +3,7 @@
 # Concepts
 
 * [COMPILER_PLAN.md](COMPILER_PLAN.md) - Pynescript historically executed scripts with an AST-walking interpreter in pure Python. Because Pine Script evaluation is dominated by per-bar traversal of time series, that…
-* [PROGRESS_REPORT.md](PROGRESS_REPORT.md) - This project provides a capable Pine Script v5/v6 toolchain: parser, AST, evaluator, linter, LSP. The parser is mature; the evaluator covers a broad set of builtins, indicators,…
+* [PROGRESS_REPORT.md](PROGRESS_REPORT.md) - PYNE is a complete Pine Script™ v5/v6 toolchain: ANTLR4 grammar → ASDL AST → bar-loop evaluator (interpret / compile / mode=auto), Language Server Protocol, Flask Pro API, and…
 * [README.md](README.md) - Self-hosted product manuals (HOOX-style MDX) for this monorepo.
 * [REFACTORING_EXECUTIVE_SUMMARY.md](REFACTORING_EXECUTIVE_SUMMARY.md) - Status: ✅ PHASE 1 COMPLETE (85% Overall).
 * [ROADMAP.md](ROADMAP.md) - Live package: hoox-pyne 0.6.12.
@@ -14,7 +14,7 @@
 * [Known divergences from reference Pine semantics](known_divergences.md) - Status: intentional or residual gaps; track until closed or product-scoped.
 * [license.md](license.md) - Default: GNU AGPL-3.0-or-later (LICENSE).
 * [missing_features.md](missing_features.md) - Live package: hoox-pyne 0.6.12 (src/pynescript/about.py).
-* [numerical_validation_report.md](numerical_validation_report.md) - Validation Period: 15-20 November 2025.
+* [numerical_validation_report.md](numerical_validation_report.md) - Validation Period: 15–20 November 2025.
 * [optimization_notes.md](optimization_notes.md) - This document describes the performance optimizations applied to PyneScript core features to improve parsing, evaluation, and AST manipulation efficiency.
 * [pine_v6_full_surface_inventory.md](pine_v6_full_surface_inventory.md) - Scope: Every registered evaluator builtin, major series/variables, language constructs, and known gaps.
 * [pinescript_implementation_status.md](pinescript_implementation_status.md) - Live package: hoox-pyne 0.6.12.

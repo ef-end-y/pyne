@@ -12,323 +12,89 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with pynescript.  If not, see <https://www.gnu.org/licenses/>.
-#
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# PineScript Parser Completion Progress
+# PYNE Progress Report — hoox-pyne 0.6.12
 
 ## Summary
 
-This project provides a capable Pine Script v5/v6 toolchain: parser, AST, evaluator, linter, LSP. The parser is mature; the evaluator covers a broad set of builtins, indicators, and strategy primitives, with ongoing improvements for fidelity.
-
-## Key Achievements
-
-### 🎯 Overall Progress: Strong parser + solid evaluator coverage (tests: **2474** collected, 0.3.17)
-
-### Components Status
-
-| Component | Completion | Progress |
-|-----------|------------|----------|
-| **Parser** | High | Full grammar coverage, excellent roundtrips on real scripts |
-| **Evaluator** | Good | Expressions, 200+ builtins, indicators, strategy basics |
-| **Built-in Functions** | Broad | Math, strings, arrays, TA, strategy, drawing (stubs for plots) |
-| **Collections** | Full | Arrays, Matrices, Maps |
-| **Types** | Good | Including UDTs, series semantics |
-| **Compile** | Good | Numba + object-mode; **0.3.16–0.3.17** UDT/switch/matrix/drawing/round/color residuals |
-| **Code Quality** | Good | Modular, **2474** tests collected |
-| **Strategy** | Functional | Entry/exit, trades, risk, events support |
-| **Technical Analysis** | Broad | Many indicators implemented and tested |
-
-## Historical Note: Phase 8 (v6 indicators) Completion
-
-**Core TA indicators completed (68+ New Indicators in historical Phase 8) ✅:**
-
-- **Tier 1-5**: Standard indicators (Trend, Momentum, Volatility, etc.)
-- **Tier 6**: Advanced Economics (6 indicators)
-- **Tier 7**: Advanced Trading Strategies (11 indicators)
-- **Tier 8**: Intelligent Strategy Synthesizer (Capstone)
-
-**Total Tests**: 997 passing tests across all phases.
-
-**Alert Functions (2):**
-- `alert()` - Send alert notification (stub)
-- `alertcondition()` - Define alert condition (stub)
-
-**Utility Functions (3):**
-- `fixnan()` - Replace NaN/None with 0
-- `string()` - Type conversion to string
-- `math.round_to_mintick()` - Round to tick size
-
-**Technical Analysis (1):**
-- `ta.barssince()` - Bars since condition true
-
-**Test Results ✅:**
-- All 181 unique functions implemented and loaded
-- 152 evaluator tests confirmed passing
-- Clean modular architecture across 6 builtin modules
-- No breaking changes to existing functionality
-
-
-## Implemented Features
-
-### Code Architecture
-
-- `base.py` - Core dispatch infrastructure and error handling
-- `numeric.py` - Math and numeric built-ins (30+ functions)
-- `strings.py` - String manipulation (20+ functions)
-- `arrays.py` - Array operations (40+ functions)
-- `technical.py` - Technical analysis indicators (35+ functions)
-
-**Benefits:**
-- ✅ Each module is 500 lines or less, easy to understand and maintain
-- ✅ 100% API compatibility preserved - `BuiltinEvaluator` works unchanged
-- ✅ Lazy-loaded dispatch for performance
-- ✅ Code style checks passing (Ruff)
-- ✅ All 263 regression tests pass
-
-### Latest Session: Extended Function Library Implementation
-
-**New Array Statistical Functions (9) ✅:**
-
-- `array.percentile_linear_interpolation()` - Percentile with linear interpolation
-- `array.percentile_nearest_rank()` - Percentile using nearest rank method
-- `array.percentrank()` - Percent rank of value in array
-- `array.standardize()` - Z-score normalization
-- `array.stdev()` - Standard deviation
-- `array.variance()` - Variance calculation
-- `array.sort_indices()` - Returns indices that would sort array
-- `array.binary_search()` / `array.binary_search_leftmost()` / `array.binary_search_rightmost()` — sorted search; UDT arrays honor `sort_field` (0.3.6)
-
-**New Technical Analysis Indicators (9) ✅:**
-
-- `ta.cog()` - Center of Gravity oscillator
-- `ta.dmi()` - Directional Movement Index (+DI, -DI)
-- `ta.kc()` - Keltner Channels (upper, middle, lower bands)
-- `ta.kcw()` - Keltner Channels Width
-- `ta.linreg()` - Linear Regression value (FIXED: signature corrected)
-- `ta.rci()` - Rank Correlation Index (Spearman's correlation)
-- `ta.supertrend()` - Supertrend indicator with direction
-- `ta.swma()` - Symmetric Weighted Moving Average (FIXED: signature corrected)
-- `ta.zigzag()` - Zigzag pattern detector
-
-**Plotting Functions Module (10) ✅:**
-
-Created dedicated `plotting.py` module with stub implementations for:
-- `plot()`, `plotarrow()`, `plotbar()`, `plotcandle()`
-- `plotchar()`, `plotshape()`
-- `fill()`, `bgcolor()`, `barcolor()`, `hline()`
-
-**Test Coverage (27 New Tests) ✅:**
-
-- All 27 new function tests passing
-- Full evaluator test suite: 152/152 tests passing across Python 3.10, 3.11, 3.12
-- Zero regressions in existing functionality
-- Complete parametrized test coverage with edge cases
-
-**Updated Progress Metrics:**
-
-- Built-in Functions: 65% → 80%
-- Code Quality: 85% → 90%
-- Overall Completion: 75-80% → 80-85%
-- Total Functions Implemented: 65+ → 93+
-
-### Evaluator Core (15 commits, 500+ lines)
-
-#### 1. Arithmetic & Logic
-- Binary operators: `+`, `-`, `*`, `/`, `%`
-- Unary operators: `-`, `+`, `not`
-- Comparison operators: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- Boolean operators: `and`, `or`
-- Conditional expressions: `condition ? true_val : false_val`
-
-#### 2. Data Structures & Series History
-- Array literals: `[1, 2, 3]`
-- Array indexing: `arr[0]`
-- Series history access: `close[0]`, `close[1]`, etc.
-- Tuple/list operations
-- Attribute access: `obj.attr`
-
-#### 3. Built-in Functions (40+ functions)
-
-##### Math Functions (11)
-```
-math.max(), math.min(), math.abs(), math.sqrt()
-math.round(), math.floor(), math.ceil()
-math.pow(), math.log()
-math.sin(), math.cos(), math.tan()
-```
-
-##### String Functions (7)
-```
-str.length(), str.upper(), str.lower()
-str.contains(), str.startswith(), str.substring()
-str.join()
-```
-
-##### Array Functions (6)
-```
-array.size(), array.get(), array.push(), array.pop(), array.slice()
-array.join()
-```
-
-##### Technical Analysis (31)
-```
-ta.sma()   - Simple Moving Average
-ta.ema()   - Exponential Moving Average
-ta.wma()   - Weighted Moving Average
-ta.rsi()   - Relative Strength Index
-ta.stdev() - Standard Deviation
-ta.bb()    - Bollinger Bands
-ta.highest(), ta.lowest(), ta.range()
-ta.change(), ta.crossover(), ta.crossunder()
-ta.macd()  - Moving Average Convergence Divergence
-ta.atr()   - Average True Range
-ta.tr()    - True Range
-ta.stoch() - Stochastic Oscillator
-ta.adx()   - Average Directional Index
-ta.cci()   - Commodity Channel Index
-ta.roc()   - Rate of Change
-ta.wpr()   - Williams %R
-ta.obv()   - On Balance Volume
-ta.mfi()   - Money Flow Index
-ta.cum()   - Cumulative Sum
-ta.dev()   - Standard Deviation from Mean
-ta.max(), ta.min() - Max/Min over period
-ta.mom()   - Momentum Indicator
-```
-
-##### Utility Functions (6)
-```
-na()           - Returns None
-nz()           - Null coalescing with default
-bool(), int(), float() - Type conversions
-color.new()    - Color creation
-```
-
-## Testing & Validation
-
-### Demo Script
-Created `examples/evaluate_expressions.py` with 75+ test cases covering:
-- Basic arithmetic and operator precedence
-- All math functions with real inputs
-- String manipulation and searching
-- Array creation, access, and manipulation
-- Technical analysis on price series
-- Series history access (close[0], close[1], etc.)
-- Conditional expressions
-- Type conversions
-
-All tests pass successfully ✅
-
-### Example Usage
-
-```python
-from pynescript.ast.helper import literal_eval
-
-# Math
-result = literal_eval("math.sqrt(16)")  # 4.0
-
-# Technical Analysis
-prices = [100, 102, 101, 103, 105, 104, 106, 108, 107, 110]
-sma = literal_eval(f"ta.sma({prices}, 5)")  # 107
-rsi = literal_eval(f"ta.rsi({prices}, 9)")  # 81.25
-bb = literal_eval(f"ta.bb({prices}, 5, 2)")  # [107.0, 111.47, 102.53]
-
-# Arrays and strings
-len_result = literal_eval("array.size([1, 2, 3, 4, 5])")  # 5
-upper = literal_eval('str.upper("hello")')  # "HELLO"
-
-# Conditionals
-result = literal_eval("5 > 3 ? 'yes' : 'no'")  # "yes"
-```
-
-## Technical Implementation Details
-
-### Architecture
-- **Visitor Pattern**: Clean separation of AST traversal and evaluation logic
-- **Type Safety**: Proper error handling for type mismatches
-- **Modularity**: Each function isolated in dictionary for easy extension
-- **Standards Compliance**: Follows PEP 8 and project linting rules
-
-### Key Files Modified
-1. `src/pynescript/ast/evaluator.py` - Core evaluation engine (500+ lines)
-2. `docs/pinescript_implementation_status.md` - Complete feature index
-3. `examples/evaluate_expressions.py` - Comprehensive demo
-
-### Code Quality
-- All lint warnings addressed (except magic numbers - acceptable for math)
-- Comprehensive docstrings for complex algorithms (EMA, RSI, Bollinger Bands)
-- Proper error messages with context
-- Type hints throughout
-
-## Next Steps
-
-### Immediate Priorities (to reach 60%)
-1. **More TA Functions** (~15 remaining core indicators)
-   - Stochastic Oscillator, MACD improvements, ADX, CCI
-   - Volume indicators: OBV, MFI
-   - More momentum: ROC, Williams %R
-
-2. **String Functions** (10+ remaining)
-   - str.split, str.join, str.replace
-   - str.tonumber, str.tostring, str.format
-
-3. **Series History Enhancements**
-   - Implement more built-in series (volume, time, etc.)
-   - Series state management across evaluations
-
-### Medium Term (to reach 75%)
-4. **Drawing Objects** (plot, hline, fill, etc.)
-5. **Input System** (input.int, input.bool, etc.)
-6. **Strategy Simulation** (strategy.* functions)
-7. **Request Functions** (request.security, request.data)
-
-### Long Term (to reach 100%)
-9. **Type System** (type annotations, custom types)
-10. **Loops and Control Flow** (for, while, if statements)
-11. **User-Defined Functions** (full function definitions)
-12. **Advanced Features** (libraries, exports, namespaces)
-
-## Performance Metrics
-
-- **Lines of Code Added**: ~780
-- **Functions Implemented**: 43+
-- **Test Cases**: 80+
-- **Commits**: 17
-- **Time Investment**: ~8 hours of development
-- **Test Pass Rate**: 100%
-
-## Documentation
-
-- ✅ Comprehensive implementation status index (1100+ lines)
-- ✅ Function documentation with examples
-- ✅ Demo script showing all features
-- ✅ Inline code comments and docstrings
-- ✅ Git commit messages with detailed descriptions
-
-## Compatibility
-
-- Python 3.13 tested ✅
-- Backwards compatible with existing parser
-- No breaking changes to public API
-- All existing tests pass
-
-## Conclusion
-
-This iteration has successfully transformed the evaluator from a basic expression parser to a functional PineScript expression engine capable of:
-- Evaluating complex mathematical expressions
-- Running technical analysis calculations
-- Processing arrays and strings with manipulation functions
-- Accessing historical series data (close[0], close[1], etc.)
-- Executing conditional logic
-
-The foundation is now solid for implementing more advanced features like plotting, strategy backtesting, and user-defined functions.
-
----
-
-**Branch**: `complete-pinescript-parsing`  
-**Based on**: `main` (commit 0d01bfe)  
-**Status**: Ready for further development  
-**Next Iteration**: Series history and more TA functions
+PYNE is a complete Pine Script™ v5/v6 toolchain: ANTLR4 grammar → ASDL AST → bar-loop evaluator (interpret / compile / `mode=auto`), Language Server Protocol, Flask Pro API, and edge workers sharing one evaluate contract. The project is **not** a TradingView® platform clone — it is an independent, inspectable language engine whose canonical claim is **language coverage**, not bit-identical platform parity.
+
+Live package: **`hoox-pyne` 0.6.12** (`src/pynescript/__about__.py`). Import package: `pynescript`. CLIs: **`pyne`** / **`pyne-lsp`** (aliases `pynescript` / `pynescript-lsp`).
+
+## Components Status
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| **Parser** (ANTLR4 v5/v6) | Working | Multiline strings, soft keywords, bitwise ops, typed UDF returns, `once`, `export const`. `resource/*.g4` is source of truth; `generated/` never hand-edited. |
+| **AST / Builder** | Working | `PinescriptASTBuilder` lowers CST → ASDL nodes with locations + comment annotations. `parse` → `unparse` round-trip is the test oracle. |
+| **Evaluator** | Working | `NodeLiteralEvaluator` bar loop; series history (`close[n]` → `na` OOB/negative); `var`/`varip`; `input.*`; `request.*` (foreign/complex → `na`). |
+| **Builtins / TA** | Working | 941 callables across 255 dispatch namespaces; 0 missing vs public TV v6 function reference (434 symbols). `ta.*` 165 functions with incremental bar-mode hot path (default on). |
+| **Collections** | Working | `array.*` (68), `matrix.*` (74 incl. LA + predicates), `map.*` (11). Negative indices, UDT `sort_field`, `binary_search*`. |
+| **Strategy broker** | Working | `StrategyEvent` stream, pending limit/stop fills, OCA groups, commission/slippage models, risk cascade (max size/drawdown/cons-loss-days/intraday), `from_entry`/`qty_percent`, trail (OHLC-path approx). |
+| **Drawing / plotting** | Working | `line`/`box`/`label`/`table`/`polyline`/`linefill` + `plot` family; `max_*_count` GC; drawing export parity (interpret ↔ compile). |
+| **Alerts** | Working | `alert()`/`alertcondition()` frequency rules; L2 webhooks (`webhook_url` / `ALERT_WEBHOOK_URL`). Interpret is the alert oracle; compile returns `[]`. |
+| **Compiler** (Numba/object) | Working | `mode=auto` falls back to interpret; warm-compile / disk IR cache (prewarm CLI/API); object mode for UDT/maps/drawings. `time_arr` for calendar/time builtins. |
+| **Pro API** | Working | Flask `/run`, `/run/batch`, `/session*`, `/data/series*`, `/optimize`, `/preview*`, `/backtest*`, `/stats`, auth (API keys + admin token), free-tier guards (opt-in). |
+| **LSP** (`pyne-lsp`) | Working | Diagnostics, completion, hover, definition/references, symbols, formatting, inlay hints, semantic tokens. Fernet-optional builtin metadata (`.enc`). VS Code extension `hoox-sh.pyne` 0.4.4. |
+| **PyneTS** | Partial | `@hoox-sh/pynets` 0.5.0 interpret + JS compile; Python Runtime remains the oracle. |
+
+## Corpus Performance (set01–04 · 2,477 scripts · 2026-08-09)
+
+Open-source sets, **not shipped** in git. Not a TradingView® platform score.
+
+| Metric | Result |
+|--------|--------|
+| Parse + unparse | **99.96%** (2,476/2,477) — residual: 1 intentional invalid line-wrap demo |
+| Runtime interpret (50 bars) | **100%** excl. EXPECTED_FAIL — 2466 OK + 11 intentional demos |
+| set01 Runtime | **249/249** (100%) |
+
+EXPECTED_FAIL scripts are path-listed intentional demos (library `runtime.error` guards, lower-TF security, pathological loops, truncated mid-call scrapes) — not silent suppressions.
+
+## Recently Completed Themes (do not re-plan as greenfield)
+
+- **0.6.10–0.6.12**: engine-owned live plane (WS `/ws/live`), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + `PYNE_DATA_DIR`, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests.
+- **0.6.7–0.6.9**: response windowing (`from_bar`/`to_bar`), live evaluation sessions (O(1) tick / O(delta) append), engine-owned OHLCV store, `GET /stats`, `PYNE_DEBUG`, faster interpret dispatch, compile `ta.uo`.
+- **Earlier**: interpret↔compile plot parity harness (official TV builtins **0 MISMATCH**), series caps (`PYNE_SERIES_CAP`, T1), pending-fill averaging (F2), Supertrend goldens (F1), `timeframe.change` D/W/M exchange calendar, UDT `sort_field` on `array.binary_search*`, `export const`/types/enums, multiline strings, square-bracket wrapping, drawing export parity.
+
+## Open Backlog (IDs stable)
+
+| ID | Item | Pri | Status |
+|----|------|-----|--------|
+| **P1p** | Compile/interpret plot parity residual | P1 | Official TV builtins **0 MISMATCH**; optional set0x community corpus unmeasured |
+| **T2** | Incremental TA for remaining heavy kernels | P2 | Volume/oscillator/band kernels done; more where profiled |
+| **F1** | ATR Wilder / TV supertrend re-baseline | P2 | mid±factor·ATR locked; TV band ratchet out of scope |
+| **L1** | v5↔v6 converter maturity | P3 | Done — source-level rewrites both ways |
+| **B1** | Real (non-mock) multi-symbol `request.*` feeds | — | By design; foreign-na policy landed (no invent) |
+| **H1 residual** | Dual-host Runtime worker-only extras (logs/profile) | P1 | Largely done; residual = worker-only extras, not a forked bar loop |
+
+Longer horizon (not next): ML wrappers, automatic refactor, parallel/distributed eval experiments.
+
+## Documentation Truth Map
+
+| Doc | Role | Status |
+|-----|------|--------|
+| `docs/pyne/index.mdx` | Product hub + what's new | Current (0.6.12) |
+| `docs/missing_features.md` | Living gap analysis | Current (0.6.12) |
+| `docs/pinescript_implementation_status.md` | High-level impl summary | Current (0.6.12) |
+| `docs/pyne/reference/compatibility.mdx` | Grouped compatibility map | Current (honest "working / partial / by design") |
+| `docs/pyne/reference/missing-features.mdx` | Product-facing gap annex | Current |
+| `docs/pyne/reference/pine-v6-surface.mdx` | Name-level dispatch summary | Current (941 / 255 / 0 missing) |
+| `docs/pine_v6_full_surface_inventory.md` | Exhaustive builtin tables | Source of truth; regenerate after builtin PRs |
+| `docs/known_divergences.md` | Semantic deltas vs reference Pine | Current (D-01…D-06 open; F-01…F-16 fixed) |
+| `docs/numerical_validation_report.md` | Methodology + error bounds | v1.0 Nov 2025; treat as report-era, not eternal SLA |
+
+## What To Avoid
+
+- **Do not** cite "100% TradingView parity" — PYNE is language coverage, not platform identity.
+- **Do not** hand-edit `generated/` ANTLR/ASDL artifacts; edit `resource/` only.
+- **Do not** recreate stale backups (`builder.py.bak`, etc.).
+- **Do not** conflate `pyne` (Click CLI) with `pyne-lsp` (pygls LSP).
+- **Do not** install plain `pyne`/`pynescript` from PyPI — the distribution is **`hoox-pyne`**.
+
+## See Also
+
+- `docs/pyne/devops/release.mdx` — how to cut a `v*` release
+- `docs/pyne/reference/roadmap.mdx` — forward plan
+- `docs/pyne/devops/ci.mdx` — CI matrix (3.10–3.13)
+- `CONTRIBUTING.md` — hatch workflow + PyPI release steps

@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "PROGRESS_REPORT.md"
-description: "This project provides a capable Pine Script v5/v6 toolchain: parser, AST, evaluator, linter, LSP. The parser is mature; the evaluator covers a broad set of builtins, indicators,…"
+description: "PYNE is a complete Pine Script™ v5/v6 toolchain: ANTLR4 grammar → ASDL AST → bar-loop evaluator (interpret / compile / mode=auto), Language Server Protocol, Flask Pro API, and…"
 resource: "docs/PROGRESS_REPORT.md"
 tags: [doc, docs, progress-report]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-18T00:12:55Z
 sources:
   - id: tree
     resource: "docs/PROGRESS_REPORT.md"
@@ -22,30 +22,14 @@ Repo path `docs/PROGRESS_REPORT.md`.
 
 # Outline
 
-* Key Achievements
-  * 🎯 Overall Progress: Strong parser + solid evaluator coverage (tests: 2474 collected, 0.3.17)
-  * Components Status
-* Historical Note: Phase 8 (v6 indicators) Completion
-* Implemented Features
-  * Code Architecture
-  * Latest Session: Extended Function Library Implementation
-  * Evaluator Core (15 commits, 500+ lines)
-* Testing & Validation
-  * Demo Script
-  * Example Usage
-* Technical Implementation Details
-  * Architecture
-  * Key Files Modified
-  * Code Quality
-* Next Steps
-  * Immediate Priorities (to reach 60%)
-  * Medium Term (to reach 75%)
-  * Long Term (to reach 100%)
-* Performance Metrics
-* Documentation
-* Compatibility
-* Conclusion
+* Components Status
+* Corpus Performance (set01–04 · 2,477 scripts · 2026-08-09)
+* Recently Completed Themes (do not re-plan as greenfield)
+* Open Backlog (IDs stable)
+* Documentation Truth Map
+* What To Avoid
+* See Also
 
 # Mentions
 
-* [src/pynescript/ast](/code/src/pynescript/ast.md)
+* [src/pynescript](/code/src/pynescript.md)

@@ -1,6 +1,6 @@
 # PYNE — llms.txt
 # https://llmstxt.org/ — machine-readable project map for LLMs
-# Generated 2026-10-17
+# Generated 2026-10-18
 
 # PYNE
 > Open-source Pine Script evaluation framework

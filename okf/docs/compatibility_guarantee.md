@@ -7,7 +7,7 @@ tags: [compatibility-guarantee, doc, docs]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-08T18:28:09Z
+  at: 2026-10-18T00:12:55Z
 sources:
   - id: tree
     resource: "docs/compatibility_guarantee.md"
@@ -22,37 +22,16 @@ Repo path `docs/compatibility_guarantee.md`.
 
 # Outline
 
-* 🎯 Executive Summary
-  * Compatibility Metrics
-* 📊 Detailed Compatibility Matrix
-  * 1. Language Features
-  * 2. Built-in Functions (181 Functions)
-  * 3. Type System (100% Compatible ✅)
-  * 4. Collections (100% Compatible ✅)
-* 🔬 Validation Methodology
-  * 1. Real-World Script Testing
-  * 2. Numerical Validation
-  * 3. AST Round-Trip Validation
-  * 4. Automated Regression Testing
-* ⚠️ Known Limitations
-  * By Design (Not Compatibility Issues)
-  * Edge Cases (0.7% of Real-World Scripts)
-* 📈 Performance Benchmarks
-  * Parsing Performance
-  * Evaluation Performance
-* ✅ Guarantee Statement
-* 📚 Verification Resources
-  * Run Tests Yourself
-  * Numerical Validation
-  * Real-World Scripts
-* 🎓 Certification & Compliance
-  * Standards Compliance
-  * Quality Assurance
-* 🤝 Support & Contributions
-  * Report Compatibility Issues
-  * Validation Requests
-* 📄 License
-* 📞 Contact
+* Executive Summary
+* Compatibility Metrics
+* Grouped Map (distilled)
+* Key Guarantees (honestly scoped)
+* Known Limitations
+  * By design (not compatibility issues)
+* Verification Resources
+  * Run tests yourself
+* License
+* Contact
 
 # Mentions
 
