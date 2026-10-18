@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Hosted runner"
-description: "Optional Flask/VPS/container script registry + bar-close scheduler (PYNERUNNER). Off by default."
+description: "Optional Flask/container script registry + bar-close scheduler (PYNERUNNER). Off by default."
 resource: "docs/pyne/api/endpoints/runner.mdx"
 tags: [api, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-18T20:53:56Z
 sources:
   - id: tree
     resource: "docs/pyne/api/endpoints/runner.mdx"
@@ -31,7 +31,3 @@ Repo path `docs/pyne/api/endpoints/runner.mdx`.
 * Worked examples
 * Failure modes
 * See also
-
-# Mentions
-
-* [scripts](/code/scripts.md)

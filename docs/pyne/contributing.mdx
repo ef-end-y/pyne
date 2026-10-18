@@ -136,7 +136,7 @@ Report artifact: `.cache/interp_compile_parity.json`. Value mismatches on shared
 ### Secrets & crypto
 
 - `scripts/build/.metadata.key` is **gitignored**
-- CI must supply stable `CRYPTO_KEY` from `METADATA_KEY` / `_METADATA_KEY` for reproducible `.enc` blobs
+- CI must supply a stable `CRYPTO_KEY` (or `METADATA_KEY`) for reproducible `.enc` blobs
 - Never commit Fernet keys or API admin tokens
 
 ## Internals (where to change what)
@@ -168,13 +168,13 @@ Match root `CONTRIBUTING.md` and `.github/workflows/publish.yml` / `release.yml`
 2. Align `vscode-extension/package.json` when shipping the VSIX together.
 3. Ensure CI is green on `main`.
 4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-5. **Publish** (`publish.yml`) builds sdist/wheel (`hoox_pyne-*.whl`) and uploads to PyPI (`PYPI_API_TOKEN` or Trusted Publishing OIDC, environment `pypi`).
+5. **Publish** (`publish.yml`) builds sdist/wheel (`hoox_pyne-*.whl`) and uploads `hoox-pyne` to PyPI on `v*` tags.
 6. **Build & Release** (`release.yml`) attaches Nuitka CLI/LSP binaries + VSIX to the GitHub Release.
 7. **GHCR** (`ghcr.yml`) publishes `ghcr.io/hoox-sh/pyne/{cli,lsp,api}:X.Y.Z` on `v*` tags.
 
 Dry-run PyPI: Actions → **Publish** → Run workflow → `dry_run=true`. Local: `python -m build && twine check dist/*`.
 
-AXIS charting releases live in [hoox-sh/axis](https://github.com/hoox-sh/axis) (historical fork: `jango-blockchained/axis`).
+AXIS charting releases live in [hoox-sh/axis](https://github.com/hoox-sh/axis).
 
 ## PyneTS contributions
 
@@ -199,6 +199,7 @@ AXIS charting releases live in [hoox-sh/axis](https://github.com/hoox-sh/axis) (
 
 - [Local development](/pyne/docs/devops/local-dev)
 - [CI](/pyne/docs/devops/ci)
+- [Release](/pyne/docs/devops/release)
 - [PyneTS](/pyne/docs/pynets)
 - [pyne-worker](/pyne/docs/pyne-worker)
 - [pyne-agent-worker](/pyne/docs/agent)

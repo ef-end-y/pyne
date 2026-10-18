@@ -119,13 +119,7 @@ Do not hand-edit the JSON as the long-term source of truth; regenerate from code
 3. Encrypt → `builtin_metadata.json.enc`.
 4. Write truncated SHA-256 of plaintext to `.sha256`.
 
-A random key is generated **only on first local encrypt** when no env/file key exists. For **byte-stable** encrypted artifacts across CI runs, supply a stable secret:
-
-| Context | Mechanism |
-| --- | --- |
-| GitHub Actions | `secrets.METADATA_KEY` → env (documented as `CRYPTO_KEY` in workflows / AGENTS) |
-| Cloud Build | substitution `${_METADATA_KEY}` → `CRYPTO_KEY` |
-| Runtime decrypt | File `.metadata.key` next to providers **or** env `PYNESCRIPT_METADATA_KEY` |
+A random key is generated **only on first local encrypt** when no env/file key exists. For **byte-stable** encrypted artifacts across CI runs, supply a stable secret via the same env vars the encrypt path already reads (`CRYPTO_KEY`, `PYNESCRIPT_METADATA_KEY`, or `METADATA_KEY`), or reuse `scripts/build/.metadata.key`. Runtime decrypt uses a `.metadata.key` file next to the providers **or** env `PYNESCRIPT_METADATA_KEY`.
 
 Without a stable key, each CI encrypt produces a different `.enc` blob — not a functional bug, but noisy diffs and cache misses.
 

@@ -19,14 +19,14 @@
 
 ---
 title: "Hosted runner"
-description: "Optional Flask/VPS/container script registry + bar-close scheduler (PYNE_RUNNER). Off by default."
+description: "Optional Flask/container script registry + bar-close scheduler (PYNE_RUNNER). Off by default."
 ---
 
 # Hosted runner
 
 ## Abstract
 
-The Pro API is request/response: AXIS (or curl) POSTs bars, gets `alerts[]` in that reply, and nothing runs after the client disconnects. **`PYNE_RUNNER`** is an optional Flask-side loop that matches pyne-worker’s “upload then keep going” model on **local, Docker, VPS, and Cloudflare Containers**.
+The Pro API is request/response: AXIS (or curl) POSTs bars, gets `alerts[]` in that reply, and nothing runs after the client disconnects. **`PYNE_RUNNER`** is an optional Flask-side loop that matches pyne-worker’s “upload then keep going” model on **local, Docker, and containers**.
 
 Off unless `PYNE_RUNNER=1` (or `true` / `yes` / `on`). Routes then 404 with `RUNNER_DISABLED`. Health reports `features.script_runner`.
 
@@ -117,7 +117,7 @@ Docker:
 PYNE_RUNNER=1 PYNE_RUNNER_SCHEDULER=1 docker compose up --build api
 ```
 
-VPS: set the same env on `pynescript-api.service` (or the process environment `scripts/deploy_vps.sh` restarts). SQLite path should sit on a persistent disk (`PYNE_RUNNER_DB=/data/runner.db`).
+Self-host: set the same env on the API process. SQLite path should sit on a persistent disk (`PYNE_RUNNER_DB=/data/runner.db`).
 
 Cloudflare Container: keep `PYNE_RUNNER=0` in `cf/src/index.ts` unless you want the runner inside the isolate; one gunicorn worker is already the default.
 
