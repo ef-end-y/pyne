@@ -1668,6 +1668,24 @@ def _ratchet_forming_trails(evaluator: Any, high: Any, low: Any) -> None:
         pass
 
 
+def _update_forming_trade_extremes(evaluator: Any, high: Any, low: Any) -> None:
+    """Re-apply open-trade MAE/MFE from forming-bar high/low (no fills).
+
+    Broker snapshot/restore rolls per-trade ``max_drawdown`` / ``max_runup``
+    back with fills; call this after ``poll_ohlcv`` and after each unconfirmed
+    restore so forming-bar extremes persist like ``varip``.
+    """
+    if high is None or low is None:
+        return
+    update = getattr(evaluator, "update_open_trade_extremes", None)
+    if update is None:
+        return
+    try:
+        update(high, low)
+    except Exception:
+        pass
+
+
 def _forming_hl(ohlcv_data: list, bar_index: int) -> tuple[Any, Any]:
     """Current forming-bar high/low, or ``(None, None)`` if missing."""
     try:
@@ -2359,6 +2377,7 @@ class InterpretSession:
                     if self._need_strategy:
                         fh, fl = _forming_hl(self._ohlcv_data, bar_index)
                         _ratchet_forming_trails(ev, fh, fl)
+                        _update_forming_trade_extremes(ev, fh, fl)
                 tick_var_snap = _snapshot_realtime_scope(ev) if bar_rt and tick_i < n_ticks - 1 else None
                 tick_ta_snap = _snapshot_ta_state(ev) if bar_rt and tick_i < n_ticks - 1 else None
                 tick_broker_snap = (
@@ -2405,6 +2424,7 @@ class InterpretSession:
                         strategy_state.restore(tick_broker_snap)
                         fh, fl = _forming_hl(self._ohlcv_data, bar_index)
                         _ratchet_forming_trails(ev, fh, fl)
+                        _update_forming_trade_extremes(ev, fh, fl)
                     _discard_realtime_plot_tick(ev)
                     continue
                 if snapshot_bar is not None:
@@ -2548,6 +2568,7 @@ class InterpretSession:
         if self._last_open_broker_snap is not None:
             ev._strategy_state.restore(self._last_open_broker_snap)
             _ratchet_forming_trails(ev, h, low)
+            _update_forming_trade_extremes(ev, h, low)
         # Drop this bar's events/alerts/conditions; the re-visit re-emits.
         try:
             del self._all_events[self._last_open_event_len :]
@@ -2737,6 +2758,7 @@ class InterpretSession:
         if self._last_open_broker_snap is not None:
             ev._strategy_state.restore(self._last_open_broker_snap)
             _ratchet_forming_trails(ev, self._col_high[idx], self._col_low[idx])
+            _update_forming_trade_extremes(ev, self._col_high[idx], self._col_low[idx])
         try:
             del self._all_events[self._last_open_event_len :]
         except Exception:
@@ -3765,6 +3787,7 @@ class Runtime:
                     if need_strategy:
                         fh, fl = _forming_hl(ohlcv_data, bar_index)
                         _ratchet_forming_trails(evaluator, fh, fl)
+                        _update_forming_trade_extremes(evaluator, fh, fl)
 
                 # Intermediate realtime ticks start from confirmed state:
                 # snapshot var scope + TA windows, restore after the visit
@@ -3825,6 +3848,7 @@ class Runtime:
                         strategy_state.restore(broker_snap)
                         fh, fl = _forming_hl(ohlcv_data, bar_index)
                         _ratchet_forming_trails(evaluator, fh, fl)
+                        _update_forming_trade_extremes(evaluator, fh, fl)
                     _discard_realtime_plot_tick(evaluator)
                     continue
 

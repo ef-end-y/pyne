@@ -376,6 +376,41 @@ class StrategyState:
             else:
                 setattr(self, k, v)
 
+    def update_open_trade_extremes(self, high: float, low: float) -> None:
+        """Approximate per-open-trade MAE/MFE from bar high/low (currency units).
+
+        Long: favorable at high, adverse at low; short: inverted. Values are
+        max adverse excursion (``max_drawdown``) and max favorable
+        (``max_runup``) observed while the trade is open. Commission is ignored
+        (OHLC path; not tick-accurate). Used after unconfirmed realtime restore
+        so forming-bar extremes persist like ``varip`` while fills still roll back.
+        """
+        trades = self.open_trades
+        if not trades:
+            return
+        try:
+            hi = float(high)
+            lo = float(low)
+        except (TypeError, ValueError):
+            return
+        if hi != hi or lo != lo:
+            return
+        for trade in trades:
+            ep = float(trade.entry_price)
+            sz = float(trade.size)
+            if sz <= 0 or ep != ep:
+                continue
+            if trade.direction == "long":
+                fav = (hi - ep) * sz
+                adv = (ep - lo) * sz
+            else:
+                fav = (ep - lo) * sz
+                adv = (hi - ep) * sz
+            if fav > trade.max_runup:
+                trade.max_runup = float(fav)
+            if adv > trade.max_drawdown:
+                trade.max_drawdown = float(adv)
+
     def drain_events(self) -> list[StrategyEvent]:
         """Return all captured events and clear the internal buffer."""
         events = list(self._events)
@@ -2151,6 +2186,20 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         for order in pending.values():
             if order is not None and order.is_trail:
                 self._update_trail_stop(order, h, l)
+
+    def update_open_trade_extremes(self, high: float, low: float) -> None:
+        """Update open-trade MAE/MFE from forming-bar high/low (no fills).
+
+        Used after unconfirmed realtime broker restore so extremes persist
+        like ``varip`` while fills still roll back. Historical once-per-bar
+        path stays in :meth:`process_pending_orders` / bar-open fills.
+        """
+        if not hasattr(self, "_strategy_state"):
+            return
+        self._strategy_state.update_open_trade_extremes(
+            self._coerce_number(high, default=float("nan")),
+            self._coerce_number(low, default=float("nan")),
+        )
 
     def process_pending_orders(
         self,

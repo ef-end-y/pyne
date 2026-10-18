@@ -565,6 +565,38 @@ class CompileStrategyBroker:
             if order is not None and order.is_trail:
                 self._update_trail_stop(order, h, l)
 
+    def update_open_trade_extremes(self, high: float, low: float) -> None:
+        """Update open-trade MAE/MFE from forming-bar high/low (no fills).
+
+        Re-applied after unconfirmed realtime ``restore`` so per-leg
+        ``max_drawdown`` / ``max_runup`` follow the forming bar's extremes
+        while fills still roll back. Still OHLC-path (no tick path).
+        """
+        if not self.open_legs:
+            return
+        try:
+            hi = float(high)
+            lo = float(low)
+        except (TypeError, ValueError):
+            return
+        if hi != hi or lo != lo:
+            return
+        for leg in self.open_legs:
+            ep = float(leg.entry_price)
+            sz = float(leg.size)
+            if sz <= 0 or ep != ep:
+                continue
+            if leg.direction == "long":
+                fav = (hi - ep) * sz
+                adv = (ep - lo) * sz
+            else:
+                fav = (ep - lo) * sz
+                adv = (hi - ep) * sz
+            if fav > leg.max_runup:
+                leg.max_runup = float(fav)
+            if adv > leg.max_drawdown:
+                leg.max_drawdown = float(adv)
+
     def _trigger_price(
         self,
         order: PendingOrder,
@@ -2214,34 +2246,8 @@ class CompileStrategyBroker:
                 self._max_runup_percent = 100.0 * ru / abs(self._equity_trough)
 
     def _update_leg_extremes(self) -> None:
-        """Approximate per-open-leg MAE/MFE from bar high/low (currency units).
-
-        Long: favorable at high, adverse at low; short: inverted. Values are
-        max adverse excursion (``max_drawdown``) and max favorable
-        (``max_runup``) observed while the leg is open. Commission is ignored
-        for extremes (cheap OHLC path; not tick-accurate).
-        """
-        if not self.open_legs:
-            return
-        hi = float(self._high)
-        lo = float(self._low)
-        if hi != hi or lo != lo:
-            return
-        for leg in self.open_legs:
-            ep = float(leg.entry_price)
-            sz = float(leg.size)
-            if sz <= 0 or ep != ep:
-                continue
-            if leg.direction == "long":
-                fav = (hi - ep) * sz
-                adv = (ep - lo) * sz
-            else:
-                fav = (ep - lo) * sz
-                adv = (hi - ep) * sz
-            if fav > leg.max_runup:
-                leg.max_runup = float(fav)
-            if adv > leg.max_drawdown:
-                leg.max_drawdown = float(adv)
+        """Approximate per-open-leg MAE/MFE from bar high/low (currency units)."""
+        self.update_open_trade_extremes(self._high, self._low)
 
     @property
     def max_drawdown(self) -> float:

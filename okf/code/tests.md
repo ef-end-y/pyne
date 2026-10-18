@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T23:15:18Z
+  at: 2026-10-18T23:36:10Z
 sources:
   - id: tree
     resource: "tests"
@@ -72,6 +72,7 @@ okf_lock: generated
 * `test_live_ws.py` — test_bad_auth_token_rejected, test_canonical_key_normalizes_casing, test_frame_builders_carry_seq_and_watermark, test_handshake_key_prefers_bearer_then_query, test_history_bars_clamped, test_next_seq_is_monotonic_per_subscription, test_repair_of_a_live_sub_resumes, test_repair_unknown_is_gone, test_resubscribe_same_id_is_idempotent, test_resume_replies_snapshot_and_live, test_resume_unknown_is_gone, test_series_subscribe_carries_bars_not_plots
 * `test_lsp_features.py` — TestBuiltinMetadata, TestCapabilities, TestCompletionHandler, TestCompletionList, TestConvertToV6, TestDefinitionHandler, TestDocumentHighlightHandler, TestDocumentSymbolsHandler, TestFormattingHandler, TestHoverHandler, TestReferencesHandler, TestRenameHandler
 * `test_lsp_http.py` — client, test_lsp_completion_ta, test_lsp_convert_requires_source, test_lsp_convert_v4_to_v6, test_lsp_diagnostics_ok, test_lsp_diagnostics_syntax_error, test_lsp_hover_plot
+* `test_mae_realtime_ticks.py` — test_compile_emits_extremes_after_restore, test_forming_high_low_update_mae_dual_host, test_historical_ticks_one_keeps_bar_open_mae, test_update_last_bar_updates_forming_mae, test_update_open_trade_extremes_survives_broker_restore_compile, test_update_open_trade_extremes_survives_broker_restore_interpret
 * `test_map_collections.py` — TestMapBasics, TestMapCopy, TestMapDifferentKeyTypes, TestMapDifferentValueTypes, TestMapEdgeCases, TestMapPutAll, TestMapQueryMethods
 * `test_matrix_collections.py` — TestMatrixAggregations, TestMatrixColumnOperations, TestMatrixCore, TestMatrixFilling, TestMatrixRowOperations, TestMatrixTransformations
 * `test_matrix_v6_surface.py` — test_array_binary_search_udt_method_form, test_array_binary_search_udt_sort_field, test_array_sort_udt_sort_field, test_input_text_area_returns_value, test_matrix_add_row_inserts_not_only_appends, test_matrix_eval_dispatch_det_and_avg, test_matrix_linear_algebra_det_inv_trace, test_matrix_new_empty_and_add_row_at_index, test_matrix_predicates_and_sort, test_matrix_sort_order_descending_numeric, test_matrix_sort_udt_sort_field, test_order_ascending_descending_constants
