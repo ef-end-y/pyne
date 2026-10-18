@@ -32,8 +32,15 @@ services:
       # Only set when STORE_BACKEND=redis (and redis profile / Memorystore is up)
       REDIS_URL: ${REDIS_URL:-}
       GUNICORN_WORKERS: ${GUNICORN_WORKERS:-1} # 1 = live sessions stay correct (see entrypoint-api.sh)
-      GUNICORN_THREADS: ${GUNICORN_THREADS:-4}
-      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-60}
+      # Hard-pin gthread: flask-sock hijacks gunicorn.socket. A leftover
+      # GUNICORN_WORKER_CLASS=geventwebsocket… from 0.6.11 corrupts WS frames
+      # after a successful 101. Do not interpolate this from the host .env.
+      GUNICORN_WORKER_CLASS: gthread
+      GUNICORN_THREADS: ${GUNICORN_THREADS:-100}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-120}
+      # Live WS holds a worker open; 500 recycled it too often (journal rebuild).
+      GUNICORN_MAX_REQUESTS: ${GUNICORN_MAX_REQUESTS:-5000}
+      GUNICORN_MAX_REQUESTS_JITTER: ${GUNICORN_MAX_REQUESTS_JITTER:-200}
       # Public hosts: opt in to unauthenticated /run caps. Override with 0 to disable.
       FREE_TIER_LIMITS: ${FREE_TIER_LIMITS:-1}
       PYTHONPATH: /app/src:/app

@@ -24,10 +24,10 @@
 # half of all follow-up calls — a session created on one worker is invisible on
 # the other. Single-worker is what makes the endpoint correct.
 #
-# Throughput is protected by -k gevent (thousands of concurrent connections per
-# worker) plus --max-requests recycling, so this trades horizontal parallelism
-# for correctness, not for throughput. If you raise -w above 1, the session
-# routes must move to an external store first.
+# Live path is Docker compose (gthread). This unit is retired; if it is
+# re-enabled it must stay gthread — gevent-websocket corrupts flask-sock frames
+# after a successful 101. If you raise -w above 1, the session routes must
+# move to an external store first.
 #
 # -w 2 was the previous value. Raising it without moving session state out of
 # the process is a correctness regression, not a tuning change.
@@ -43,7 +43,7 @@ WorkingDirectory=/root/pynescript
 Environment=HOST=127.0.0.1
 Environment=PORT=5002
 Environment="ALLOWED_ORIGINS=https://pynescript.online,https://axis.hoox.sh,https://hoox.sh,https://hoox.sh/axis"
-ExecStart=/root/pynescript/.venv/bin/gunicorn -k gevent -w 1 --preload -b 127.0.0.1:5002 --timeout 180 --graceful-timeout 30 --keep-alive 15 --worker-connections 1000 --max-requests 200 --max-requests-jitter 50 backend.app:app
+ExecStart=/root/pynescript/.venv/bin/gunicorn -k gthread --threads 100 -w 1 -b 127.0.0.1:5002 --timeout 180 --graceful-timeout 30 --keep-alive 15 --max-requests 5000 --max-requests-jitter 200 backend.app:app
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

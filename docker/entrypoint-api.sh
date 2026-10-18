@@ -43,8 +43,11 @@ TIMEOUT="${GUNICORN_TIMEOUT:-120}"
 BIND="${GUNICORN_BIND:-0.0.0.0:${PORT}}"
 # Worker recycling bounds per-worker memory growth across requests
 # (Numba / caches). 0 disables. Mirrors the VPS systemd unit.
-MAX_REQUESTS="${GUNICORN_MAX_REQUESTS:-500}"
-MAX_REQUESTS_JITTER="${GUNICORN_MAX_REQUESTS_JITTER:-50}"
+# Live WS connections delay recycle; 500 was recycling the worker under AXIS
+# tick load and forcing a journal rebuild. 0 disables. Memory is still bounded
+# by the compose mem_limit.
+MAX_REQUESTS="${GUNICORN_MAX_REQUESTS:-5000}"
+MAX_REQUESTS_JITTER="${GUNICORN_MAX_REQUESTS_JITTER:-200}"
 
 # Ensure IR / Numba disk cache directory exists on the data volume (best-effort).
 CACHE_DIR="${PYNE_COMPILE_CACHE_DIR:-/data/compile-cache}"
