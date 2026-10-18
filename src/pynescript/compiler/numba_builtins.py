@@ -2240,6 +2240,47 @@ def chart_timezone():
     return _CHART_TIMEZONE
 
 
+def compile_security_htf_value(
+    kind,
+    field,
+    offset,
+    ta_name,
+    ta_length,
+    timeframe,
+    bar_idx,
+    open_arr,
+    high_arr,
+    low_arr,
+    close_arr,
+    vol_arr,
+    time_arr,
+    gaps_on=False,
+    lookahead_on=False,
+    timezone="UTC",
+):
+    """Object-mode per-bar HTF ``request.security`` (interpret resample helpers)."""
+    from pynescript.ast.evaluator.builtins.request import compile_htf_security_value
+
+    return compile_htf_security_value(
+        kind,
+        field,
+        offset,
+        ta_name,
+        ta_length,
+        timeframe,
+        bar_idx,
+        open_arr,
+        high_arr,
+        low_arr,
+        close_arr,
+        vol_arr,
+        time_arr,
+        gaps_on=gaps_on,
+        lookahead_on=lookahead_on,
+        timezone=timezone,
+    )
+
+
 _RGBA_RE = re.compile(
     r"^rgba?\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*,"
     r"\s*([+-]?\d+(?:\.\d+)?)"

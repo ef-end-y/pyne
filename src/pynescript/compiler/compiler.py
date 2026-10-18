@@ -37,10 +37,12 @@ Host packing / contracts
   ``execute_script_compiled(open, high, low, close, vol, time)`` — the host
   is :mod:`pynescript.compiler.engine` (synthetic ``bar*60_000`` ms when time
   omitted; Runtime passes real OHLCV bar-open ms).
-- ``request.security`` / ``security``: same-symbol OHLCV passthrough only;
-  foreign tickers and complex numeric expressions emit ``na`` (no
-  close-as-dividend / unpack-as-chart invention). A UDT / object-handle
-  expression is passed through as a stub handle (never ``float`` / ``na``).
+- ``request.security`` / ``security``: same-symbol allowlisted HTF OHLCV /
+  ``close[1]`` / simple ``ta.*`` resample in object mode (interpret helpers);
+  same-TF / LTF simple OHLCV still passthrough. Foreign tickers and complex
+  numeric expressions emit ``na`` (no close-as-dividend / unpack-as-chart
+  invention). A UDT / object-handle expression is passed through as a stub
+  handle (never ``float`` / ``na``).
 - nopython fallback: engine re-visits with ``force_object_mode=True`` after a
   TypingError warm-up; this module only implements the emit switch.
 - UDF series state lives in ``__st_{func}_{local}`` arrays; free chart series
@@ -5540,9 +5542,11 @@ class CompilerVisitor(NodeVisitor):
             # stub: treat as daily-ish (86400s); enough for comparisons / ratios
             return "86400.0"
 
-        # bare v3 security(...) / request.security — same-symbol OHLCV only.
-        # Complex expressions (UDFs, ta.*, year_sum, …) would invent chart series
-        # as foreign-symbol data (e.g. dividend_yield close-as-dividend). Emit na.
+        # bare v3 security(...) / request.security — same-symbol allowlisted
+        # HTF resample (OHLCV / offset / simple ta.*) via object-mode helpers;
+        # same-TF / LTF simple OHLCV still passthrough. Complex expressions
+        # (UDFs, nested ta.*, year_sum, …) would invent chart series as
+        # foreign-symbol data (e.g. dividend_yield close-as-dividend). Emit na.
         # Foreign tickers with simple ``close`` (CVI UPVOL/DNVOL) also invent
         # chart-close as advance/decline volume — require chart-symbol identity.
         if func_name in (
@@ -5551,6 +5555,10 @@ class CompilerVisitor(NodeVisitor):
             "request_security_lower_tf",
             "request_seed",
         ):
+            if func_name in ("security", "request_security"):
+                htf = self._emit_chart_htf_security(node, args, kwargs)
+                if htf is not None:
+                    return htf
             sym = args[0] if args else ""
             expr = args[2] if len(args) >= 3 else kwargs.get("expression", "close_arr[__bar_idx]")
             if self._is_heikinashi_security_symbol(sym) and self._is_simple_security_expr(expr):
@@ -8133,6 +8141,86 @@ class CompilerVisitor(NodeVisitor):
             a2 = node.args[2]
             return a2.value if hasattr(a2, "value") else a2
         return None
+
+    def _emit_chart_htf_security(self, node: ast.Call, args: list[str], kwargs: dict[str, str]) -> str | None:
+        """Same-symbol allowlisted security → object-mode interpret HTF helper.
+
+        Returns a Python expression calling ``compile_security_htf_value`` for
+        simple OHLCV / ``close[1]`` / allowlisted ``ta.*``. ``None`` falls
+        through to HA transform, chart passthrough, UDT handle, or ``np.nan``.
+        """
+        from pynescript.ast.evaluator.builtins.request import match_htf_offset_ast
+        from pynescript.ast.evaluator.builtins.request import match_htf_ohlcv_ast
+        from pynescript.ast.evaluator.builtins.request import match_htf_simple_ta_ast
+
+        sym = args[0] if args else ""
+        if self._is_heikinashi_security_symbol(sym) or not self._is_chart_security_symbol(sym):
+            return None
+        tf_expr = args[1] if len(args) >= 2 else (kwargs.get("timeframe") or kwargs.get("tf"))
+        if not tf_expr:
+            return None
+
+        expr_ast = None
+        pos: list = []
+        for raw in node.args or []:
+            if hasattr(raw, "name") and getattr(raw, "name", None):
+                if str(raw.name) in ("expression", "expr"):
+                    expr_ast = raw.value
+            else:
+                pos.append(raw.value if hasattr(raw, "value") else raw)
+        if expr_ast is None and len(pos) >= 3:
+            expr_ast = pos[2]
+        if expr_ast is None:
+            return None
+
+        ta = match_htf_simple_ta_ast(expr_ast)
+        off = None if ta is not None else match_htf_offset_ast(expr_ast)
+        field = None if ta is not None or off is not None else match_htf_ohlcv_ast(expr_ast)
+        if ta is None and off is None and field is None:
+            return None
+
+        gaps_expr = kwargs.get("gaps")
+        lookahead_expr = kwargs.get("lookahead")
+        if gaps_expr is None and len(args) > 3:
+            gaps_expr = args[3]
+        if lookahead_expr is None and len(args) > 4:
+            lookahead_expr = args[4]
+
+        def _bool_arg(expr: str | None) -> str:
+            if expr is None:
+                return "False"
+            s = expr.strip()
+            if s in ("True", "False"):
+                return s
+            return f"bool({s})"
+
+        if ta is not None:
+            kind = "ta"
+            field_s = ta.source
+            offset_i = 0
+            ta_name: str | None = ta.name
+            ta_length = int(ta.length)
+        elif off is not None:
+            kind = "offset"
+            field_s = off.field
+            offset_i = int(off.offset)
+            ta_name = None
+            ta_length = 0
+        else:
+            kind = "ohlcv"
+            field_s = field or "close"
+            offset_i = 0
+            ta_name = None
+            ta_length = 0
+
+        self.object_mode = True
+        return (
+            "compile_security_htf_value("
+            f"{kind!r}, {field_s!r}, {offset_i}, {ta_name!r}, {ta_length}, "
+            f"{tf_expr}, __bar_idx, "
+            "open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, "
+            f"{_bool_arg(gaps_expr)}, {_bool_arg(lookahead_expr)}, chart_timezone())"
+        )
 
     def _security_expr_is_udt(self, node: ast.Call, expr: str) -> bool:
         """True when the security expression is a UDT / object handle, not OHLCV."""

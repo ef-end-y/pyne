@@ -222,6 +222,17 @@ def match_htf_offset_ast(expr_ast: Any) -> HtfOffsetExpr | None:
     return HtfOffsetExpr(field=field, offset=offset)
 
 
+def match_htf_ohlcv_ast(expr_ast: Any) -> str | None:
+    """Bare OHLCV name or string (``close`` / ``\"high\"``) for HTF resample."""
+    if type(expr_ast) is ast_mod.Name:
+        return _OHLCV_FIELD_ALIASES.get(str(expr_ast.id).strip().lower())
+    if type(expr_ast) is ast_mod.Constant:
+        raw = expr_ast.value
+        if isinstance(raw, str):
+            return _OHLCV_FIELD_ALIASES.get(raw.strip().lower())
+    return None
+
+
 @dataclass
 class VolumeRow:
     """Volume row in a footprint object.
@@ -2564,3 +2575,240 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         )
 
         return footprint
+
+
+def _as_htf_float(value: Any) -> float:
+    """NaN-safe scalar for compile object-mode plot stores."""
+    if value is None:
+        return float("nan")
+    try:
+        fv = float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+    return fv
+
+
+def _ohlcv_col_list(arr: Any) -> list[Any]:
+    """Chart column as a Python list (numpy ``tolist`` when present)."""
+    if arr is None:
+        return []
+    if isinstance(arr, list):
+        return arr
+    to_list = getattr(arr, "tolist", None)
+    if callable(to_list):
+        try:
+            return list(to_list())
+        except Exception:
+            pass
+    try:
+        return list(arr)
+    except TypeError:
+        return []
+
+
+class _CompileHtfHost(RequestBuiltinsMixin):
+    """Minimal host so interpret HTF resample methods run from compile object-mode.
+
+    Full chart columns are attached as ``_htf_full_ohlcv`` (same shape Runtime
+    uses). TA full-list helpers are bound from the interpret technical mixins
+    so ``ta.sma/ema/rsi/atr/wma/rma`` on HTF bars match interpret exactly.
+    """
+
+    def __init__(
+        self,
+        opens: list[Any],
+        highs: list[Any],
+        lows: list[Any],
+        closes: list[Any],
+        volumes: list[Any],
+        times: list[Any],
+        *,
+        timezone: str = "UTC",
+    ) -> None:
+        self._htf_full_ohlcv = {
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": closes,
+            "volume": volumes,
+            "time": times,
+        }
+        self._bar_index = 0
+        self._timezone = timezone or "UTC"
+        self.context: dict[str, Any] = {"bar_index": 0}
+        self._bind_ta_helpers()
+
+    def _bind_ta_helpers(self) -> None:
+        if getattr(self, "_sma", None) is not None:
+            return
+        from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
+        from pynescript.ast.evaluator.builtins.technical_submodules.volatility import VolatilityIndicators
+
+        self._format_series = TechnicalHelpers._format_series.__get__(self, type(self))
+        self._sma = TechnicalHelpers._sma.__get__(self, type(self))
+        self._ema = TechnicalHelpers._ema.__get__(self, type(self))
+        self._rma = TechnicalHelpers._rma.__get__(self, type(self))
+        self._atr = VolatilityIndicators._atr.__get__(self, type(self))
+
+    def set_bar_index(self, index: int) -> None:
+        i = int(index)
+        self._bar_index = i
+        self.context["bar_index"] = i
+
+    def _chart_bar_index(self) -> int:
+        return int(self._bar_index)
+
+    def _htf_timezone(self) -> object:
+        return self._timezone or "UTC"
+
+    def _chart_field_at(self, field: str, index: int) -> float:
+        src = self._htf_full_ohlcv
+        n = len(src.get("close") or [])
+        if index < 0 or index >= n:
+            return float("nan")
+
+        def _at(key: str) -> float:
+            seq = src.get(key) or []
+            if index >= len(seq):
+                return float("nan")
+            try:
+                return float(seq[index])
+            except (TypeError, ValueError):
+                return float("nan")
+
+        if field in ("open", "high", "low", "close", "volume", "time"):
+            return _at(field)
+        agg = {
+            "open": _at("open"),
+            "high": _at("high"),
+            "low": _at("low"),
+            "close": _at("close"),
+            "volume": _at("volume"),
+            "time": _at("time"),
+        }
+        return self._htf_agg_field(agg, field)
+
+    def _chart_ohlcv_at_offset(self, field: str, offset: int) -> Any:
+        na = float("nan")
+        if offset < 0:
+            return na
+        return self._chart_field_at(field, self._chart_bar_index() - int(offset))
+
+
+_COMPILE_HTF_HOSTS: dict[tuple[Any, ...], _CompileHtfHost] = {}
+
+
+def _compile_htf_host(
+    open_arr: Any,
+    high_arr: Any,
+    low_arr: Any,
+    close_arr: Any,
+    vol_arr: Any,
+    time_arr: Any,
+    timezone: str = "UTC",
+) -> _CompileHtfHost:
+    """Reuse one HTF host per compiled run (arrays + last-bar fingerprint)."""
+    closes = _ohlcv_col_list(close_arr)
+    n = len(closes)
+
+    def _at(seq: Any, idx: int) -> float:
+        try:
+            return float(seq[idx])
+        except (TypeError, ValueError, IndexError):
+            return 0.0
+
+    last = n - 1
+    fp = (
+        id(time_arr),
+        n,
+        _at(time_arr, 0) if n else 0.0,
+        _at(time_arr, last) if n else 0.0,
+        _at(open_arr, last) if n else 0.0,
+        _at(high_arr, last) if n else 0.0,
+        _at(low_arr, last) if n else 0.0,
+        _at(close_arr, last) if n else 0.0,
+        str(timezone or "UTC"),
+    )
+    host = _COMPILE_HTF_HOSTS.get(fp)
+    if host is not None:
+        return host
+    host = _CompileHtfHost(
+        _ohlcv_col_list(open_arr),
+        _ohlcv_col_list(high_arr),
+        _ohlcv_col_list(low_arr),
+        closes,
+        _ohlcv_col_list(vol_arr),
+        _ohlcv_col_list(time_arr),
+        timezone=str(timezone or "UTC"),
+    )
+    if len(_COMPILE_HTF_HOSTS) >= 4:  # noqa: PLR2004 - tiny run-local cache
+        _COMPILE_HTF_HOSTS.clear()
+    _COMPILE_HTF_HOSTS[fp] = host
+    return host
+
+
+def compile_htf_security_value(  # noqa: PLR0913
+    kind: str,
+    field: str | None,
+    offset: int,
+    ta_name: str | None,
+    ta_length: int,
+    timeframe: Any,
+    bar_idx: int,
+    open_arr: Any,
+    high_arr: Any,
+    low_arr: Any,
+    close_arr: Any,
+    vol_arr: Any,
+    time_arr: Any,
+    gaps_on: bool = False,
+    lookahead_on: bool = False,
+    timezone: str = "UTC",
+) -> float:
+    """Per-bar compile helper: same allowlisted HTF resample as interpret.
+
+    ``kind`` is ``ohlcv`` / ``offset`` / ``ta``. Same-TF / LTF simple OHLCV and
+    history offsets fall back to chart passthrough; simple ``ta.*`` that is not
+    coarser than the chart stays ``na`` (no LTF / unparseable-TF invention).
+    """
+    host = _compile_htf_host(
+        open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, timezone=str(timezone or "UTC")
+    )
+    try:
+        host.set_bar_index(int(bar_idx))
+    except (TypeError, ValueError):
+        return float("nan")
+    gaps = bool(gaps_on)
+    lookahead = bool(lookahead_on)
+    kind_s = str(kind or "ohlcv")
+    field_s = None if field in (None, "") else str(field)
+
+    if kind_s == "ta":
+        name = str(ta_name or "")
+        try:
+            length = int(ta_length)
+        except (TypeError, ValueError):
+            return float("nan")
+        expr = HtfSimpleTaExpr(name=name, source=None if name == "atr" else (field_s or "close"), length=length)
+        val = host._try_htf_simple_ta_resample(expr, timeframe, gaps_on=gaps, lookahead_on=lookahead)
+        return _as_htf_float(val)
+
+    if kind_s == "offset":
+        if not field_s:
+            return float("nan")
+        try:
+            off = int(offset)
+        except (TypeError, ValueError):
+            return float("nan")
+        expr = HtfOffsetExpr(field=field_s, offset=off)
+        val = host._try_htf_offset_resample(expr, timeframe, gaps_on=gaps, lookahead_on=lookahead)
+        if val is not None:
+            return _as_htf_float(val)
+        return _as_htf_float(host._chart_ohlcv_at_offset(field_s, off))
+
+    field_s = field_s or "close"
+    val = host._try_htf_ohlcv_resample(field_s, timeframe, gaps_on=gaps, lookahead_on=lookahead)
+    if val is not None:
+        return _as_htf_float(val)
+    return _as_htf_float(host._chart_field_at(field_s, host._chart_bar_index()))
+

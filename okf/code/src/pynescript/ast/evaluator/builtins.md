@@ -7,7 +7,7 @@ tags: [ast, code, evaluator, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:40:25Z
+  at: 2026-10-18T15:07:49Z
 sources:
   - id: tree
     resource: "src/pynescript/ast/evaluator/builtins"
@@ -34,7 +34,7 @@ okf_lock: generated
 * `numeric.py` — NumericBuiltinsMixin
 * `plot_params.py` — extract_wire_meta, param_index, resolve_arg
 * `plotting.py` — Plot, PlotRegistry, PlotStyle, PlottingFunctionsMixin, materialize_visual_series_from_drawings, merge_visual_series_from_drawings, uniquify_series_title
-* `request.py` — Footprint, FootprintBuiltinsMixin, HtfOffsetExpr, HtfSimpleTaExpr, RequestBuiltinsMixin, VolumeRow, match_htf_offset_ast, match_htf_simple_ta_ast
+* `request.py` — Footprint, FootprintBuiltinsMixin, HtfOffsetExpr, HtfSimpleTaExpr, RequestBuiltinsMixin, VolumeRow, compile_htf_security_value, match_htf_offset_ast, match_htf_ohlcv_ast, match_htf_simple_ta_ast
 * `strategy.py` — OpenTrade, Order, StrategyBuiltinsMixin, StrategyCashAmount, StrategyState, Trade
 * `strategy_constants.py` — StrategyConstantsMixin
 * `strings.py` — StringBuiltinsMixin

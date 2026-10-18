@@ -210,9 +210,9 @@ Runtime **interpret** results expose honesty metadata when any `request.security
 - `meta.request_security.policies` → tags such as `htf_ohlcv_resample`, `htf_simple_ta_resample`, `complex_htf_na`, `chart_passthrough_htf_stub`, `foreign_na`, `gaps_lookahead_provided`, `gaps_applied`, `lookahead_applied`, `same_tf_chart_eval`, …
 - `meta.request_security.notes` → short product notes (same text as evaluator)
 
-Regression coverage: `tests/test_request_data_feed.py` (foreign-na, complex HTF na, HTF OHLCV resample hourly→daily / 1m→60m, HTF simple ta.sma/ema/rsi/atr/wma/rma, nested ta still na, gaps/lookahead on resample paths + unused-on-passthrough, Runtime meta).
+Regression coverage: `tests/test_request_data_feed.py` (foreign-na, complex HTF na, HTF OHLCV resample hourly→daily / 1m→60m, HTF simple ta.sma/ema/rsi/atr/wma/rma, nested ta still na, gaps/lookahead on resample paths + unused-on-passthrough, Runtime meta). Compile dual-host: `tests/test_request_security_compile_htf.py`.
 
-**Impact:** MTF indicators that need full expression re-eval on HTF still diverge from reference Pine, as do LTF requests and provider-series merge args. Simple HTF OHLC and allowlisted simple `ta.*` on HTF now also honor `gaps` / `lookahead` per reference barmerge. Compile still maps same-symbol simple security to chart passthrough (no HTF resample at all) — pre-existing gap, unchanged by this increment.
+**Impact:** MTF indicators that need full expression re-eval on HTF still diverge from reference Pine, as do LTF requests and provider-series merge args. Compile now resamples the same allowlisted HTF shapes as interpret (simple OHLCV, `close[1]`, `ta.sma/ema/rsi/atr/wma/rma`) in object mode via the interpret helpers, including `gaps_on` / `lookahead_on` on those paths. Still not a full HTF expression re-eval engine: nested `ta.*`, UDFs, foreign tickers, LTF, and unparseable TFs stay `na` / chart passthrough as before.
 
 **Track:** audit AGENT_03; full multi-TF host engine is out of product scope until explicitly scheduled.
 
