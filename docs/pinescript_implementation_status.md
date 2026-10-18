@@ -19,7 +19,7 @@
 
 # PineScript v6 Implementation Status
 
-**Live package:** `hoox-pyne` **0.6.12**.
+**Live package:** `hoox-pyne` **0.6.13**.
 
 ---
 

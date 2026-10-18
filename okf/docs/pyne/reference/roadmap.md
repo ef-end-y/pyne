@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Roadmap"
-description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed. hoox-pyne 0.6.12."
+description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed. hoox-pyne 0.6.13."
 resource: "docs/pyne/reference/roadmap.mdx"
 tags: [doc, docs, pyne, reference]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-17T03:22:02Z
+  at: 2026-10-18T15:25:55Z
 sources:
   - id: tree
     resource: "docs/pyne/reference/roadmap.mdx"

@@ -61,11 +61,14 @@ TypeScript consumers import **[PyneTS](/pyne/docs/pynets)** (`@hoox-sh/pynets`) 
 
 ## What's new
 
-**`hoox-pyne` 0.6.12** (live) — production hardening and live-surface additions:
+**`hoox-pyne` 0.6.13** (live) — dual-host HTF, LSP signature help, host hardening:
 
-- **`GET /stats`** — public process-wide counters: requests, runs by mode, compile cache hit/miss, prewarm, delta sizes, sessions, datafeed. In-process, so treat it as a snapshot rather than a time series. See [stats](/pyne/docs/api/endpoints/stats).
-- **`PYNE_DEBUG=1`** — development-only logging that traces the interpreter bar loop, the compile pipeline, prewarm, delta calculation, and the datafeed. Optional `PYNE_DEBUG_SCOPE` narrows it to a logger allowlist. See [observability](/pyne/docs/devops/observability).
-- **Engine-owned live plane** (0.6.10–0.6.12): WebSocket `/ws/live` subscription plane with delta envelopes; refcount-pooled shared sessions (F-29) keyed by content hash; opt-in delta envelopes; gevent WebSocket worker (F-30); CCXT provider caching + tick-walk sharing; live session persistence (SQLite journal); production profile + `PYNE_DATA_DIR`; Docker prod on VPS; Redis unpublished + opt-in auth; CORS for AXIS authenticated requests.
+- **Compile HTF `request.security`** (D-06) — same-symbol simple OHLCV, `close[1]`, and allowlisted `ta.sma/ema/rsi/atr/wma/rma` on a coarser TF match interpret (`gaps_on` / `lookahead_on` on those paths). Nested `ta.*` and foreign tickers stay `na`.
+- **LSP signature help** — `textDocument/signatureHelp` for builtins and user `FunctionDef` (`(` / `,`).
+- **JSON key-store atomic save** and **webhook DNS pin** — flock + `os.replace`; POST connects to the resolved public IP with HTTPS SNI on the original hostname.
+- **Live P3 / P2** — forming last-value tails, pair-form tick identity, gthread pin, 100 threads.
+
+**`0.6.12`** — production hardening and live-surface additions (`GET /stats`, `PYNE_DEBUG=1`, engine-owned live plane 0.6.10–0.6.12).
 
 **Earlier on `main`** — prior releases are documented in [GitHub releases](https://github.com/hoox-sh/pyne/releases).
 

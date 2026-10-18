@@ -54,7 +54,7 @@ Disk IR cache with prewarm API/CLI. Cache meta v18. Corrupt-cache recovery for N
 
 ## Implementation Status
 
-As of **hoox-pyne 0.6.12** (late 2026), the plan is no longer purely prospective: an MVP compile path is landed and covered by automated tests (`tests/test_compiler_numba.py`, `tests/test_compiler_objects.py`). Follow-on sprints and residual passes (through 2026-10) expanded numeric/object coverage, host warm-compile (H2), and interpret-to-compile series parity tooling.
+As of **hoox-pyne 0.6.13** (late 2026), the plan is no longer purely prospective: an MVP compile path is landed and covered by automated tests (`tests/test_compiler_numba.py`, `tests/test_compiler_objects.py`). Follow-on sprints and residual passes (through 2026-10) expanded numeric/object coverage, host warm-compile (H2), and interpret-to-compile series parity tooling.
 
 ### Landed Correctness and Host Surface
 
@@ -77,7 +77,7 @@ Microbenchmarks on multi-thousand-bar series show large speedups for numeric scr
 
 The `scripts/compare_interp_compile.py` harness compares series output between interpret and compile modes with nan-aware allclose (`rtol=1e-5`, `atol=1e-6`). First-party goldens cover ATR, Supertrend, and Keltner dual-host. Official TV `builtin_scripts` (148) have **0 MISMATCH** vs compile (2026-09-12).
 
-## Recent Releases (0.6.10–0.6.12)
+## Recent Releases (0.6.10–0.6.13)
 
 ### 0.6.10 — Observability and Engine Parity
 
@@ -97,6 +97,10 @@ Engine parity improvements, observability tooling, and documentation refresh.
 - **Production profile** — `PYNE_DATA_DIR` pinned to persistent volume
 - **Docker prod on VPS** — retired venv+systemd path
 - **Redis unpublished** — opt-in auth after internet wipe
+
+### 0.6.13 — Dual-host HTF
+
+Compile-mode `request.security` resamples the same allowlisted HTF shapes as interpret (object-mode helpers).
 
 ---
 

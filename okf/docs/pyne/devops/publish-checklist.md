@@ -7,7 +7,7 @@ tags: [devops, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T00:12:55Z
+  at: 2026-10-18T15:25:55Z
 sources:
   - id: tree
     resource: "docs/pyne/devops/publish-checklist.mdx"
@@ -31,7 +31,7 @@ Repo path `docs/pyne/devops/publish-checklist.mdx`.
   * Optional — Trusted Publishing
 * 3. Local package smoke (no upload)
 * 4. GitHub Actions dry-run
-* 5. Cut v0.6.12
+* 5. Cut v0.6.13
 * 6. Post-publish verify
 * Hardcoded owner map (repo automation)
 * See also

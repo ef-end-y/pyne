@@ -19,7 +19,7 @@
 
 # Missing Features — Pine Script v6 Implementation
 
-**Live package:** `hoox-pyne` **0.6.12** (`src/pynescript/__about__.py`).
+**Live package:** `hoox-pyne` **0.6.13** (`src/pynescript/__about__.py`).
 
 ---
 
@@ -130,7 +130,7 @@ The 11 EXPECTED_FAIL scripts are intentional demos: library `runtime.error` guar
 
 ---
 
-## Recent Releases (0.6.10–0.6.12)
+## Recent Releases (0.6.10–0.6.13)
 
 ### 0.6.10 — Observability and Engine Parity
 
@@ -152,6 +152,13 @@ Engine parity improvements, observability tooling, and documentation refresh.
 - **Docker prod on VPS** — retired venv+systemd path
 - **Redis unpublished** — opt-in auth after internet wipe
 - **CCORS for AXIS** — authenticated cross-origin requests
+
+### 0.6.13 — Dual-host HTF, LSP, host hardening
+
+- **Compile HTF `request.security`** (D-06) — same-symbol simple OHLCV / `close[1]` / allowlisted `ta.*` resample matches interpret
+- **LSP signature help** — `textDocument/signatureHelp` for builtins and user functions
+- **JSON key-store atomic save** — flock + `os.replace`
+- **Webhook DNS pin** — POST connects to the resolved public IP with HTTPS SNI on the original name
 
 ---
 

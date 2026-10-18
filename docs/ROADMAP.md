@@ -19,7 +19,7 @@
 
 # PYNE Roadmap
 
-**Live package:** `hoox-pyne` **0.6.12**.
+**Live package:** `hoox-pyne` **0.6.13**.
 
 ---
 
@@ -97,6 +97,10 @@ The engine-owned subscription plane (WebSocket `/ws/live`) enables realtime data
 ### 0.6.12 — Production Hardening
 
 The gevent WebSocket worker (F-30) is now the API default. CXT provider caching reduces connection overhead. The production profile pins `PYNE_DATA_DIR` to a persistent volume. Docker production is deployed on VPS. Redis is unpublished with opt-in authentication. CORS allows AXIS authenticated requests.
+
+### 0.6.13 — Dual-host HTF, LSP, host hardening
+
+Compile-mode `request.security` matches interpret on allowlisted HTF resample. LSP advertises `textDocument/signatureHelp`. JSON key-store writes are flock-serialized; webhook POSTs pin to the resolved IP.
 
 ---
 
