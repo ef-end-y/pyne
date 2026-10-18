@@ -2134,6 +2134,24 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
             if order.stop_price is None or candidate < float(order.stop_price):
                 order.stop_price = candidate
 
+    def ratchet_trails(self, high: float, low: float) -> None:
+        """Ratchet pending trail stops from forming-bar high/low (no fills).
+
+        Used after unconfirmed realtime broker restore so trail state persists
+        like ``varip`` while fills still roll back. Historical once-per-bar
+        fills stay in :meth:`process_pending_orders`.
+        """
+        if not hasattr(self, "_strategy_state"):
+            return
+        pending = self._strategy_state.pending_orders
+        if not pending:
+            return
+        h = self._coerce_number(high, default=0.0)
+        l = self._coerce_number(low, default=0.0)
+        for order in pending.values():
+            if order is not None and order.is_trail:
+                self._update_trail_stop(order, h, l)
+
     def process_pending_orders(
         self,
         *,

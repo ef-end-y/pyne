@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T22:32:27Z
+  at: 2026-10-18T23:15:18Z
 sources:
   - id: tree
     resource: "tests"
@@ -141,6 +141,7 @@ okf_lock: generated
 * `test_time_parts.py` — test_apply_utc_parts_to_context, test_pine_dayofweek_sunday_is_one, test_utc_parts_matches_datetime_samples
 * `test_timeframe_change.py` — test_bucket_id_daily_and_hourly, test_builtin_uses_syminfo_timezone, test_calendar_bad_timezone_falls_back_utc, test_calendar_change_runtime_ny_dst_parity, test_calendar_day_dst_spring_forward, test_calendar_month_lengths_leap_year, test_calendar_tf_routing, test_calendar_week_starts_monday, test_missing_prev_after_bar_0_is_false, test_standalone_timeframe_change_still_false, test_timeframe_change_at_threads_timezone, test_timeframe_change_compile_matches_interpret
 * `test_trail_ohlc_dual_host.py` — test_trail_nonpositive_points_falls_back_to_offset_dual_host, test_trail_offset_from_entry_dual_host, test_trail_offset_long_ratchet_dual_host, test_trail_offset_same_bar_fill_dual_host, test_trail_offset_short_ratchet_dual_host, test_trail_points_wins_over_offset_dual_host, test_trail_price_activation_dual_host
+* `test_trail_realtime_ticks.py` — test_compile_emits_ratchet_after_restore, test_forming_highs_ratchet_trail_dual_host, test_historical_ticks_one_keeps_bar_open_trail, test_ratchet_trails_survives_broker_restore_compile, test_ratchet_trails_survives_broker_restore_interpret, test_update_last_bar_ratchets_forming_high
 * `test_udt_instantiation.py` — TestComplexScenarios, TestFieldAccess, TestFieldMutation, TestNestedObjects, TestObjectCopy, TestObjectInstantiation, TestObjectsInArrays
 * `test_udt_methods.py` — TestBarLoopMethodRegistration, TestBareNaAndLabelDelete, TestComplexMethodScenarios, TestMethodDefinition, TestMethodInvocation, TestMethodIssetOnNa, TestMethodReturnValues, TestMultipleMethods, TestTHISBinding, TestUdtFieldCallSyntax, TestUdtNewNameShadowing
 * `test_udt_types.py` — TestField, TestIntegration, TestObjectInstance, TestUserDefinedType

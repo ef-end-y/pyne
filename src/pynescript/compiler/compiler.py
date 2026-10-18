@@ -1454,6 +1454,11 @@ class CompilerVisitor(NodeVisitor):
         lines.append("                    low_arr[__bar_idx] = __polled[3]")
         lines.append("                    close_arr[__bar_idx] = __polled[4]")
         lines.append("                    vol_arr[__bar_idx] = __polled[5]")
+        if self.uses_strategy:
+            lines.append("            if __bar_rt:")
+            lines.append(
+                "                __strategy.ratchet_trails(high_arr[__bar_idx], low_arr[__bar_idx])"
+            )
         lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
         if self.uses_strategy:
             lines.append("                __st_snap = __strategy.snapshot()")
@@ -1468,6 +1473,9 @@ class CompilerVisitor(NodeVisitor):
         lines.append("            if __bar_rt and __tick_i < __n_ticks - 1:")
         if self.uses_strategy:
             lines.append("                __strategy.restore(__st_snap)")
+            lines.append(
+                "                __strategy.ratchet_trails(high_arr[__bar_idx], low_arr[__bar_idx])"
+            )
         self._emit_rt_tick_restore(lines, indent="                ")
         if self.uses_strategy:
             lines.append("        __strategy_position_size_arr[__bar_idx] = float(__strategy.position_size)")

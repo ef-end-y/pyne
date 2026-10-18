@@ -1650,6 +1650,35 @@ def _apply_feed_forming_bar(
                 pass
 
 
+def _ratchet_forming_trails(evaluator: Any, high: Any, low: Any) -> None:
+    """Re-apply pending trail stops from forming-bar high/low (no fills).
+
+    Broker snapshot/restore rolls trail fields back with fills; call this
+    after ``poll_ohlcv`` and after each unconfirmed restore so the ratchet
+    persists like ``varip``.
+    """
+    if high is None or low is None:
+        return
+    ratchet = getattr(evaluator, "ratchet_trails", None)
+    if ratchet is None:
+        return
+    try:
+        ratchet(high, low)
+    except Exception:
+        pass
+
+
+def _forming_hl(ohlcv_data: list, bar_index: int) -> tuple[Any, Any]:
+    """Current forming-bar high/low, or ``(None, None)`` if missing."""
+    try:
+        bar = ohlcv_data[bar_index]
+    except Exception:
+        return None, None
+    if not isinstance(bar, dict):
+        return None, None
+    return bar.get("high"), bar.get("low")
+
+
 def _resolve_realtime_first(
     n_bars: int,
     *,
@@ -2327,6 +2356,9 @@ class InterpretSession:
                     barstate.isnew = tick_i == 0
                     barstate.isconfirmed = tick_i == n_ticks - 1
                     barstate.islastconfirmedhistory = False
+                    if self._need_strategy:
+                        fh, fl = _forming_hl(self._ohlcv_data, bar_index)
+                        _ratchet_forming_trails(ev, fh, fl)
                 tick_var_snap = _snapshot_realtime_scope(ev) if bar_rt and tick_i < n_ticks - 1 else None
                 tick_ta_snap = _snapshot_ta_state(ev) if bar_rt and tick_i < n_ticks - 1 else None
                 tick_broker_snap = (
@@ -2371,6 +2403,8 @@ class InterpretSession:
                     _restore_ta_state(ev, tick_ta_snap)
                     if tick_broker_snap is not None:
                         strategy_state.restore(tick_broker_snap)
+                        fh, fl = _forming_hl(self._ohlcv_data, bar_index)
+                        _ratchet_forming_trails(ev, fh, fl)
                     _discard_realtime_plot_tick(ev)
                     continue
                 if snapshot_bar is not None:
@@ -2513,6 +2547,7 @@ class InterpretSession:
         _restore_ta_state(ev, self._last_open_ta_snap)
         if self._last_open_broker_snap is not None:
             ev._strategy_state.restore(self._last_open_broker_snap)
+            _ratchet_forming_trails(ev, h, low)
         # Drop this bar's events/alerts/conditions; the re-visit re-emits.
         try:
             del self._all_events[self._last_open_event_len :]
@@ -2701,6 +2736,7 @@ class InterpretSession:
         _restore_ta_state(ev, self._last_open_ta_snap)
         if self._last_open_broker_snap is not None:
             ev._strategy_state.restore(self._last_open_broker_snap)
+            _ratchet_forming_trails(ev, self._col_high[idx], self._col_low[idx])
         try:
             del self._all_events[self._last_open_event_len :]
         except Exception:
@@ -3726,6 +3762,9 @@ class Runtime:
                     # Final tick models bar confirmation; earlier ticks unconfirmed.
                     barstate.isconfirmed = tick_i == n_ticks - 1
                     barstate.islastconfirmedhistory = False
+                    if need_strategy:
+                        fh, fl = _forming_hl(ohlcv_data, bar_index)
+                        _ratchet_forming_trails(evaluator, fh, fl)
 
                 # Intermediate realtime ticks start from confirmed state:
                 # snapshot var scope + TA windows, restore after the visit
@@ -3784,6 +3823,8 @@ class Runtime:
                     _restore_ta_state(evaluator, ta_snap)
                     if broker_snap is not None:
                         strategy_state.restore(broker_snap)
+                        fh, fl = _forming_hl(ohlcv_data, bar_index)
+                        _ratchet_forming_trails(evaluator, fh, fl)
                     _discard_realtime_plot_tick(evaluator)
                     continue
 

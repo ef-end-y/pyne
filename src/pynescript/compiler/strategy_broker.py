@@ -551,6 +551,20 @@ class CompileStrategyBroker:
             if order.stop_price is None or candidate < float(order.stop_price):
                 order.stop_price = candidate
 
+    def ratchet_trails(self, high: float, low: float) -> None:
+        """Ratchet pending trail stops from forming-bar high/low (no fills).
+
+        Re-applied after unconfirmed realtime ``restore`` so the trail follows
+        the forming bar's extremes while fills still roll back.
+        """
+        if not self.pending_orders:
+            return
+        h = float(high)
+        l = float(low)
+        for order in self.pending_orders.values():
+            if order is not None and order.is_trail:
+                self._update_trail_stop(order, h, l)
+
     def _trigger_price(
         self,
         order: PendingOrder,
