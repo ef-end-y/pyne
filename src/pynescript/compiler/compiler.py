@@ -1378,11 +1378,20 @@ class CompilerVisitor(NodeVisitor):
         lines.append(f"{indent}        __rt_first = 0")
 
     def _emit_rt_tick_snapshot(self, lines: list[str], *, indent: str) -> None:
-        """Shallow snapshot before an unconfirmed realtime tick."""
+        """Snapshot var/once/TA before an unconfirmed realtime tick (varip skipped)."""
         scalars = self._rt_snap_scalars()
         lines.append(f"{indent}__rt_snap_ndraw = len(__drawings)")
         for name in scalars:
             lines.append(f"{indent}__rt_snap_{name} = {name}")
+            lines.append(f"{indent}if isinstance({name}, list):")
+            lines.append(
+                f"{indent}    __rt_snap_{name}_c = "
+                f"[__r.copy() if isinstance(__r, list) else __r for __r in {name}]"
+            )
+            lines.append(f"{indent}elif isinstance({name}, dict):")
+            lines.append(f"{indent}    __rt_snap_{name}_c = {name}.copy()")
+            lines.append(f"{indent}else:")
+            lines.append(f"{indent}    __rt_snap_{name}_c = None")
         for flag in self.once_flags:
             lines.append(f"{indent}__rt_snap_{flag} = {flag}")
         for st_name, _size in self.fixed_state:
@@ -1393,6 +1402,12 @@ class CompilerVisitor(NodeVisitor):
         lines.append(f"{indent}del __drawings[__rt_snap_ndraw:]")
         for name in self._rt_snap_scalars():
             lines.append(f"{indent}{name} = __rt_snap_{name}")
+            lines.append(f"{indent}if __rt_snap_{name}_c is not None:")
+            lines.append(f"{indent}    if isinstance({name}, list):")
+            lines.append(f"{indent}        {name}[:] = __rt_snap_{name}_c")
+            lines.append(f"{indent}    elif isinstance({name}, dict):")
+            lines.append(f"{indent}        {name}.clear()")
+            lines.append(f"{indent}        {name}.update(__rt_snap_{name}_c)")
         for flag in self.once_flags:
             lines.append(f"{indent}{flag} = __rt_snap_{flag}")
         for st_name, _size in self.fixed_state:

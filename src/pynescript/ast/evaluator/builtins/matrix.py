@@ -416,6 +416,17 @@ class Matrix(Generic[T]):
                 result.set(i, j, self.get(i, j))
         return result
 
+    def copy_contents(self) -> tuple[int, int, list[list[Any]]]:
+        """One-level snapshot of dimensions and row lists (realtime rollback)."""
+        return (self.rows_count, self.cols_count, [list(row) for row in self.data])
+
+    def restore_contents(self, snap: tuple[int, int, list[list[Any]]]) -> None:
+        """Restore from :meth:`copy_contents` into this instance."""
+        rows, cols, data = snap
+        self.rows_count = rows
+        self.cols_count = cols
+        self.data[:] = [list(row) for row in data]
+
     def __repr__(self) -> str:
         """String representation."""
         return f"matrix({self.rows_count}x{self.cols_count})"

@@ -98,6 +98,15 @@ class Map(Generic[K, V]):
         new_map.data = self.data.copy()
         return new_map
 
+    def copy_contents(self) -> dict[Any, Any]:
+        """One-level snapshot of map items (realtime rollback)."""
+        return self.data.copy()
+
+    def restore_contents(self, snap: dict[Any, Any]) -> None:
+        """Restore from :meth:`copy_contents` into this instance."""
+        self.data.clear()
+        self.data.update(snap)
+
     def __repr__(self) -> str:
         """String representation."""
         return f"map({self.size()})"

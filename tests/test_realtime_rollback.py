@@ -29,6 +29,13 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from pynescript.ast.evaluator.builtins.map import Map
+from pynescript.ast.evaluator.builtins.matrix import Matrix
+from pynescript.ast.type_system import BuiltinType
+from pynescript.ast.type_system import BuiltinTypeKind
+from pynescript.ast.type_system import Field
+from pynescript.ast.type_system import ObjectInstance
+from pynescript.ast.type_system import UserDefinedType
 from pynescript.runtime import Runtime
 from pynescript.runtime.host import _restore_realtime_scope
 from pynescript.runtime.host import _snapshot_realtime_scope
@@ -122,6 +129,94 @@ plot(x, "x")
     assert [float(v) for v in out["series"]["x"]] == [200.0, 202.0, 204.0, 206.0, 208.0]
 
 
+_VAR_ARRAY_SRC = """//@version=6
+indicator("rt arr")
+var a = array.new_float()
+if barstate.isrealtime
+    array.push(a, close)
+plot(array.size(a), "sz")
+"""
+
+def test_var_array_push_rolls_back_unconfirmed_ticks() -> None:
+    """``var`` array.push on the last bar commits once, not once per tick."""
+    out = Runtime(symbol="RT").run(_VAR_ARRAY_SRC, _bars(), mode="interpret", realtime_ticks=3)
+    assert "error" not in out, out.get("error")
+    sz = [float(v) for v in out["series"]["sz"]]
+    # Historical bars never push; last bar's 3 ticks each start empty and
+    # only the confirmed tick keeps the one push (not 3).
+    assert sz == [0.0, 0.0, 0.0, 0.0, 1.0], sz
+
+
+def test_varip_array_pushes_persist_across_ticks() -> None:
+    """``varip`` array mutations are not rolled back (same object).
+
+    Script-level ``varip a = array.new_float()`` re-evaluates the RHS on
+    each realtime tick (new empty handle). Persist is the restore skip:
+    pushes on a kept varip list survive.
+    """
+    items: list[float] = []
+    ev = SimpleNamespace(
+        context={"a": items},
+        _var_declarations={"a"},
+        _varip_declarations={"a"},
+    )
+    snap = _snapshot_realtime_scope(ev)
+    assert snap is not None
+    items.append(10.0)
+    items.append(20.0)
+    items.append(30.0)
+    _restore_realtime_scope(ev, snap)
+    assert ev.context["a"] is items
+    assert items == [10.0, 20.0, 30.0]
+
+
+def test_var_matrix_set_rolls_back_unconfirmed_ticks() -> None:
+    """``matrix.set`` on a ``var`` matrix commits the confirmed tick only."""
+    src = """//@version=6
+indicator("rt mat")
+var m = matrix.new<float>(1, 1, 0.0)
+if barstate.isrealtime
+    matrix.set(m, 0, 0, matrix.get(m, 0, 0) + 1.0)
+plot(matrix.get(m, 0, 0), "v")
+"""
+    out = Runtime(symbol="RT").run(src, _bars(), mode="interpret", realtime_ticks=3)
+    assert "error" not in out, out.get("error")
+    v = [float(x) for x in out["series"]["v"]]
+    assert v == [0.0, 0.0, 0.0, 0.0, 1.0], v
+
+
+def test_var_map_put_rolls_back_unconfirmed_ticks() -> None:
+    """``map.put`` of distinct keys on a ``var`` map commits one entry."""
+    src = """//@version=6
+indicator("rt map")
+var m = map.new<string, float>()
+if barstate.isrealtime
+    map.put(m, str.tostring(map.size(m)), close)
+plot(map.size(m), "sz")
+"""
+    out = Runtime(symbol="RT").run(src, _bars(), mode="interpret", realtime_ticks=3)
+    assert "error" not in out, out.get("error")
+    sz = [float(v) for v in out["series"]["sz"]]
+    assert sz == [0.0, 0.0, 0.0, 0.0, 1.0], sz
+
+
+def test_var_udt_field_rolls_back_unconfirmed_ticks() -> None:
+    """UDT field writes on a ``var`` instance roll back with the object."""
+    src = """//@version=6
+indicator("rt udt")
+type S
+    float x = 0.0
+var S s = S.new()
+if barstate.isrealtime
+    s.x := s.x + 1.0
+plot(s.x, "x")
+"""
+    out = Runtime(symbol="RT").run(src, _bars(), mode="interpret", realtime_ticks=3)
+    assert "error" not in out, out.get("error")
+    x = [float(v) for v in out["series"]["x"]]
+    assert x == [0.0, 0.0, 0.0, 0.0, 1.0], x
+
+
 def _fake_evaluator() -> SimpleNamespace:
     """Duck-typed evaluator: one var, one varip, one series-like value."""
     series = SimpleNamespace(update=lambda v: None, current=10.0, history=[10.0, 9.0])
@@ -180,3 +275,98 @@ class TestScopeHelpers:
         _restore_realtime_scope(SimpleNamespace(), {})
         ev = _fake_evaluator()
         _restore_realtime_scope(ev, {"bogus": True})
+
+    def test_list_contents_restored_same_identity(self) -> None:
+        items = [1.0]
+        alias = items
+        ev = SimpleNamespace(
+            context={"a": items, "alias": alias, "host": "keep"},
+            _var_declarations={"a", "alias"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        items.append(2.0)
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["a"] is items
+        assert ev.context["alias"] is items
+        assert items == [1.0]
+
+    def test_varip_list_contents_persist(self) -> None:
+        items = [1.0]
+        ev = SimpleNamespace(
+            context={"a": items},
+            _var_declarations={"a"},
+            _varip_declarations={"a"},
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        items.append(2.0)
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["a"] is items
+        assert items == [1.0, 2.0]
+
+    def test_dict_contents_restored_same_identity(self) -> None:
+        data = {"k": 1.0}
+        ev = SimpleNamespace(
+            context={"m": data},
+            _var_declarations={"m"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        data["k"] = 99.0
+        data["n"] = 2.0
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["m"] is data
+        assert data == {"k": 1.0}
+
+    def test_matrix_contents_restored_same_identity(self) -> None:
+        mat = Matrix(1, 1, 0.0)
+        ev = SimpleNamespace(
+            context={"m": mat},
+            _var_declarations={"m"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        mat.set(0, 0, 7.0)
+        mat.add_row([8.0])
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["m"] is mat
+        assert mat.rows() == 1
+        assert mat.columns() == 1
+        assert mat.get(0, 0) == 0.0
+
+    def test_map_contents_restored_same_identity(self) -> None:
+        mp = Map()
+        mp.put("k", 1.0)
+        ev = SimpleNamespace(
+            context={"m": mp},
+            _var_declarations={"m"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        mp.put("k", 9.0)
+        mp.put("n", 2.0)
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["m"] is mp
+        assert mp.size() == 1
+        assert mp.get("k") == 1.0
+
+    def test_udt_fields_restored_same_identity(self) -> None:
+        udt = UserDefinedType("S")
+        udt.add_field(Field("x", BuiltinType(BuiltinTypeKind.FLOAT), 0.0))
+        inst = ObjectInstance(udt)
+        ev = SimpleNamespace(
+            context={"s": inst},
+            _var_declarations={"s"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        inst.set_field("x", 5.0)
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["s"] is inst
+        assert inst.get_field("x") == 0.0

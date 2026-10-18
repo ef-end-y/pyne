@@ -289,6 +289,28 @@ def test_once_unconfirmed_ticks_can_refire() -> None:
     assert n_c == n_i
 
 
+_VAR_ARRAY_PUSH_SRC = """
+//@version=6
+indicator("rt arr")
+var a = array.new_float()
+if barstate.isrealtime
+    array.push(a, close)
+plot(array.size(a), "sz")
+"""
+
+
+def test_var_array_push_rolls_back_unconfirmed_ticks_dual_host() -> None:
+    """``array.push`` on a ``var`` array commits once on both hosts."""
+    n = 5
+    ticks = 3
+    bars = _bars(n)
+    interp, compiled = _dual(_VAR_ARRAY_PUSH_SRC, bars, realtime_ticks=ticks)
+    expected = [0.0] * (n - 1) + [1.0]
+    assert _series(interp, "sz") == expected
+    assert _series(compiled, "sz") == expected
+    assert _series(compiled, "sz") == _series(interp, "sz")
+
+
 def test_object_mode_execute_keeps_six_arg_positional() -> None:
     """Existing 6-arg execute_script_compiled calls stay valid (kwargs default)."""
     from pynescript.compiler.engine import compile_script

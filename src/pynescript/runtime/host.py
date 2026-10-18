@@ -1284,17 +1284,71 @@ def _discard_realtime_plot_tick(evaluator: Any) -> None:
         pass
 
 
+def _copy_container_contents(value: Any) -> Any | None:
+    """One-level contents snapshot of a mutable container, or ``None``.
+
+    Lists/dicts are copied one level. Matrix/Map use ``copy_contents`` when
+    present. UDT instances snapshot ``.fields``. Unknown objects return
+    ``None`` so identity restore is enough. Never raises.
+    """
+    try:
+        if isinstance(value, list):
+            return ("list", _copy_ta_value(value))
+        if isinstance(value, dict):
+            return ("dict", dict(value))
+        copy_fn = getattr(value, "copy_contents", None)
+        if callable(copy_fn):
+            return ("typed", copy_fn())
+        fields = getattr(value, "fields", None)
+        if isinstance(fields, dict) and getattr(value, "udt", None) is not None:
+            return ("udt", dict(fields))
+    except Exception:
+        return None
+    return None
+
+
+def _restore_container_contents(target: Any, snap: Any) -> None:
+    """Write *snap* from :func:`_copy_container_contents` into *target* in place."""
+    if not isinstance(snap, tuple) or len(snap) != 2:
+        return
+    kind, payload = snap
+    try:
+        if kind == "list":
+            if isinstance(target, list) and isinstance(payload, list):
+                target[:] = payload
+            return
+        if kind == "dict":
+            if isinstance(target, dict) and isinstance(payload, dict):
+                target.clear()
+                target.update(payload)
+            return
+        if kind == "typed":
+            restore_fn = getattr(target, "restore_contents", None)
+            if callable(restore_fn):
+                restore_fn(payload)
+            return
+        if kind == "udt":
+            fields = getattr(target, "fields", None)
+            if isinstance(fields, dict) and isinstance(payload, dict):
+                fields.clear()
+                fields.update(payload)
+    except Exception:
+        return
+
+
 def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
     """Snapshot ``var`` scope before an intermediate realtime tick.
 
     Reference Pine re-executes forming bars per tick with non-``varip``
     state rolled back to the last confirmed bar. The snapshot holds context
-    bindings (by reference), ``.current`` of series-like values, and the
-    ``var`` declaration set — everything
+    bindings (by reference), one-level container contents (arrays /
+    matrices / maps / UDT fields), ``.current`` of series-like values, and
+    the ``var`` declaration set — everything
     :func:`_restore_realtime_scope` needs to undo one tick. ``varip`` names
     are recorded (not snapshotted) so they persist across ticks.
-    Shallow by design: in-place mutations of referenced containers
-    (arrays / matrices / UDTs) are not deep-rolled-back.
+    Restore writes contents back into the same objects so aliases keep
+    identity. Nested containers beyond one list/dict level plus
+    Matrix/Map internals are not deep-copied.
     """
     ctx = getattr(evaluator, "context", None)
     if not isinstance(ctx, dict):
@@ -1306,6 +1360,7 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
     varips = getattr(evaluator, "_varip_declarations", None)
     varip_names = set(varips) if varips else set()
     currents: dict[str, Any] = {}
+    containers: dict[str, Any] = {}
     for name, value in bindings.items():
         if name in varip_names:
             continue
@@ -1313,13 +1368,17 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
             if hasattr(value, "update") and hasattr(value, "current") and hasattr(value, "history"):
                 currents[name] = getattr(value, "current", None)
         except Exception:
-            continue
+            pass
+        copied = _copy_container_contents(value)
+        if copied is not None:
+            containers[name] = copied
     declared = getattr(evaluator, "_var_declarations", None)
     once_fired = getattr(evaluator, "_once_fired", None)
     try:
         return {
             "bindings": bindings,
             "currents": currents,
+            "containers": containers,
             "varip_names": varip_names,
             "var_declarations": set(declared) if declared else set(),
             "once_fired": dict(once_fired) if isinstance(once_fired, dict) else {},
@@ -1331,12 +1390,13 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
 def _restore_realtime_scope(evaluator: Any, snap: dict[str, Any] | None) -> None:
     """Undo one intermediate realtime tick (see :func:`_snapshot_realtime_scope`).
 
-    Restores ``var`` bindings and series ``.current`` values in place — the
-    context dict itself is never replaced. ``varip`` names keep their
-    post-tick values (reference persistence). History pushes and the
-    series-assign map are intentionally left alone: the start-of-visit
-    commit already ran for this bar, and re-running it on the final tick
-    would double-push. Best-effort: never raises.
+    Restores ``var`` bindings, container contents, and series ``.current``
+    values in place — the context dict itself is never replaced, and
+    list/Matrix/Map/UDT mutations write back into the same objects.
+    ``varip`` names keep their post-tick values (reference persistence).
+    History pushes and the series-assign map are intentionally left alone:
+    the start-of-visit commit already ran for this bar, and re-running it
+    on the final tick would double-push. Best-effort: never raises.
     """
     if not snap:
         return
@@ -1359,6 +1419,13 @@ def _restore_realtime_scope(evaluator: Any, snap: dict[str, Any] | None) -> None
             try:
                 if name not in ctx or ctx[name] is not value:
                     ctx[name] = value
+            except Exception:
+                pass
+        for name, contents in (snap.get("containers") or {}).items():
+            if name in varip_names:
+                continue
+            try:
+                _restore_container_contents(ctx.get(name), contents)
             except Exception:
                 pass
         for name, current in (snap.get("currents") or {}).items():
