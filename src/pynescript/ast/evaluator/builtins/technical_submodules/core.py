@@ -882,6 +882,63 @@ class TechnicalHelpers:
             bucket[key] = st
         return self._wma_state_step(st, self._series_last(series), period)
 
+    def _sma_weighted_inc_update(
+        self,
+        series: list[Any],
+        period: int,
+        weight_type: str = "linear",
+    ) -> float | None:
+        """Incremental weighted SMA matching full ``ta.sma_weighted`` last window.
+
+        Weights: linear ``1..n`` (default), quadratic ``(i+1)**2``, sqrt
+        ``(i+1)**0.5``. Short window or any non-numeric slot → None (same as
+        ``len(valid_data) < period``). One slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        if not isinstance(weight_type, str):
+            weight_type = "linear"
+        slot = self._ta_next_slot()
+        if n < 1:
+            return None
+        key = ("sma_weighted", slot, n, weight_type)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            if weight_type == "quadratic":
+                weights = [(i + 1) ** 2 for i in range(n)]
+            elif weight_type == "sqrt":
+                weights = [(i + 1) ** 0.5 for i in range(n)]
+            else:
+                weights = [i + 1 for i in range(n)]
+            wsum = float(sum(weights))
+            st = {
+                "window": deque(maxlen=n),
+                "weights": weights,
+                "wsum": wsum,
+                "value": None,
+            }
+            bucket[key] = st
+        raw = self._series_last(series)
+        x: float | None = float(raw) if isinstance(raw, (int, float)) else None
+        window: deque[float | None] = st["window"]
+        window.append(x)
+        if len(window) < n:
+            st["value"] = None
+            return None
+        if any(v is None for v in window):
+            st["value"] = None
+            return None
+        wsum = float(st["wsum"])
+        if wsum <= 0.0:
+            st["value"] = None
+            return None
+        weights: list[float] = st["weights"]
+        total = 0.0
+        for i, v in enumerate(window):
+            total += float(v) * weights[i]
+        st["value"] = total / wsum
+        return st.get("value")
+
     def _tr_inc_update(
         self,
         highs: list[Any],

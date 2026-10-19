@@ -253,12 +253,17 @@ class MovingAverageIndicators(TechnicalHelpers):
             msg = "ta.sma_weighted() requires at least 2 arguments: series, period"
             self._error(msg)
 
-        series = args[0] if isinstance(args[0], list) else [args[0]]
         period = self._expect_int(args[1], "period must be integer")
         weight_type = args[2] if len(args) > BINARY else "linear"
 
         if not isinstance(weight_type, str):
             weight_type = "linear"
+
+        if self._use_incremental_ta():
+            series = self._as_series_or_raw(args[0], last_sample_ok=True)
+            return self._sma_weighted_inc_update(series, period, weight_type)
+
+        series = self._as_series(args[0])
 
         if len(series) < period:
             return None

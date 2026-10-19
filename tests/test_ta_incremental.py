@@ -5334,3 +5334,188 @@ plot(ta.volume_momentum(volume, 20), "vm")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: sma_weighted incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_sma_weighted(
+    src: list[Any], period: int, weight_type: str = "linear"
+) -> list[float | None]:
+    ev = _FullTA()
+    args_tail: list[Any] = [period] if weight_type == "linear" else [period, weight_type]
+    return [
+        ev._builtin_ta_sma_weighted([src[: i + 1], *args_tail]) for i in range(len(src))
+    ]
+
+
+def _bar_walk_inc_sma_weighted(
+    src: list[Any], period: int, weight_type: str = "linear"
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._sma_weighted_inc_update(src[: i + 1], period, weight_type))
+    return out
+
+
+def test_incremental_sma_weighted_linear_matches_full() -> None:
+    src = _series(120)
+    for period in (5, 14):
+        _assert_series_close(
+            _bar_walk_inc_sma_weighted(src, period, "linear"),
+            _bar_walk_full_sma_weighted(src, period, "linear"),
+        )
+
+
+def test_incremental_sma_weighted_quadratic_matches_full() -> None:
+    src = _series(120)
+    for period in (5, 14):
+        _assert_series_close(
+            _bar_walk_inc_sma_weighted(src, period, "quadratic"),
+            _bar_walk_full_sma_weighted(src, period, "quadratic"),
+        )
+
+
+def test_incremental_sma_weighted_sqrt_matches_full() -> None:
+    src = _series(120)
+    for period in (5, 14):
+        _assert_series_close(
+            _bar_walk_inc_sma_weighted(src, period, "sqrt"),
+            _bar_walk_full_sma_weighted(src, period, "sqrt"),
+        )
+
+
+def test_incremental_sma_weighted_default_is_linear() -> None:
+    src = _series(80)
+    got = _bar_walk_inc_sma_weighted(src, 10)
+    _assert_series_close(got, _bar_walk_full_sma_weighted(src, 10, "linear"))
+    _assert_series_close(got, _bar_walk_inc_sma_weighted(src, 10, "linear"))
+
+
+def test_incremental_sma_weighted_warmup() -> None:
+    src = _series(40)
+    period = 14
+    got = _bar_walk_inc_sma_weighted(src, period, "linear")
+    exp = _bar_walk_full_sma_weighted(src, period, "linear")
+    for i in range(period - 1):
+        assert got[i] is None, f"warmup bar {i}: expected None, got {got[i]}"
+        assert exp[i] is None, f"full warmup bar {i}: expected None, got {exp[i]}"
+    assert got[period - 1] is not None
+    _assert_series_close(got, exp)
+
+
+def test_incremental_sma_weighted_na_in_window() -> None:
+    """NA in the last-N window yields na (full path: len(valid_data) < period)."""
+    src: list[float | None] = list(_series(80))
+    na_i = 20
+    period = 14
+    src[na_i] = None
+    got = _bar_walk_inc_sma_weighted(src, period, "linear")
+    exp = _bar_walk_full_sma_weighted(src, period, "linear")
+    _assert_series_close(got, exp)
+    for i in range(na_i, min(na_i + period, len(src))):
+        assert got[i] is None, f"sma_weighted bar {i}: expected None while NA is in window"
+    for i in range(na_i + period, len(src)):
+        assert got[i] is not None, f"sma_weighted bar {i}: expected recovery after NA left window"
+
+
+def test_incremental_sma_weighted_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._sma_weighted_inc_update(prefix, 10, "linear")
+        assert ev._ta_call_i == 1, f"linear bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._sma_weighted_inc_update(prefix, 10, "quadratic")
+        assert ev._ta_call_i == 1, f"quadratic bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._sma_weighted_inc_update(prefix, 10, "sqrt")
+        assert ev._ta_call_i == 1, f"sqrt bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_sma_weighted_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_sma_weighted([prefix, 10])
+        assert ev._ta_call_i == 1, f"default builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_sma_weighted([prefix, 10, "linear"])
+        assert ev._ta_call_i == 1, f"linear builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_sma_weighted([prefix, 10, "quadratic"])
+        assert ev._ta_call_i == 1, f"quadratic builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_sma_weighted([prefix, 10, "sqrt"])
+        assert ev._ta_call_i == 1, f"sqrt builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_sma_weighted_two_call_sites_independent() -> None:
+    src = _series(80)
+    ev = _IncTA()
+    lin: list[float | None] = []
+    quad: list[float | None] = []
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        lin.append(ev._sma_weighted_inc_update(prefix, 10, "linear"))
+        quad.append(ev._sma_weighted_inc_update(prefix, 10, "quadratic"))
+    _assert_series_close(lin, _bar_walk_full_sma_weighted(src, 10, "linear"))
+    _assert_series_close(quad, _bar_walk_full_sma_weighted(src, 10, "quadratic"))
+
+
+def test_runtime_sma_weighted_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("sma_weighted")
+plot(ta.sma_weighted(close, 14), "lin")
+plot(ta.sma_weighted(close, 14, "linear"), "lin2")
+plot(ta.sma_weighted(close, 14, "quadratic"), "quad")
+plot(ta.sma_weighted(close, 14, "sqrt"), "sqrt")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"lin", "lin2", "quad", "sqrt"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
