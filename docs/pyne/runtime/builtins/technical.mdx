@@ -51,7 +51,7 @@ When `_pine_bar_mode` and `_pine_ta_incremental` are enabled (Runtime default; d
 
 | Family | Incremental builtins (non-exhaustive) |
 | --- | --- |
-| Moving averages | `sma`, `ema`, `rma`, `wma`, `hma`, `vwma`, `swma`, `kama`, `dema`, `tema`, `alma` |
+| Moving averages | `sma`, `ema`, `rma`, `wma`, `hma`, `vwma`, `swma`, `kama`, `dema`, `tema`, `alma`, `sma_weighted` |
 | Oscillators | `rsi`, `macd`, `stoch`/`stochrsi`, `cci`, `cmo`, `tsi`, `roc`, `wpr`, `aroon`, `dpo`, `kst` |
 | Volatility / structure | `atr`, `tr`, `stdev`, `bb`, `highest`/`lowest`, `linreg`, `adx`/`dmi`, `supertrend`, `kc`, `sar`, `donchian` |
 | Volume (**0.3.10–0.3.11**) | `obv`, `wad`/`wvad`, `cmf`, `klinger`, `mfi`, `vwap`, `accdist`, `nvi`, `pvi` |
@@ -65,7 +65,7 @@ Dispatch keys (non-exhaustive; map is authoritative in `technical.py`):
 
 | Family | Examples |
 | --- | --- |
-| Moving averages | `ta.sma`, `ta.ema`, `ta.wma`, `ta.rma`, `ta.hma`, `ta.vwma`, `ta.swma`, `ta.alma` |
+| Moving averages | `ta.sma`, `ta.ema`, `ta.wma`, `ta.rma`, `ta.hma`, `ta.vwma`, `ta.swma`, `ta.alma`, `ta.sma_weighted` |
 | Oscillators | `ta.rsi`, `ta.stoch`, `ta.cci`, `ta.cmo`, `ta.mfi`, `ta.roc`, `ta.wpr`, `ta.tsi`, `ta.rci` |
 | Trend / channels | `ta.macd`, `ta.adx`, `ta.dmi`, `ta.supertrend`, `ta.sar`, `ta.linreg` |
 | Volatility | `ta.atr`, `ta.tr`, `ta.bb`, `ta.bbw`, `ta.kc`, `ta.kcw`, `ta.stdev`, `ta.variance` |

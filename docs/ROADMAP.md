@@ -100,7 +100,7 @@ The gevent WebSocket worker (F-30) is now the API default. CXT provider caching 
 
 ### 0.6.13 — Dual-host HTF, LSP, host hardening
 
-Compile-mode `request.security` matches interpret on allowlisted HTF resample. LSP advertises `textDocument/signatureHelp`. JSON key-store writes are flock-serialized; webhook POSTs pin to the resolved IP.
+Compile-mode `request.security` matches interpret on allowlisted HTF resample (including `dema`/`tema`/`wpr`/`hma`/`vwma` and 1-arg `cci`). LSP advertises signature help, document highlight, rename on open documents, W001 QuickFix, and folding ranges. JSON key-store writes are flock-serialized; webhook POSTs pin to the resolved IP.
 
 ---
 

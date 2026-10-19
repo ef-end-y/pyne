@@ -7,7 +7,7 @@ tags: [doc, docs, missing-features]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T15:25:55Z
+  at: 2026-10-19T01:42:15Z
 sources:
   - id: tree
     resource: "docs/missing_features.md"
@@ -44,6 +44,7 @@ Repo path `docs/missing_features.md`.
   * 0.6.11 — Live Plane and Sessions
   * 0.6.12 — Production Hardening
   * 0.6.13 — Dual-host HTF, LSP, host hardening
+  * Unreleased (local, post-0.6.13)
 * Recommendations
 
 # Mentions

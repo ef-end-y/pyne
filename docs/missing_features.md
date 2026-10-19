@@ -160,6 +160,13 @@ Engine parity improvements, observability tooling, and documentation refresh.
 - **JSON key-store atomic save** — flock + `os.replace`
 - **Webhook DNS pin** — POST connects to the resolved public IP with HTTPS SNI on the original name
 
+### Unreleased (local, post-0.6.13)
+
+- **HTF allowlist** (D-06) — `cmo`/`stdev`/`linreg`, `cci`/`roc`/`mom`, `hma`/`vwma` + 1-arg `ta.cci(n)`, `dema`/`tema` + 1-arg `ta.wpr(n)` (disk IR v25)
+- **T2 incremental** — `rci`/`bb_pct`/`atr_normalized`, `cumulative_delta`/`volume_momentum`, `sma_weighted`
+- **Forming-bar realtime** — trail ratchet (D-01), MAE/MFE (D-03), nested list/dict snapshot (D-04)
+- **LSP** — document highlight + rename (open docs), W001 QuickFix, `textDocument/foldingRange`
+
 ---
 
 ## Recommendations
