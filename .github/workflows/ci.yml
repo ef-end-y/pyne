@@ -284,6 +284,32 @@ jobs:
             -H 'X-Admin-Token: ci-smoke-token' \
             -d '{"tier":"hobby"}' | head -c 200
           echo
+          # WebSocket /ws/run: the image default worker class decides whether
+          # WS works at all — flask-sock owns the upgrade, so a gevent-websocket
+          # worker writes a second handshake and every frame is dropped (close
+          # 1002) while REST keeps working. This smoke fails if the image
+          # default regresses.
+          docker exec -i pynescript-api-ci python - <<'PY'
+          import json
+          import simple_websocket
+
+          ws = simple_websocket.Client("ws://127.0.0.1:8080/ws/run")
+          try:
+              ws.send(json.dumps({
+                  "type": "run",
+                  "id": "ci",
+                  "script": "//@version=6\nindicator(\"ci\")\nplot(close)",
+                  "data": [{"open": 1, "high": 2, "low": 0.5, "close": 1.5, "time": 1}],
+                  "mode": "interpret",
+              }))
+              msg = json.loads(ws.receive(timeout=30))
+          finally:
+              ws.close()
+          assert msg.get("type") == "result", msg
+          assert msg.get("status") == "success", msg
+          assert msg.get("plots") == [1.5], msg
+          print("ws/run ok")
+          PY
 
       - name: Build CLI image
         uses: docker/build-push-action@v7

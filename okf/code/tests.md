@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T19:06:56Z
+  at: 2026-10-19T19:07:06Z
 sources:
   - id: tree
     resource: "tests"
@@ -26,6 +26,7 @@ okf_lock: generated
 * `test_backend_runner.py` — TestRunnerCron, TestRunnerDisabled, TestRunnerRegistry, client, off_client
 * `test_backend_sessions.py` — TestSessionRoutes, TestSessionStore, TestSessionTail, client, test_advertised_session_routes_are_actually_routable, test_health_advertises_every_session_route
 * `test_backend_window.py` — TestApplyWindow, TestNormalizeWindow, TestSizeReduction
+* `test_backend_ws.py` — TestWsEnvelopePayload, TestWsRun, ws_server
 * `test_bgcolor_plotshape_export.py` — test_bgcolor_export_kind_and_color_series, test_drawing_registry_merge_visual_series_wrapper, test_materialize_bgcolor_default_titles_from_drawings, test_materialize_plotshape_from_compile_drawings, test_plot_meta_kind_plot_compat, test_plotchar_export, test_plotshape_export_bool_series_and_style, test_titled_bgcolor_compile_matches_interpret, test_uniquify_series_title_matches_runtime
 * `test_builtins.py` — TestChartPointFunctions, TestIntegratedPhase5Features, TestLoggingFunctions, TestPhase5EdgeCases, TestPolylineFunctions, TestTickerFunctions
 * `test_builtins_coverage.py` — TestColorFunctions, TestMatrixBuiltins, TestMatrixCore, TestNameResolution, TestNumericBuiltins, TestStringBuiltins, TestStudyHelpers, TestTechnicalAlias, TestTickerFunctions, TestTransformer
@@ -50,6 +51,7 @@ okf_lock: generated
 * `test_datafeed_wiring.py` — test_chart_ohlcv_provider_fetch, test_composite_sync_fetch_delegates, test_evaluator_chart_provider_security_matches_bars, test_get_datafeed_mock_factory, test_resolve_request_sources_chart_default, test_resolve_request_sources_mock_feed, test_runtime_auto_wires_chart_provider_for_request_security, test_runtime_with_explicit_mock_feed
 * `test_debug_stats.py` — TestDebugToggle, TestEngineDebugLogging, TestLoggingPolicy, TestStatsEndpoint, TestStatsRegistry, client
 * `test_dividend_yield_parity.py` — test_dividend_yield_interp_compile_all_na, test_foreign_security_string_close_is_na_both_modes, test_foreign_security_udf_expression_is_na, test_time_assign_does_not_alias_host_series
+* `test_docker_entrypoint.py` — TestComposeWorkerClass, TestEntrypointWorkerClass, test_no_file_selects_the_gevent_worker_by_default
 * `test_drawing_all_and_last_bar.py` — TestDrawingAllCollections, TestLastBarVars, TestRiskMaxPositionSize
 * `test_drawing_export_last_bar.py` — TestCompilePathDrawingDelete, TestExportForApiLastBarLine, TestExportLineFill, TestExportXToTime, TestFoldCompileDrawingMutations
 * `test_drawing_gc.py` — TestDrawingGarbageCollection

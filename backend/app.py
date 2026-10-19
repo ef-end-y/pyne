@@ -1847,6 +1847,42 @@ def compile_prewarm():
         release_free_slot()
 
 
+# Optional run fields a WS ``run`` frame may carry. Mirrors RUN_SCHEMA
+# (backend/middleware/schemas.py) so the WS channel has the same surface as
+# POST /run. ``libraries`` used to be missing here, so published-library
+# imports (``import ns/Name/1``) resolved over REST but failed over WS.
+_WS_RUN_OPTIONAL_FIELDS = (
+    "symbol",
+    "mode",
+    "data_source",
+    "data_options",
+    "inputs",
+    "profiler",
+    "libraries",
+    "timeout_seconds",
+    "from_bar",
+    "to_bar",
+)
+
+
+def _ws_envelope_to_payload(msg: dict[str, Any]) -> dict[str, Any]:
+    """Map a WS ``run`` frame to the REST body shape.
+
+    Null optionals are omitted — the schema rejects null for typed optional
+    fields like ``symbol`` (it treats null as "use default", but keeping the
+    frame faithful avoids surprising defaults).
+    """
+    payload: dict[str, Any] = {}
+    if "script" in msg:
+        payload["script"] = msg.get("script")
+    if "data" in msg:
+        payload["data"] = msg.get("data")
+    for opt in _WS_RUN_OPTIONAL_FIELDS:
+        if opt in msg and msg.get(opt) is not None:
+            payload[opt] = msg[opt]
+    return payload
+
+
 if sock is not None:
 
     @sock.route("/ws/run")
@@ -1861,6 +1897,10 @@ if sock is not None:
             → { "type": "run", "id": "…", "script": "…", "data": [bars…], "mode"?: "interpret" }
             ← { "type": "result", "id": "…", ...run payload fields... }
             ← { "type": "error", "id": "…", "message": "…", "code"?: "…" }
+
+        The run frame accepts the same optional fields as ``POST /run``
+        (``symbol``, ``mode``, ``inputs``, ``profiler``, ``libraries``, …) —
+        see {@link _WS_RUN_OPTIONAL_FIELDS}.
         """
         while True:
             raw = ws.receive()
@@ -1914,14 +1954,7 @@ if sock is not None:
 
             # Map WS envelope → REST body shape (omit null optionals —
             # schema rejects null for typed optional fields like symbol)
-            payload: dict[str, Any] = {}
-            if "script" in msg:
-                payload["script"] = msg.get("script")
-            if "data" in msg:
-                payload["data"] = msg.get("data")
-            for opt in ("symbol", "mode", "data_source", "data_options", "inputs", "profiler"):
-                if opt in msg and msg.get(opt) is not None:
-                    payload[opt] = msg[opt]
+            payload = _ws_envelope_to_payload(msg)
             body, _status = execute_run_payload(payload)
             if body.get("status") == "error":
                 ws.send(

@@ -138,6 +138,7 @@ def _dbg(msg: str, *args: Any) -> None:
     if _debug_scope(__name__):
         _log.debug(msg, *args)
 
+
 # ---------------------------------------------------------------------------
 # Typed exceptions (fail closed / surface cleanly — no silent wrong results)
 # ---------------------------------------------------------------------------
@@ -1068,7 +1069,10 @@ def _normalize_result(raw: Any) -> dict[str, Any]:
             # Match interpret empty-title packaging: plot_N, not "plot".
             n = sum(1 for existing in out if not str(existing).startswith("__"))
             key = f"plot_{n}"
-        if key in ("__drawings", "__events"):
+        if key in ("__drawings", "__events", "__alerts"):
+            # Event containers stay Python lists. Coercing them to a float
+            # array (an *empty* list becomes an empty float64 array) loses the
+            # payload and makes truthiness checks raise.
             out[key] = list(v) if v is not None else []
             continue
         if key.startswith("__") and not isinstance(v, (list, tuple, np.ndarray)):

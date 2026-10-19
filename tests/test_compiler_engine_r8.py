@@ -155,6 +155,30 @@ class TestNormalizeAndCoerce:
         out = _normalize_result((np.ones(2), np.full(2, 2.0)))
         assert set(out) == {"plot_0", "plot_1"}
 
+    def test_normalize_alerts_stay_a_list(self) -> None:
+        """``__alerts`` must stay a list — an empty one became a float array.
+
+        A float array breaks truthiness checks in hosts
+        (``ValueError: The truth value of an empty array is ambiguous``) and
+        loses the alert payload.
+        """
+        out = _normalize_result(
+            {
+                "plot_0": np.array([1.0, 2.0]),
+                "__alerts": [],
+                "__drawings": [],
+                "__events": [],
+            }
+        )
+        assert out["__alerts"] == []
+        assert isinstance(out["__alerts"], list)
+        assert not isinstance(out["__alerts"], np.ndarray)
+
+        fired = [{"message": "up", "bar_index": 0, "source": "alert"}]
+        out2 = _normalize_result({"plot_0": np.array([1.0]), "__alerts": fired})
+        assert out2["__alerts"] == fired
+        assert isinstance(out2["__alerts"], list)
+
 
 class TestEndToEndDuplicateTitles:
     def test_compile_run_duplicate_plot_titles(self) -> None:
