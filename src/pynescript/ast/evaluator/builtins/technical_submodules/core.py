@@ -1506,6 +1506,71 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _ema_cross_signal_inc_update(
+        self,
+        fast_ema: Any,
+        slow_ema: Any,
+        threshold: Any,
+    ) -> dict[str, Any]:
+        """Incremental ema-cross matching full ``ta.ema_cross_signal``.
+
+        Last 2 samples of two series → ``{signal, strength, trend_direction}``.
+        ``"neutral"`` / 0 while shorter than 2 bars. Non-numeric samples coerce
+        to 0.0 (same as the full recompute). One call-site slot every bar,
+        including warmup.
+        """
+        slot = self._ta_next_slot()
+        off: dict[str, Any] = {
+            "signal": "neutral",
+            "strength": 0.0,
+            "trend_direction": 0,
+        }
+        key = ("ema_cross_signal", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "prev_fast": None,
+                "prev_slow": None,
+                "count": 0,
+                "value": off,
+            }
+            bucket[key] = st
+        f = self._series_last(fast_ema)
+        s = self._series_last(slow_ema)
+        curr_fast = f if isinstance(f, (int, float)) else 0.0
+        curr_slow = s if isinstance(s, (int, float)) else 0.0
+        th = threshold if isinstance(threshold, (int, float)) else 0.0
+        st["count"] = int(st["count"]) + 1
+        prev_fast = st["prev_fast"]
+        prev_slow = st["prev_slow"]
+        if int(st["count"]) < 2 or prev_fast is None or prev_slow is None:
+            st["prev_fast"] = curr_fast
+            st["prev_slow"] = curr_slow
+            st["value"] = off
+            return off
+        diff = curr_fast - curr_slow
+        prev_diff = prev_fast - prev_slow
+        crossover = prev_diff <= 0 and diff > 0
+        crossunder = prev_diff >= 0 and diff < 0
+        strength = abs(diff)
+        trend_direction = 1 if diff > 0 else -1
+        if crossover and strength > th:
+            signal = "buy"
+        elif crossunder and strength > th:
+            signal = "sell"
+        else:
+            signal = "neutral"
+        val = {
+            "signal": signal,
+            "strength": strength,
+            "trend_direction": trend_direction,
+        }
+        st["prev_fast"] = curr_fast
+        st["prev_slow"] = curr_slow
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

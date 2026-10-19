@@ -7280,3 +7280,252 @@ plot(ib ? 1 : 0, "ib")
     assert r_on["series"]["ib"][20] == pytest.approx(1.0)
     assert r_off["series"]["ib"][20] == pytest.approx(1.0)
     assert r_on["series"]["ib"][40] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# T2: ema_cross_signal incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_EMA_CROSS_OFF = {"signal": "neutral", "strength": 0.0, "trend_direction": 0}
+
+
+def _bar_walk_full_ema_cross(
+    fast: list[Any],
+    slow: list[Any],
+    threshold: float,
+) -> list[dict[str, Any]]:
+    ev = _FullTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(fast)):
+        out.append(
+            ev._builtin_ta_ema_cross_signal(
+                [fast[: i + 1], slow[: i + 1], threshold]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_ema_cross(
+    fast: list[Any],
+    slow: list[Any],
+    threshold: float,
+) -> list[dict[str, Any]]:
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(fast)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._ema_cross_signal_inc_update(
+                fast[: i + 1], slow[: i + 1], threshold
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_ema_cross_last_sample(
+    fast: list[Any],
+    slow: list[Any],
+    threshold: float,
+) -> list[dict[str, Any]]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(fast)):
+        ev._ta_call_i = 0
+        out.append(ev._ema_cross_signal_inc_update(fast[i], slow[i], threshold))
+    return out
+
+
+def test_incremental_ema_cross_signal_matches_full() -> None:
+    fast = _series(120)
+    slow = _series(120, seed=100.5)
+    got = _bar_walk_inc_ema_cross(fast, slow, 0.25)
+    exp = _bar_walk_full_ema_cross(fast, slow, 0.25)
+    _assert_pattern_close(got, exp)
+    last = _bar_walk_inc_ema_cross_last_sample(fast, slow, 0.25)
+    _assert_pattern_close(last, exp)
+
+
+def test_incremental_ema_cross_signal_warmup() -> None:
+    """Fewer than 2 bars is neutral / 0, matching full recompute."""
+    fast = [1.0]
+    slow = [2.0]
+    got = _bar_walk_inc_ema_cross(fast, slow, 0.5)
+    exp = _bar_walk_full_ema_cross(fast, slow, 0.5)
+    assert got == [_EMA_CROSS_OFF]
+    assert exp == [_EMA_CROSS_OFF]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._ema_cross_signal_inc_update([], [], 0.5) == _EMA_CROSS_OFF
+    assert ev._ta_call_i == 1
+
+
+def test_incremental_ema_cross_signal_crossover_buy() -> None:
+    """prev_diff <= 0 and diff > threshold → buy."""
+    fast = [1.0, 3.0]
+    slow = [2.0, 2.0]
+    got = _bar_walk_inc_ema_cross(fast, slow, 0.5)
+    exp = _bar_walk_full_ema_cross(fast, slow, 0.5)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _EMA_CROSS_OFF
+    assert got[-1]["signal"] == "buy"
+    assert exp[-1]["signal"] == "buy"
+    assert got[-1]["trend_direction"] == 1
+    assert got[-1]["strength"] == pytest.approx(1.0)
+
+
+def test_incremental_ema_cross_signal_crossunder_sell() -> None:
+    """prev_diff >= 0 and diff < 0 with |diff| > threshold → sell."""
+    fast = [3.0, 1.0]
+    slow = [2.0, 2.0]
+    got = _bar_walk_inc_ema_cross(fast, slow, 0.5)
+    exp = _bar_walk_full_ema_cross(fast, slow, 0.5)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _EMA_CROSS_OFF
+    assert got[-1]["signal"] == "sell"
+    assert exp[-1]["signal"] == "sell"
+    assert got[-1]["trend_direction"] == -1
+    assert got[-1]["strength"] == pytest.approx(1.0)
+
+
+def test_incremental_ema_cross_signal_below_threshold() -> None:
+    """Crossover whose |diff| is not strictly above threshold stays neutral."""
+    fast = [1.0, 2.1]
+    slow = [2.0, 2.0]
+    got = _bar_walk_inc_ema_cross(fast, slow, 0.5)
+    exp = _bar_walk_full_ema_cross(fast, slow, 0.5)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _EMA_CROSS_OFF
+    assert got[-1]["signal"] == "neutral"
+    assert exp[-1]["signal"] == "neutral"
+    assert got[-1]["trend_direction"] == 1
+    assert got[-1]["strength"] == pytest.approx(0.1)
+
+    # Exact equality with the threshold is not a signal.
+    eq_fast = [1.0, 2.5]
+    eq_slow = [2.0, 2.0]
+    got_eq = _bar_walk_inc_ema_cross(eq_fast, eq_slow, 0.5)
+    exp_eq = _bar_walk_full_ema_cross(eq_fast, eq_slow, 0.5)
+    _assert_pattern_close(got_eq, exp_eq)
+    assert got_eq[-1]["signal"] == "neutral"
+    assert exp_eq[-1]["signal"] == "neutral"
+    assert got_eq[-1]["strength"] == pytest.approx(0.5)
+
+
+def test_incremental_ema_cross_signal_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup."""
+    fast = _series(40)
+    slow = _series(40, seed=101.0)
+    ev = _IncTA()
+    for i in range(len(fast)):
+        ev._ta_call_i = 0
+        ev._ema_cross_signal_inc_update(fast[: i + 1], slow[: i + 1], 0.25)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_ema_cross_signal_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    fast = _series(30)
+    slow = _series(30, seed=101.0)
+    ev = _IncTA()
+    for i in range(len(fast)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_ema_cross_signal(
+            [fast[: i + 1], slow[: i + 1], 0.25]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_ema_cross_signal_two_call_sites_independent() -> None:
+    a_fast = _series(80)
+    a_slow = _series(80, seed=100.5)
+    b_fast = _series(80, seed=140.0)
+    b_slow = _series(80, seed=141.0)
+    ev = _IncTA()
+    a_out: list[dict[str, Any]] = []
+    b_out: list[dict[str, Any]] = []
+    for i in range(len(a_fast)):
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._ema_cross_signal_inc_update(
+                a_fast[: i + 1], a_slow[: i + 1], 0.25
+            )
+        )
+        b_out.append(
+            ev._ema_cross_signal_inc_update(
+                b_fast[: i + 1], b_slow[: i + 1], 0.1
+            )
+        )
+    _assert_pattern_close(a_out, _bar_walk_full_ema_cross(a_fast, a_slow, 0.25))
+    _assert_pattern_close(b_out, _bar_walk_full_ema_cross(b_fast, b_slow, 0.1))
+
+
+def test_runtime_ema_cross_signal_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Bar 19: close below open; bar 20: close crosses above open (buy).
+    bars[19] = {
+        "open": 100.0,
+        "high": 101.0,
+        "low": 89.0,
+        "close": 90.0,
+        "volume": 1019,
+        "time": 1_700_000_000 + 19 * 86_400,
+    }
+    bars[20] = {
+        "open": 100.0,
+        "high": 111.0,
+        "low": 99.0,
+        "close": 110.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    src = """//@version=5
+indicator("ema cross signal")
+s = ta.ema_cross_signal(close, open, 0.05)
+t = ta.ema_cross_signal(high, low, 0.5)
+plot(s.signal == "buy" ? 1 : s.signal == "sell" ? -1 : 0, "sig")
+plot(s.strength, "str")
+plot(s.trend_direction, "td")
+plot(t.signal == "buy" ? 1 : t.signal == "sell" ? -1 : 0, "sig2")
+plot(t.strength, "str2")
+plot(t.trend_direction, "td2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"sig", "str", "td", "sig2", "str2", "td2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+    # Injected close-vs-open crossover must fire buy on both hosts.
+    assert r_on["series"]["sig"][20] == pytest.approx(1.0)
+    assert r_off["series"]["sig"][20] == pytest.approx(1.0)

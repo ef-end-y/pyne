@@ -300,9 +300,17 @@ class MovingAverageIndicators(TechnicalHelpers):
             msg = "ta.ema_cross_signal() requires 3 arguments: fast_ema, slow_ema, threshold"
             self._error(msg)
 
-        fast_ema = self._expect_list(args[0], "fast_ema must be a list")
-        slow_ema = self._expect_list(args[1], "slow_ema must be a list")
         threshold = args[2] if isinstance(args[2], (int, float)) else 0.0
+
+        if self._use_incremental_ta():
+            return self._ema_cross_signal_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                threshold,
+            )
+
+        fast_ema = self._as_series(args[0])
+        slow_ema = self._as_series(args[1])
 
         if len(fast_ema) < BINARY or len(slow_ema) < BINARY:
             return {"signal": "neutral", "strength": 0.0, "trend_direction": 0}
