@@ -299,13 +299,23 @@ class AdvancedIndicators(TechnicalHelpers):
         return "ranging"
 
     def _builtin_ta_volatility_regime(self, args: list[Any]) -> str:
-        """Volatility Regime Classification."""
+        """Volatility Regime Classification.
+
+        Bar-mode incremental last sample uses ``_volatility_regime_inc_update``.
+        """
         if len(args) < BINARY:
             msg = "ta.volatility_regime() requires 2 arguments"
             self._error(msg)
 
-        atr_list = args[0] if isinstance(args[0], list) else [args[0]]
         period = self._expect_int(args[1], "period must be integer")
+
+        if self._use_incremental_ta():
+            return self._volatility_regime_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        atr_list = self._as_series(args[0])
 
         if len(atr_list) < period:
             return "medium"

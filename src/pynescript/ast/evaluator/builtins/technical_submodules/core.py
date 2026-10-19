@@ -1644,6 +1644,51 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _volatility_regime_inc_update(
+        self,
+        atr_series: Any,
+        period: int,
+    ) -> str:
+        """Incremental volatility regime matching full ``ta.volatility_regime``.
+
+        Last-N ATR samples. ``"medium"`` while the window is short or there are
+        no numeric samples. Classification: current < avg*0.5 → ``"low"``;
+        current > avg*2.0 → ``"extreme"``; current > avg*1.3 → ``"high"``;
+        else ``"medium"``. Non-numeric samples are skipped like the full
+        recompute. One call-site slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n < 1:
+            return "medium"
+        key = ("volatility_regime", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"w": deque(maxlen=n), "value": "medium"}
+            bucket[key] = st
+        w: deque[Any] = st["w"]
+        w.append(self._series_last(atr_series))
+        if len(w) < n:
+            st["value"] = "medium"
+            return "medium"
+        recent = [x for x in w if isinstance(x, (int, float))]
+        if not recent:
+            st["value"] = "medium"
+            return "medium"
+        current_atr = recent[-1]
+        avg_atr = sum(recent) / len(recent)
+        if current_atr < avg_atr * 0.5:
+            val = "low"
+        elif current_atr > avg_atr * 2.0:
+            val = "extreme"
+        elif current_atr > avg_atr * 1.3:
+            val = "high"
+        else:
+            val = "medium"
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

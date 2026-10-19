@@ -8031,3 +8031,251 @@ plot(d2, "d2")
     assert r_off["series"]["d"][20] == pytest.approx(-1.0)
     assert r_on["series"]["d2"][20] == pytest.approx(1.0)
     assert r_off["series"]["d2"][20] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# T2: volatility_regime incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _atr_regime_series(n: int = 80) -> list[float]:
+    """Synthetic ATR with quiet, spike, drop, and mild oscillation."""
+    out: list[float] = []
+    for i in range(n):
+        if i == 12:
+            out.append(4.0)
+        elif i == 24:
+            out.append(0.2)
+        else:
+            out.append(1.0 + 0.05 * math.sin(i / 4.0))
+    return out
+
+
+def _bar_walk_full_volatility_regime(
+    src: list[Any],
+    period: int,
+) -> list[str]:
+    ev = _FullTA()
+    out: list[str] = []
+    for i in range(len(src)):
+        out.append(ev._builtin_ta_volatility_regime([src[: i + 1], period]))
+    return out
+
+
+def _bar_walk_inc_volatility_regime(
+    src: list[Any],
+    period: int,
+) -> list[str]:
+    ev = _IncTA()
+    out: list[str] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._volatility_regime_inc_update(src[: i + 1], period))
+    return out
+
+
+def _bar_walk_inc_volatility_regime_last_sample(
+    src: list[Any],
+    period: int,
+) -> list[str]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[str] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._volatility_regime_inc_update(src[i], period))
+    return out
+
+
+def test_incremental_volatility_regime_matches_full() -> None:
+    src = _atr_regime_series(120)
+    period = 5
+    got = _bar_walk_inc_volatility_regime(src, period)
+    exp = _bar_walk_full_volatility_regime(src, period)
+    assert got == exp
+    last = _bar_walk_inc_volatility_regime_last_sample(src, period)
+    assert last == exp
+    assert "medium" in got
+    assert "extreme" in got
+    assert "low" in got
+
+
+def test_incremental_volatility_regime_warmup() -> None:
+    """Window shorter than period is ``medium``, matching full recompute."""
+    src = [1.0, 1.1]
+    period = 5
+    got = _bar_walk_inc_volatility_regime(src, period)
+    exp = _bar_walk_full_volatility_regime(src, period)
+    assert got == exp
+    assert got == ["medium", "medium"]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._volatility_regime_inc_update([], 5) == "medium"
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._volatility_regime_inc_update(None, 5) == "medium"
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_volatility_regime([None], 5)
+    exp_na = _bar_walk_full_volatility_regime([None], 5)
+    assert got_na == exp_na
+    assert got_na[0] == "medium"
+
+
+def test_incremental_volatility_regime_classifies_low_high_extreme() -> None:
+    """Last-N numeric mean vs current: low / high / extreme / medium."""
+    period = 3
+    low_src = [2.0, 2.0, 0.5]
+    high_src = [1.0, 1.0, 1.6]
+    extreme_src = [1.0, 1.0, 5.0]
+    medium_src = [1.5, 1.6, 1.55]
+
+    for src, label in (
+        (low_src, "low"),
+        (high_src, "high"),
+        (extreme_src, "extreme"),
+        (medium_src, "medium"),
+    ):
+        got = _bar_walk_inc_volatility_regime(src, period)
+        exp = _bar_walk_full_volatility_regime(src, period)
+        assert got == exp, f"{label}: {got} vs {exp}"
+        assert got[-1] == label
+        assert got[0] == "medium"
+        assert got[1] == "medium"
+
+
+def test_incremental_volatility_regime_na_skips() -> None:
+    """Non-numeric samples are skipped; last-N calendar window still applies."""
+    src: list[float | None] = [1.0, None, 1.0, 1.0, 0.2]
+    period = 3
+    got = _bar_walk_inc_volatility_regime(src, period)
+    exp = _bar_walk_full_volatility_regime(src, period)
+    assert got == exp
+    assert got[0] == "medium"
+    assert got[1] == "medium"
+    last = _bar_walk_inc_volatility_regime_last_sample(src, period)
+    assert last == exp
+
+
+def test_incremental_volatility_regime_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    src: list[float | None] = list(_atr_regime_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._volatility_regime_inc_update(src[: i + 1], 5)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_volatility_regime_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _atr_regime_series(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_volatility_regime([src[: i + 1], 5])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_volatility_regime_two_call_sites_independent() -> None:
+    src = _atr_regime_series(80)
+    ev = _IncTA()
+    a_out: list[str] = []
+    b_out: list[str] = []
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._volatility_regime_inc_update(prefix, 5))
+        b_out.append(ev._volatility_regime_inc_update(prefix, 14))
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    assert a_out == _bar_walk_full_volatility_regime(src, 5)
+    assert b_out == _bar_walk_full_volatility_regime(src, 14)
+    assert a_out != b_out
+
+
+def test_runtime_volatility_regime_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Spike (extreme vs last-5 mean) and drop (low vs last-5 mean) on close,
+    # which the script feeds as the ATR series.
+    bars[19] = {
+        "open": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "close": 100.0,
+        "volume": 1019,
+        "time": 1_700_000_000 + 19 * 86_400,
+    }
+    bars[20] = {
+        "open": 400.0,
+        "high": 420.0,
+        "low": 390.0,
+        "close": 400.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    bars[39] = {
+        "open": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "close": 100.0,
+        "volume": 1039,
+        "time": 1_700_000_000 + 39 * 86_400,
+    }
+    bars[40] = {
+        "open": 5.0,
+        "high": 6.0,
+        "low": 4.0,
+        "close": 5.0,
+        "volume": 1040,
+        "time": 1_700_000_000 + 40 * 86_400,
+    }
+    src = """//@version=5
+indicator("volatility regime")
+r = ta.volatility_regime(close, 5)
+s = ta.volatility_regime(close, 14)
+plot(r == "low" ? 1 : r == "medium" ? 2 : r == "high" ? 3 : 4, "reg5")
+plot(s == "low" ? 1 : s == "medium" ? 2 : s == "high" ? 3 : 4, "reg14")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"reg5", "reg14"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+    # 4 = extreme, 1 = low (see plot mapping).
+    assert r_on["series"]["reg5"][20] == pytest.approx(4.0)
+    assert r_off["series"]["reg5"][20] == pytest.approx(4.0)
+    assert r_on["series"]["reg5"][40] == pytest.approx(1.0)
+    assert r_off["series"]["reg5"][40] == pytest.approx(1.0)
