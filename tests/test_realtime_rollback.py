@@ -147,6 +147,29 @@ def test_var_array_push_rolls_back_unconfirmed_ticks() -> None:
     assert sz == [0.0, 0.0, 0.0, 0.0, 1.0], sz
 
 
+_VAR_NESTED_ARRAY_SRC = """//@version=6
+indicator("rt nested")
+var a = array.new<array<float>>()
+if array.size(a) == 0
+    array.push(a, array.new_float())
+if barstate.isrealtime
+    array.push(array.get(a, 0), close)
+plot(array.size(array.get(a, 0)), "sz")
+"""
+
+
+def test_var_nested_array_push_rolls_back_unconfirmed_ticks() -> None:
+    """Inner ``array.push`` on a ``var`` list-of-lists commits once, not N ticks."""
+    out = Runtime(symbol="RT").run(
+        _VAR_NESTED_ARRAY_SRC, _bars(), mode="interpret", realtime_ticks=3
+    )
+    assert "error" not in out, out.get("error")
+    sz = [float(v) for v in out["series"]["sz"]]
+    # Historical bars seed an empty inner array; last bar's 3 ticks each
+    # start from that empty inner and only the confirmed tick keeps one push.
+    assert sz == [0.0, 0.0, 0.0, 0.0, 1.0], sz
+
+
 def test_varip_array_pushes_persist_across_ticks() -> None:
     """``varip`` array mutations are not rolled back (same object).
 
@@ -291,6 +314,59 @@ class TestScopeHelpers:
         assert ev.context["a"] is items
         assert ev.context["alias"] is items
         assert items == [1.0]
+
+    def test_nested_list_inner_append_rolls_back(self) -> None:
+        """One extra list level: inner appends do not leak across restores."""
+        inner: list[float] = []
+        outer = [inner]
+        ev = SimpleNamespace(
+            context={"a": outer},
+            _var_declarations={"a"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        inner.append(1.0)
+        inner.append(2.0)
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["a"] is outer
+        assert outer[0] == []
+
+    def test_nested_list_restore_keeps_snapshot_pristine(self) -> None:
+        """Bar-open snapshots are reused (update_last_bar); inner copies stay frozen."""
+        inner: list[float] = []
+        outer = [inner]
+        ev = SimpleNamespace(
+            context={"a": outer},
+            _var_declarations={"a"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        outer[0].append(1.0)
+        _restore_realtime_scope(ev, snap)
+        outer[0].append(2.0)
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["a"] is outer
+        assert outer[0] == []
+
+    def test_dict_of_lists_inner_append_rolls_back(self) -> None:
+        """One extra dict level: list values are copied so inner appends roll back."""
+        inner: list[float] = []
+        data = {"k": inner}
+        ev = SimpleNamespace(
+            context={"m": data},
+            _var_declarations={"m"},
+            _varip_declarations=set(),
+        )
+        snap = _snapshot_realtime_scope(ev)
+        assert snap is not None
+        inner.append(9.0)
+        data["n"] = [1.0]
+        _restore_realtime_scope(ev, snap)
+        assert ev.context["m"] is data
+        assert data == {"k": []}
+        assert data["k"] == []
 
     def test_varip_list_contents_persist(self) -> None:
         items = [1.0]

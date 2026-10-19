@@ -1284,18 +1284,43 @@ def _discard_realtime_plot_tick(evaluator: Any) -> None:
         pass
 
 
-def _copy_container_contents(value: Any) -> Any | None:
-    """One-level contents snapshot of a mutable container, or ``None``.
+def _copy_list_dict_level(value: Any) -> Any:
+    """Copy a list/dict plus one extra inner list/dict level.
 
-    Lists/dicts are copied one level. Matrix/Map use ``copy_contents`` when
-    present. UDT instances snapshot ``.fields``. Unknown objects return
-    ``None`` so identity restore is enough. Never raises.
+    Inner lists/dicts are new objects so ``outer[0].append(x)`` / nested
+    ``map``-style mutations do not leak into the snapshot. Deeper nesting
+    and non-list/dict values stay by reference (not a generic deepcopy).
+    Unknown objects and copy failures return *value*. Never raises.
     """
     try:
         if isinstance(value, list):
-            return ("list", _copy_ta_value(value))
+            return [
+                x[:] if isinstance(x, list) else (dict(x) if isinstance(x, dict) else x)
+                for x in value
+            ]
         if isinstance(value, dict):
-            return ("dict", dict(value))
+            return {
+                k: v[:] if isinstance(v, list) else (dict(v) if isinstance(v, dict) else v)
+                for k, v in value.items()
+            }
+    except Exception:
+        return value
+    return value
+
+
+def _copy_container_contents(value: Any) -> Any | None:
+    """Contents snapshot of a mutable container, or ``None``.
+
+    Lists/dicts are copied plus one extra inner list/dict level. Matrix/Map
+    use ``copy_contents`` when present. UDT instances snapshot ``.fields``.
+    Unknown objects return ``None`` so identity restore is enough. Never
+    raises.
+    """
+    try:
+        if isinstance(value, list):
+            return ("list", _copy_list_dict_level(value))
+        if isinstance(value, dict):
+            return ("dict", _copy_list_dict_level(value))
         copy_fn = getattr(value, "copy_contents", None)
         if callable(copy_fn):
             return ("typed", copy_fn())
@@ -1315,12 +1340,13 @@ def _restore_container_contents(target: Any, snap: Any) -> None:
     try:
         if kind == "list":
             if isinstance(target, list) and isinstance(payload, list):
-                target[:] = payload
+                # Copy again so a reused bar-open snapshot stays pristine.
+                target[:] = _copy_list_dict_level(payload)
             return
         if kind == "dict":
             if isinstance(target, dict) and isinstance(payload, dict):
                 target.clear()
-                target.update(payload)
+                target.update(_copy_list_dict_level(payload))
             return
         if kind == "typed":
             restore_fn = getattr(target, "restore_contents", None)
@@ -1341,13 +1367,14 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
 
     Reference Pine re-executes forming bars per tick with non-``varip``
     state rolled back to the last confirmed bar. The snapshot holds context
-    bindings (by reference), one-level container contents (arrays /
-    matrices / maps / UDT fields), ``.current`` of series-like values, and
+    bindings (by reference), container contents (arrays / matrices /
+    maps / UDT fields, with one extra list/dict nesting level),
+    ``.current`` of series-like values, and
     the ``var`` declaration set — everything
     :func:`_restore_realtime_scope` needs to undo one tick. ``varip`` names
     are recorded (not snapshotted) so they persist across ticks.
-    Restore writes contents back into the same objects so aliases keep
-    identity. Nested containers beyond one list/dict level plus
+    Restore writes contents back into the same outer objects so aliases keep
+    identity. Nested containers beyond one extra list/dict level plus
     Matrix/Map internals are not deep-copied.
     """
     ctx = getattr(evaluator, "context", None)
@@ -1474,7 +1501,7 @@ def _copy_ta_value(value: Any) -> Any:
             except Exception:
                 return _deque(list(value))
         if isinstance(value, list):
-            return list(value)
+            return _copy_list_dict_level(value)
         if isinstance(value, dict):
             return {k: _copy_ta_value(v) for k, v in value.items()}
         if isinstance(value, tuple):

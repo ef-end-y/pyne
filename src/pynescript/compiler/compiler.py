@@ -1395,10 +1395,14 @@ class CompilerVisitor(NodeVisitor):
             lines.append(f"{indent}if isinstance({name}, list):")
             lines.append(
                 f"{indent}    __rt_snap_{name}_c = "
-                f"[__r.copy() if isinstance(__r, list) else __r for __r in {name}]"
+                f"[__r.copy() if isinstance(__r, (list, dict)) else __r for __r in {name}]"
             )
             lines.append(f"{indent}elif isinstance({name}, dict):")
-            lines.append(f"{indent}    __rt_snap_{name}_c = {name}.copy()")
+            lines.append(
+                f"{indent}    __rt_snap_{name}_c = "
+                f"{{__k: (__v.copy() if isinstance(__v, (list, dict)) else __v) "
+                f"for __k, __v in {name}.items()}}"
+            )
             lines.append(f"{indent}else:")
             lines.append(f"{indent}    __rt_snap_{name}_c = None")
         for flag in self.once_flags:

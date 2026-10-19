@@ -311,6 +311,37 @@ def test_var_array_push_rolls_back_unconfirmed_ticks_dual_host() -> None:
     assert _series(compiled, "sz") == _series(interp, "sz")
 
 
+_VAR_NESTED_ARRAY_SRC = """
+//@version=6
+indicator("rt nested")
+var a = array.new<array<float>>()
+if array.size(a) == 0
+    array.push(a, array.new_float())
+if barstate.isrealtime
+    array.push(array.get(a, 0), close)
+plot(array.size(array.get(a, 0)), "sz")
+"""
+
+
+def test_var_nested_array_push_rolls_back_unconfirmed_ticks_dual_host() -> None:
+    """Inner ``array.push`` on a ``var`` list-of-lists commits once on both hosts."""
+    n = 5
+    ticks = 3
+    bars = _bars(n)
+    interp, compiled = _dual(_VAR_NESTED_ARRAY_SRC, bars, realtime_ticks=ticks)
+    expected = [0.0] * (n - 1) + [1.0]
+    assert _series(interp, "sz") == expected
+    assert _series(compiled, "sz") == expected
+    assert _series(compiled, "sz") == _series(interp, "sz")
+
+
+def test_object_mode_tick_snapshot_copies_inner_lists() -> None:
+    """Object-mode emit copies one extra list/dict level on unconfirmed ticks."""
+    code = transpile(_VAR_NESTED_ARRAY_SRC)
+    assert "[__r.copy() if isinstance(__r, (list, dict)) else __r for __r in a]" in code
+    assert "{__k: (__v.copy() if isinstance(__v, (list, dict)) else __v)" in code
+
+
 def test_object_mode_execute_keeps_six_arg_positional() -> None:
     """Existing 6-arg execute_script_compiled calls stay valid (kwargs default)."""
     from pynescript.compiler.engine import compile_script
