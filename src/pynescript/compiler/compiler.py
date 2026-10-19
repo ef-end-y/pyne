@@ -8430,7 +8430,7 @@ class CompilerVisitor(NodeVisitor):
         if ta is not None:
             kind = "ta"
             field_s = ta.source
-            offset_i = 0
+            offset_i = int(ta.extra) if ta.extra is not None else 0
             ta_name: str | None = ta.name
             ta_length = int(ta.length)
         elif off is not None:

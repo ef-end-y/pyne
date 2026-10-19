@@ -188,11 +188,12 @@ class HtfSimpleTaExpr:
 
     name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao
     source: str | None  # OHLCV field; None for atr/wpr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2
-    length: int  # swma stores 4; ao stores 0 (SMA 5−34 defaults)
+    length: int  # swma stores 4; 0-arg ao stores 0 (SMA 5−34 defaults); 2-arg ao stores slow
+    extra: int | None = None  # 2-arg ao: fast; 3-arg linreg: offset; else None
 
 
-def _const_positive_int(node: Any) -> int | None:
-    """Literal positive int from a Constant AST node, or None."""
+def _const_int_ge(node: Any, minimum: int) -> int | None:
+    """Literal int >= *minimum* from a Constant AST node, or None."""
     if type(node) is not ast_mod.Constant:
         return None
     kind = node.kind
@@ -205,7 +206,17 @@ def _const_positive_int(node: Any) -> int | None:
         iv = int(raw)
     except (TypeError, ValueError):
         return None
-    return iv if iv == raw and iv > 0 else None
+    return iv if iv == raw and iv >= minimum else None
+
+
+def _const_positive_int(node: Any) -> int | None:
+    """Literal positive int from a Constant AST node, or None."""
+    return _const_int_ge(node, 1)
+
+
+def _const_nonneg_int(node: Any) -> int | None:
+    """Literal non-negative int from a Constant AST node, or None."""
+    return _const_int_ge(node, 0)
 
 
 def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: PLR0911
@@ -222,7 +233,9 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       ``ta.rising`` / ``ta.falling`` / ``ta.swma`` —
       source is a bare OHLCV name (``close``, ``open``, ``high``, ``low``,
       ``volume``, ``hl2``, …); length is a positive integer literal.
-      ``ta.linreg`` is the 2-arg form (offset 0). ``ta.cci`` is 2-arg
+      ``ta.linreg`` is the 2-arg form (offset 0) or 3-arg
+      ``(source, length, offset)`` with a non-negative int offset stored in
+      ``extra``. ``ta.cci`` is 2-arg
       ``(source, length)`` or 1-arg ``(length)`` (hlc3). ``ta.change`` is the
       2-arg form (not ``close[n]`` history offset). ``ta.kama`` is the 2-arg
       form (Kaufman fast=2, slow=30). ``ta.swma`` is 1-arg source (fixed
@@ -236,16 +249,18 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.lowestbars(14)`` — length-only form (HTF low).
     - ``ta.range(14)`` — length-only form (HTF high − HTF low over n unique bars).
     - ``ta.ao()`` — 0-arg (HTF hl2, SMA 5 − SMA 34). ``length`` is stored as 0.
+    - ``ta.ao(5, 34)`` — two positive int literals; ``source="hl2"``,
+      ``length`` is slow, ``extra`` is fast.
 
     Nested calls (``ta.sma(ta.ema(...), n)`` / ``ta.highest(ta.sma(...), n)`` /
     ``ta.median(ta.sma(...), n)`` / ``ta.mode(ta.sma(...), n)`` /
     ``ta.cog(ta.sma(...), n)`` / ``ta.highestbars(ta.sma(...), n)`` /
     ``ta.kama(ta.sma(...), n)`` / ``ta.rising(ta.sma(...), n)`` /
-    ``ta.swma(ta.sma(...))``), multi-arg
-    atr, 3-arg linreg, 4-arg ``ta.cci`` / ``ta.wpr``, 1-arg ``ta.median`` /
+    ``ta.swma(ta.sma(...))`` / ``ta.linreg(ta.sma(...), n, offset)``), multi-arg
+    atr, 4-arg ``ta.cci`` / ``ta.wpr``, 1-arg ``ta.median`` /
     ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
     ``ta.percentrank`` / ``ta.change`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
-    1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.ao`` / ``ta.swma``,
+    1-arg ``ta.rising`` / ``ta.falling``, 1-arg ``ta.ao`` / 2-arg ``ta.swma``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -305,9 +320,26 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("swma", src, 4)
 
     if fname == "ao":
-        if arg_nodes:
+        if not arg_nodes:
+            return HtfSimpleTaExpr("ao", "hl2", 0)
+        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (fast, slow)
             return None
-        return HtfSimpleTaExpr("ao", "hl2", 0)
+        fast = _const_positive_int(arg_nodes[0].value)
+        slow = _const_positive_int(arg_nodes[1].value)
+        if fast is None or slow is None:
+            return None
+        return HtfSimpleTaExpr("ao", "hl2", slow, extra=fast)
+
+    if fname == "linreg" and len(arg_nodes) == 3:  # noqa: PLR2004 - (source, n, offset)
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        length = _const_positive_int(arg_nodes[1].value)
+        offset = _const_nonneg_int(arg_nodes[2].value)
+        if src is None or length is None or offset is None:
+            return None
+        return HtfSimpleTaExpr("linreg", src, length, extra=offset)
 
     # sma / ema / rsi / wma / rma / cmo / stdev / linreg / cci / roc / mom / hma / vwma / dema / tema / highest / lowest / range / median / dev / variance / mode / percentrank / change / cog / highestbars / lowestbars / kama / rising / falling: (source, length)
     if len(arg_nodes) != 2:  # noqa: PLR2004 - fixed allowlist arity
@@ -1962,20 +1994,22 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if fv != fv else fv
         return out
 
-    def _htf_ao_from_hl2(self, hl2: list[float | None]) -> list[float | None]:
-        """Awesome Oscillator: SMA(hl2, 5) − SMA(hl2, 34) on unique HTF bars."""
+    def _htf_ao_from_hl2(
+        self, hl2: list[float | None], fast: int = 5, slow: int = 34
+    ) -> list[float | None]:
+        """Awesome Oscillator: SMA(hl2, fast) − SMA(hl2, slow) on unique HTF bars."""
         n = len(hl2)
         out: list[float | None] = [None] * n
         sma_fn = getattr(self, "_sma", None)
-        if not callable(sma_fn) or n == 0:
+        if not callable(sma_fn) or n == 0 or fast <= 0 or slow <= 0:
             return out
-        fast = sma_fn(hl2, 5)
-        slow = sma_fn(hl2, 34)
-        if not fast or not slow:
+        fast_s = sma_fn(hl2, int(fast))
+        slow_s = sma_fn(hl2, int(slow))
+        if not fast_s or not slow_s:
             return out
-        m = min(n, len(fast), len(slow))
+        m = min(n, len(fast_s), len(slow_s))
         for i in range(m):
-            f, s = fast[i], slow[i]
+            f, s = fast_s[i], slow_s[i]
             if f is None or s is None:
                 continue
             try:
@@ -1985,9 +2019,20 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if fv != fv else fv
         return out
 
-    def _htf_ao_full_series(self, unique: list[dict[str, float]]) -> list[float | None]:
-        """0-arg ``ta.ao()`` on unique HTF hl2."""
-        return self._htf_ao_from_hl2(self._htf_source_series(unique, "hl2"))
+    @staticmethod
+    def _htf_ao_periods(expr: HtfSimpleTaExpr) -> tuple[int, int]:
+        """Fast/slow SMA lengths for HTF ``ta.ao`` (defaults 5 / 34)."""
+        extra = expr.extra
+        length = int(expr.length)
+        if extra is not None and length > 0:
+            return int(extra), length
+        return 5, 34
+
+    def _htf_ao_full_series(
+        self, unique: list[dict[str, float]], *, fast: int = 5, slow: int = 34
+    ) -> list[float | None]:
+        """``ta.ao`` on unique HTF hl2 (defaults SMA 5 − 34)."""
+        return self._htf_ao_from_hl2(self._htf_source_series(unique, "hl2"), fast, slow)
 
     @staticmethod
     def _htf_finite_window(window: list[float | None]) -> list[float] | None:
@@ -2096,8 +2141,10 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_linreg_full_series(src: list[float | None], period: int) -> list[float | None]:
-        """Full-list linreg endpoint matching interpret ``ta.linreg`` (offset 0)."""
+    def _htf_linreg_full_series(
+        src: list[float | None], period: int, offset: int = 0
+    ) -> list[float | None]:
+        """Full-list linreg endpoint matching interpret ``ta.linreg``."""
         from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
 
         n = len(src)
@@ -2105,9 +2152,10 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if n == 0 or period < 2:  # noqa: PLR2004 - OLS needs ≥2 points
             return out
         lin = TechnicalHelpers._linreg_from_valid
+        off = int(offset)
         for i in range(period - 1, n):
             window = src[i - period + 1 : i + 1]
-            v = lin(window, 0)
+            v = lin(window, off)
             try:
                 fv = float(v)
             except (TypeError, ValueError):
@@ -2343,7 +2391,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return []
         name = expr.name
         if name == "ao":
-            return self._htf_ao_full_series(unique)
+            fast, slow = self._htf_ao_periods(expr)
+            return self._htf_ao_full_series(unique, fast=fast, slow=slow)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -2417,7 +2466,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             if name == "stdev":
                 return self._htf_stdev_full_series(src, period)
             if name == "linreg":
-                return self._htf_linreg_full_series(src, period)
+                off = int(expr.extra) if expr.extra is not None else 0
+                return self._htf_linreg_full_series(src, period, off)
             if name == "cci":
                 return self._htf_cci_full_series(src, period)
             if name == "roc":
@@ -2533,6 +2583,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             expression.name,
             expression.source or "",
             int(expression.length),
+            int(expression.extra) if expression.extra is not None else 0,
             bool(lookahead_on),
             fp,
         )
@@ -2654,7 +2705,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                         field,
                     )
                     src.append(None if v != v else v)
-            return _last_of(self._htf_ao_from_hl2(src) if src else None)
+            fast, slow = self._htf_ao_periods(expression)
+            return _last_of(self._htf_ao_from_hl2(src, fast, slow) if src else None)
         if period <= 0:
             return na
         if name in ("atr", "wpr") or (name == "range" and expression.source is None):
@@ -2716,7 +2768,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         elif name == "stdev":
             raw = self._htf_stdev_full_series(src, period)
         elif name == "linreg":
-            raw = self._htf_linreg_full_series(src, period)
+            off = int(expression.extra) if expression.extra is not None else 0
+            raw = self._htf_linreg_full_series(src, period, off)
         elif name == "cci":
             raw = self._htf_cci_full_series(src, period)
         elif name == "roc":
@@ -3331,6 +3384,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
           high / low; 1-arg ``ta.range(n)`` is HTF high−low; 1-arg ``ta.swma``
           is fixed 4-period; 0-arg ``ta.ao()`` is SMA(hl2,5)−SMA(hl2,34);
+          2-arg ``ta.ao(fast, slow)`` uses HTF hl2 at those periods;
+          3-arg ``ta.linreg(source, n, offset)`` honors ``extra`` as offset;
           2-arg ``ta.kama`` uses Kaufman fast=2, slow=30) on a
           **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
@@ -4280,13 +4335,18 @@ def compile_htf_security_value(  # noqa: PLR0913
             length = int(ta_length)
         except (TypeError, ValueError):
             return float("nan")
+        extra: int | None = None
         if name in ("atr", "wpr") or (name == "range" and field_s is None):
             src = None
         elif name == "ao":
             src = field_s or "hl2"
+            if length > 0 and offset > 0:
+                extra = int(offset)
         else:
             src = field_s or "close"
-        expr = HtfSimpleTaExpr(name=name, source=src, length=length)
+            if name == "linreg" and offset:
+                extra = int(offset)
+        expr = HtfSimpleTaExpr(name=name, source=src, length=length, extra=extra)
         val = host._try_htf_simple_ta_resample(expr, timeframe, gaps_on=gaps, lookahead_on=lookahead)
         return _as_htf_float(val)
 

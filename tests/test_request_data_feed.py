@@ -471,7 +471,8 @@ plot(ta.atr(3), title="catr")
         (2-arg and 1-arg high-low) / ``ta.median`` / ``ta.dev`` / ``ta.variance`` /
         ``ta.mode`` / ``ta.percentrank`` / ``ta.change`` / ``ta.cog`` /
         ``ta.highestbars`` / ``ta.lowestbars`` (2-arg and 1-arg) / 2-arg
-        ``ta.kama`` / ``ta.rising`` / ``ta.falling`` / ``ta.swma`` / ``ta.ao()``
+        ``ta.kama`` / ``ta.rising`` / ``ta.falling`` / ``ta.swma`` / ``ta.ao()`` /
+        2-arg ``ta.ao(fast, slow)`` / 3-arg ``ta.linreg(source, n, offset)``
         are allowlisted.
         """
         from backend.runtime import Runtime
@@ -541,6 +542,10 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "stdev" and m.source == "close" and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.linreg(hl2, 20)"))
         assert m is not None and m.name == "linreg" and m.source == "hl2" and m.length == 20
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)"))
+        assert m is not None and m.name == "linreg" and m.source == "close" and m.length == 14
+        assert m.extra == 1
         m = match_htf_simple_ta_ast(_expr("ta.cci(close, 14)"))
         assert m is not None and m.name == "cci" and m.source == "close" and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.roc(close, 9)"))
@@ -603,19 +608,22 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "swma" and m.source == "hl2" and m.length == 4
         m = match_htf_simple_ta_ast(_expr("ta.ao()"))
         assert m is not None and m.name == "ao" and m.source == "hl2" and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.ao(5, 34)"))
+        assert m is not None and m.name == "ao" and m.source == "hl2" and m.length == 34
+        assert m.extra == 5
         m = match_htf_simple_ta_ast(_expr("ta.range(14)"))
         assert m is not None and m.name == "range" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
-        assert match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.linreg(ta.sma(close, 5), 14, 1)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.kama(close, 14, 2, 30)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.kama(close, 14, 2)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.highest(ta.sma(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.lowest(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.swma(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.swma(close, 4)")) is None
-        assert match_htf_simple_ta_ast(_expr("ta.ao(5, 34)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.ao(5)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.median(ta.sma(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.dev(ta.ema(close, 5), 14)")) is None
@@ -1299,6 +1307,76 @@ plot(ta.ao(), title="cao")
         expect_slow = sum(daily_hl2[-34:]) / 34.0
         assert abs(float(hao[-1]) - (expect_fast - expect_slow)) < 1e-9
         assert abs(float(hao[-1]) - float(out["series"]["cao"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_ao2_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily ta.ao(3, 8)."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 12)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.ao(3, 8)), title="hao")
+plot(ta.ao(3, 8), title="cao")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hao = out["series"]["hao"]
+        daily_hl2: list[float] = []
+        for d in range(11):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            hi = max(float(b["high"]) for b in chunk)
+            lo = min(float(b["low"]) for b in chunk)
+            daily_hl2.append((hi + lo) * 0.5)
+        # SMA(8) first output at unique index 7 (during day 8).
+        assert all(_is_na(x) for x in hao[1:8 * 24])
+        day9 = hao[9 * 24 : 10 * 24]
+        assert all(not _is_na(x) for x in day9)
+        ref = float(day9[0])
+        for v in day9:
+            assert abs(float(v) - ref) < 1e-9
+        expect_fast = sum(daily_hl2[-3:]) / 3.0
+        expect_slow = sum(daily_hl2[-8:]) / 8.0
+        assert abs(float(hao[-1]) - (expect_fast - expect_slow)) < 1e-9
+        assert abs(float(hao[-1]) - float(out["series"]["cao"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_linreg3_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily ta.linreg(close, 4, 1)."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.linreg(close, 4, 1)), title="hlin")
+plot(ta.linreg(close, 4, 1), title="clin")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hlin = out["series"]["hlin"]
+        daily_closes = [float(bars[24 * (d + 1) - 1]["close"]) for d in range(7)]
+        # linreg(4) needs 4 HTF samples; first output during day 4.
+        assert all(_is_na(x) for x in hlin[1:96])
+        day5 = hlin[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        win = daily_closes[-4:]
+        n = 4
+        xs = list(range(n))
+        mean_x = sum(xs) / n
+        mean_y = sum(win) / n
+        num = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(xs, win, strict=True))
+        den = sum((xi - mean_x) ** 2 for xi in xs)
+        # offset=1 → fitted x = n - 1 - 1 = n - 2
+        expect_lin = mean_y if den == 0 else mean_y + (num / den) * ((n - 2) - mean_x)
+        assert abs(float(hlin[-1]) - expect_lin) < 1e-9
+        assert abs(float(hlin[-1]) - float(out["series"]["clin"][-1])) > 1e-6
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

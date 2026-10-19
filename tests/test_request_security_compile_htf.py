@@ -418,6 +418,28 @@ plot(ta.swma(close), title="cswma")
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["swma"][-1]) - float(sc["series"]["cswma"][-1])) > 1e-6
 
+    def test_htf_ao2_linreg3_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 2-arg ao / 3-arg linreg: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 12)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.ao(3, 8)), title="ao2")
+plot(request.security(syminfo.tickerid, "D", ta.linreg(close, 4, 1)), title="lin3")
+plot(ta.ao(3, 8), title="cao2")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("ao2", "lin3"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][9 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day9 = sc["series"]["ao2"][9 * 24 : 10 * 24]
+        assert all(not _is_na(x) for x in day9)
+        ref = float(day9[0])
+        for v in day9:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["ao2"][-1]) - float(sc["series"]["cao2"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
