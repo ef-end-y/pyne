@@ -6625,3 +6625,206 @@ plot(h.pattern_strength, "hstr")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: double_top_bottom incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_DTB_OFF = {"pattern_type": "none", "strength": 0.0, "breakout_level": 0.0}
+
+
+def _bar_walk_full_dtb(
+    highs: list[Any],
+    lows: list[Any],
+    period: int,
+) -> list[dict[str, Any]]:
+    ev = _FullTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(highs)):
+        out.append(
+            ev._builtin_ta_double_top_bottom(
+                [highs[: i + 1], lows[: i + 1], period]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_dtb(
+    highs: list[Any],
+    lows: list[Any],
+    period: int,
+) -> list[dict[str, Any]]:
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._double_top_bottom_inc_update(
+                highs[: i + 1], lows[: i + 1], period
+            )
+        )
+    return out
+
+
+def test_incremental_double_top_bottom_matches_full() -> None:
+    highs, lows, _closes = _ohlc(120)
+    for period in (3, 5, 14):
+        _assert_pattern_close(
+            _bar_walk_inc_dtb(highs, lows, period),
+            _bar_walk_full_dtb(highs, lows, period),
+        )
+
+
+def test_incremental_double_top_bottom_warmup() -> None:
+    """Window shorter than period, or fewer than 3 numeric highs, is none."""
+    period = 5
+    highs = [100.0, 101.0, 102.0, 103.0]
+    lows = [95.0, 96.0, 97.0, 98.0]
+    got = _bar_walk_inc_dtb(highs, lows, period)
+    exp = _bar_walk_full_dtb(highs, lows, period)
+    for i, (g, e) in enumerate(zip(got, exp, strict=True)):
+        assert g == _DTB_OFF, f"warmup bar {i}: expected off, got {g}"
+        assert e == _DTB_OFF, f"full warmup bar {i}: expected off, got {e}"
+    _assert_pattern_close(got, exp)
+
+    # Full window but only two numeric highs → none.
+    sparse_h = [100.0, None, 102.0, None, 103.0]
+    sparse_l = [95.0, 96.0, 97.0, 98.0, 99.0]
+    got_s = _bar_walk_inc_dtb(sparse_h, sparse_l, 5)
+    exp_s = _bar_walk_full_dtb(sparse_h, sparse_l, 5)
+    assert got_s[-1] == _DTB_OFF
+    assert exp_s[-1] == _DTB_OFF
+    _assert_pattern_close(got_s, exp_s)
+
+
+def test_incremental_double_top_bottom_double_top() -> None:
+    """Two peaks in the last-N highs → double_top after warmup."""
+    period = 5
+    highs = [100.0, 105.0, 102.0, 105.0, 103.0]
+    lows = [95.0, 100.0, 97.0, 100.0, 98.0]
+    got = _bar_walk_inc_dtb(highs, lows, period)
+    exp = _bar_walk_full_dtb(highs, lows, period)
+    _assert_pattern_close(got, exp)
+    for i in range(period - 1):
+        assert got[i] == _DTB_OFF, f"warmup bar {i}: {got[i]}"
+    assert got[-1]["pattern_type"] == "double_top"
+    assert exp[-1]["pattern_type"] == "double_top"
+    assert got[-1]["strength"] > 0.0
+    assert got[-1]["breakout_level"] != 0.0
+
+
+def test_incremental_double_top_bottom_none() -> None:
+    """Monotonic highs have no interior peak → none after warmup."""
+    period = 3
+    highs = [100.0, 101.0, 102.0, 103.0, 104.0]
+    lows = [95.0, 96.0, 97.0, 98.0, 99.0]
+    got = _bar_walk_inc_dtb(highs, lows, period)
+    exp = _bar_walk_full_dtb(highs, lows, period)
+    _assert_pattern_close(got, exp)
+    assert got[-1] == _DTB_OFF
+    assert exp[-1]["pattern_type"] == "none"
+
+
+def test_incremental_double_top_bottom_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup."""
+    highs, lows, _closes = _ohlc(40)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._double_top_bottom_inc_update(highs[: i + 1], lows[: i + 1], 5)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_double_top_bottom_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    highs, lows, _closes = _ohlc(30)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_double_top_bottom(
+            [highs[: i + 1], lows[: i + 1], 5]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_double_top_bottom_two_call_sites_independent() -> None:
+    highs, lows, _closes = _ohlc(80)
+    ev = _IncTA()
+    a_out: list[dict[str, Any]] = []
+    b_out: list[dict[str, Any]] = []
+    for i in range(len(highs)):
+        prefix_h = highs[: i + 1]
+        prefix_l = lows[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._double_top_bottom_inc_update(prefix_h, prefix_l, 5))
+        b_out.append(ev._double_top_bottom_inc_update(prefix_h, prefix_l, 14))
+    _assert_pattern_close(a_out, _bar_walk_full_dtb(highs, lows, 5))
+    _assert_pattern_close(b_out, _bar_walk_full_dtb(highs, lows, 14))
+
+
+def test_runtime_double_top_bottom_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Inject a double-top window (period=5) around bar 20.
+    for i, (h, l) in enumerate(
+        zip(
+            [100.0, 105.0, 102.0, 105.0, 103.0],
+            [95.0, 100.0, 97.0, 100.0, 98.0],
+            strict=True,
+        )
+    ):
+        idx = 16 + i
+        bars[idx] = {
+            "open": l + 1.0,
+            "high": h,
+            "low": l,
+            "close": (h + l) * 0.5,
+            "volume": 1000 + idx,
+            "time": 1_700_000_000 + idx * 86_400,
+        }
+    src = """//@version=5
+indicator("double top bottom")
+d = ta.double_top_bottom(high, low, 5)
+e = ta.double_top_bottom(high, low, 14)
+plot(d.pattern_type == "double_top" ? 1 : 0, "dt5")
+plot(d.strength, "str5")
+plot(d.breakout_level, "brk5")
+plot(e.pattern_type == "double_top" ? 1 : 0, "dt14")
+plot(e.strength, "str14")
+plot(e.breakout_level, "brk14")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"dt5", "str5", "brk5", "dt14", "str14", "brk14"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

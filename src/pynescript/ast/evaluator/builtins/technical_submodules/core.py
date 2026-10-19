@@ -1359,6 +1359,76 @@ class TechnicalHelpers:
             "pattern_strength": strength,
         }
 
+    def _double_top_bottom_inc_update(
+        self,
+        highs: Any,
+        lows: Any,
+        period: int,
+    ) -> dict[str, Any]:
+        """Incremental double top/bottom matching full ``ta.double_top_bottom``.
+
+        Last-N highs/lows. ``"none"`` / 0.0 while the window is short or fewer
+        than 3 numeric highs. Peaks are local maxima in the numeric high window
+        (seeded with the first numeric high). One call-site slot every bar,
+        including warmup.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        off: dict[str, Any] = {
+            "pattern_type": "none",
+            "strength": 0.0,
+            "breakout_level": 0.0,
+        }
+        if n < 1:
+            return off
+        key = ("double_top_bottom", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "h": deque(maxlen=n),
+                "l": deque(maxlen=n),
+                "count": 0,
+                "value": off,
+            }
+            bucket[key] = st
+        hw: deque[Any] = st["h"]
+        lw: deque[Any] = st["l"]
+        hw.append(self._series_last(highs))
+        lw.append(self._series_last(lows))
+        st["count"] = int(st["count"]) + 1
+        if int(st["count"]) < n:
+            st["value"] = off
+            return off
+        recent_high = [v for v in hw if isinstance(v, (int, float))]
+        recent_low = [v for v in lw if isinstance(v, (int, float))]
+        if len(recent_high) < 3:
+            st["value"] = off
+            return off
+        peaks = [recent_high[0]]
+        for i in range(1, len(recent_high) - 1):
+            if (
+                recent_high[i] > recent_high[i - 1]
+                and recent_high[i] > recent_high[i + 1]
+            ):
+                peaks.append(recent_high[i])
+        if len(peaks) < 2:
+            st["value"] = off
+            return off
+        peak_diff = abs(peaks[-1] - peaks[-2])
+        avg_peak = (peaks[-1] + peaks[-2]) / 2.0
+        strength = (
+            1.0 - min(1.0, peak_diff / avg_peak) if avg_peak > 0 else 0.0
+        )
+        breakout_level = min(recent_low) - (avg_peak * 0.1)
+        val = {
+            "pattern_type": "double_top",
+            "strength": strength,
+            "breakout_level": breakout_level,
+        }
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
