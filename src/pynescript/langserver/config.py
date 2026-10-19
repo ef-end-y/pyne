@@ -80,6 +80,7 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
         folding_range_provider=True,
         selection_range_provider=True,
         color_provider=True,
+        document_link_provider=True,
         code_action_provider=lsp.CodeActionOptions(
             code_action_kinds=[
                 lsp.CodeActionKind.QuickFix,

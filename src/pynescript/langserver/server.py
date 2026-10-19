@@ -38,6 +38,7 @@
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full, foldingRange, selectionRange
 - documentColor / colorPresentation (``#hex`` literals)
+- documentLink (``http(s)`` URLs in comments and string literals)
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
 
 Advertised capabilities come from :func:`pynescript.langserver.config.get_server_capabilities`
@@ -65,6 +66,7 @@ from pynescript.langserver.features import completion as completion_feature
 from pynescript.langserver.features import convert as convert_feature
 from pynescript.langserver.features import definitions as definitions_feature
 from pynescript.langserver.features import document_color as document_color_feature
+from pynescript.langserver.features import document_link as document_link_feature
 from pynescript.langserver.features import folding as folding_feature
 from pynescript.langserver.features import formatting as formatting_feature
 from pynescript.langserver.features import highlight as highlight_feature
@@ -509,6 +511,22 @@ class PynescriptLanguageServer(LanguageServer):
             doc = self.pine_workspace.get_document(uri)
             source = doc.source if doc else None
             return document_color_feature.handle_color_presentation(params, source)
+
+        @self.feature(lsp.TEXT_DOCUMENT_DOCUMENT_LINK)
+        def text_document_link(
+            params: lsp.DocumentLinkParams,
+        ) -> list[lsp.DocumentLink]:
+            """Handle textDocument/documentLink request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return document_link_feature.handle_document_link(params, None)
+            cached = doc.feature_cache.get("document_link", _MISSING)
+            if cached is not _MISSING:
+                return cached
+            result = document_link_feature.handle_document_link(params, doc.source, tree=doc.ast)
+            doc.feature_cache["document_link"] = result
+            return result
 
         @self.feature(lsp.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL)
         def text_semantic_tokens(

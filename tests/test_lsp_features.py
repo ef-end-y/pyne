@@ -30,6 +30,7 @@ from pynescript.langserver.features.convert import handle_convert_to_v6
 from pynescript.langserver.features.definitions import handle_definition
 from pynescript.langserver.features.document_color import handle_color_presentation
 from pynescript.langserver.features.document_color import handle_document_color
+from pynescript.langserver.features.document_link import handle_document_link
 from pynescript.langserver.features.folding import handle_folding_range
 from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
@@ -2053,6 +2054,110 @@ class TestDocumentColorHandler:
         assert pres.text_edit.new_text == "#f23645"
 
 
+_LINK_SOURCE = """//@version=6
+indicator("T")
+// docs: https://example.com/pine
+url = "https://tradingview.com/pine-script-docs"
+also = 'http://example.org/path'
+plot(close)
+"""
+
+_LINK_COMMENT_VARIANTS = """//@version=6
+indicator("T")
+/* block https://example.com/block and https://example.com/two */
+# hash https://example.com/hash
+// trailing https://example.com/end.
+plot(close)
+"""
+
+_LINK_NO_URLS = """//@version=6
+indicator("T")
+// no link here, nor ftp://example.com, nor www.example.com
+plot(close)
+"""
+
+
+def _link_params() -> lsp.DocumentLinkParams:
+    return lsp.DocumentLinkParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+    )
+
+
+def _link_at(links: list[lsp.DocumentLink], source: str, needle: str) -> lsp.DocumentLink:
+    rng = _range_of_hex(source, needle)
+    matches = [link for link in links if link.range == rng]
+    assert matches, f"no DocumentLink for {needle!r}"
+    return matches[0]
+
+
+class TestDocumentLinkHandler:
+    """Test textDocument/documentLink for http(s) URLs in comments and strings."""
+
+    def test_handle_document_link_empty_and_unparsed(self) -> None:
+        """Empty source and parse failure return an empty list."""
+        params = _link_params()
+        assert handle_document_link(params, "") == []
+        assert handle_document_link(params, None) == []
+        assert handle_document_link(params, "this is not valid pine @#$") == []
+        assert handle_document_link(params, "x = 1", tree=None) == []
+
+    def test_handle_document_link_comment_and_string_urls(self) -> None:
+        """// comments and quoted strings yield DocumentLink ranges on the URL."""
+        src = _LINK_SOURCE
+        result = handle_document_link(_link_params(), src)
+        urls = (
+            "https://example.com/pine",
+            "https://tradingview.com/pine-script-docs",
+            "http://example.org/path",
+        )
+        found = {_slice_range(src, link.range) for link in result}
+        assert found == set(urls)
+        for url in urls:
+            link = _link_at(result, src, url)
+            assert link.target == url
+        ordered = [_slice_range(src, link.range) for link in result]
+        assert ordered == list(urls)
+
+    def test_handle_document_link_block_and_hash_comments(self) -> None:
+        """Block comments, hash comments, and trailing punctuation are handled."""
+        src = _LINK_COMMENT_VARIANTS
+        result = handle_document_link(_link_params(), src)
+        found = {_slice_range(src, link.range) for link in result}
+        assert found == {
+            "https://example.com/block",
+            "https://example.com/two",
+            "https://example.com/hash",
+            "https://example.com/end",
+        }
+        for url in found:
+            assert _link_at(result, src, url).target == url
+        # Trailing period is not part of the range.
+        end_link = _link_at(result, src, "https://example.com/end")
+        assert _slice_range(src, end_link.range) == "https://example.com/end"
+        assert end_link.target == "https://example.com/end"
+
+    def test_handle_document_link_skips_non_http(self) -> None:
+        """ftp:// and scheme-less www hosts are not document links."""
+        result = handle_document_link(_link_params(), _LINK_NO_URLS)
+        assert result == []
+
+    def test_handle_document_link_reuses_tree(self) -> None:
+        """Passing a pre-parsed tree must not require re-parse of source."""
+        from pynescript.ast.helper import parse
+
+        tree = parse(_LINK_SOURCE, filename="file:///test.pine")
+        result = handle_document_link(_link_params(), source=None, tree=tree)
+        found = {link.target for link in result}
+        # Comments need source; string Constants are on the tree.
+        assert found == {
+            "https://tradingview.com/pine-script-docs",
+            "http://example.org/path",
+        }
+        src = _LINK_SOURCE
+        for url in found:
+            assert _link_at(result, src, url).target == url
+
+
 class TestCapabilities:
     """Advertised capabilities must match implemented handlers only."""
 
@@ -2081,6 +2186,7 @@ class TestCapabilities:
         assert caps.folding_range_provider is True
         assert caps.selection_range_provider is True
         assert caps.color_provider is True
+        assert caps.document_link_provider is True
 
 
 _FOO_SOURCE = """//@version=6
