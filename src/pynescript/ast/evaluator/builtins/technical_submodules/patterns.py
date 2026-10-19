@@ -125,6 +125,13 @@ class PatternIndicators(TechnicalHelpers):
             msg = "Fractal period must be >= 1"
             self._error(msg)
 
+        if self._use_incremental_ta():
+            return self._fractal_inc_update(
+                self._context_source("high"),
+                self._context_source("low"),
+                period,
+            )
+
         highs = (getattr(self, "current_series", None) or {}).get("high", [])
         lows = (getattr(self, "current_series", None) or {}).get("low", [])
 

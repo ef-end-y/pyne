@@ -6094,3 +6094,185 @@ plot(ta.rsi_divergence(close, 5), "div5")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: fractal incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_FRACTAL_OFF = {"is_high_fractal": False, "is_low_fractal": False}
+
+
+def _assert_fractal_close(
+    got: list[dict[str, bool]],
+    exp: list[dict[str, bool]],
+) -> None:
+    assert len(got) == len(exp)
+    for i, (g, e) in enumerate(zip(got, exp, strict=True)):
+        assert g == e, f"bar {i}: {g} != {e}"
+
+
+def _bar_walk_full_fractal(
+    highs: list[Any],
+    lows: list[Any],
+    period: int,
+) -> list[dict[str, bool]]:
+    ev = _FullTA()
+    out: list[dict[str, bool]] = []
+    for i in range(len(highs)):
+        ev.current_series = {"high": highs[: i + 1], "low": lows[: i + 1]}
+        out.append(ev._builtin_ta_fractal([period]))
+    return out
+
+
+def _bar_walk_inc_fractal(
+    highs: list[Any],
+    lows: list[Any],
+    period: int,
+) -> list[dict[str, bool]]:
+    ev = _IncTA()
+    out: list[dict[str, bool]] = []
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev.current_series = {"high": highs[: i + 1], "low": lows[: i + 1]}
+        out.append(ev._fractal_inc_update(highs[: i + 1], lows[: i + 1], period))
+    return out
+
+
+def test_incremental_fractal_matches_full() -> None:
+    highs, lows, _closes = _ohlc(120)
+    for period in (1, 2, 5, 14):
+        _assert_fractal_close(
+            _bar_walk_inc_fractal(highs, lows, period),
+            _bar_walk_full_fractal(highs, lows, period),
+        )
+
+
+def test_incremental_fractal_warmup() -> None:
+    """Short window (len < 2*period+1) is both-False, matching full recompute."""
+    period = 2
+    need = 2 * period + 1
+    highs = [10.0 + i for i in range(12)]
+    lows = [9.0 + i for i in range(12)]
+    got = _bar_walk_inc_fractal(highs, lows, period)
+    exp = _bar_walk_full_fractal(highs, lows, period)
+    for i in range(need - 1):
+        assert got[i] == _FRACTAL_OFF, f"warmup bar {i}: expected off, got {got[i]}"
+        assert exp[i] == _FRACTAL_OFF, f"full warmup bar {i}: expected off, got {exp[i]}"
+    _assert_fractal_close(got, exp)
+
+
+def test_incremental_fractal_high() -> None:
+    """Last bar equals window max → is_high_fractal after warmup."""
+    period = 2
+    need = 2 * period + 1
+    # Rising highs so the last sample is the max of the comparison window.
+    highs = [10.0, 11.0, 12.0, 13.0, 50.0]
+    lows = [9.0, 10.0, 11.0, 12.0, 13.0]
+    assert len(highs) == need
+    got = _bar_walk_inc_fractal(highs, lows, period)
+    exp = _bar_walk_full_fractal(highs, lows, period)
+    _assert_fractal_close(got, exp)
+    assert got[-1]["is_high_fractal"] is True
+    assert got[-1]["is_low_fractal"] is False
+    assert exp[-1]["is_high_fractal"] is True
+
+
+def test_incremental_fractal_low() -> None:
+    """Last bar equals window min → is_low_fractal after warmup."""
+    period = 2
+    need = 2 * period + 1
+    highs = [50.0, 49.0, 48.0, 47.0, 46.0]
+    lows = [20.0, 19.0, 18.0, 17.0, 1.0]
+    assert len(lows) == need
+    got = _bar_walk_inc_fractal(highs, lows, period)
+    exp = _bar_walk_full_fractal(highs, lows, period)
+    _assert_fractal_close(got, exp)
+    assert got[-1]["is_low_fractal"] is True
+    assert got[-1]["is_high_fractal"] is False
+    assert exp[-1]["is_low_fractal"] is True
+
+
+def test_incremental_fractal_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup."""
+    highs, lows, _closes = _ohlc(40)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._fractal_inc_update(highs[: i + 1], lows[: i + 1], 2)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_fractal_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    highs, lows, _closes = _ohlc(30)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev.current_series = {"high": highs[: i + 1], "low": lows[: i + 1]}
+        ev._builtin_ta_fractal([2])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_fractal_two_call_sites_independent() -> None:
+    highs, lows, _closes = _ohlc(80)
+    ev = _IncTA()
+    a_out: list[dict[str, bool]] = []
+    b_out: list[dict[str, bool]] = []
+    for i in range(len(highs)):
+        prefix_h = highs[: i + 1]
+        prefix_l = lows[: i + 1]
+        ev._ta_call_i = 0
+        ev.current_series = {"high": prefix_h, "low": prefix_l}
+        a_out.append(ev._fractal_inc_update(prefix_h, prefix_l, 2))
+        b_out.append(ev._fractal_inc_update(prefix_h, prefix_l, 5))
+    _assert_fractal_close(a_out, _bar_walk_full_fractal(highs, lows, 2))
+    _assert_fractal_close(b_out, _bar_walk_full_fractal(highs, lows, 5))
+
+
+def test_runtime_fractal_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("fractal")
+f = ta.fractal(2)
+g = ta.fractal(5)
+plot(f.is_high_fractal ? 1 : 0, "hi2")
+plot(f.is_low_fractal ? 1 : 0, "lo2")
+plot(g.is_high_fractal ? 1 : 0, "hi5")
+plot(g.is_low_fractal ? 1 : 0, "lo5")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"hi2", "lo2", "hi5", "lo5"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

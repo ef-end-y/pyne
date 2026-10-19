@@ -1206,6 +1206,56 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _fractal_inc_update(
+        self,
+        highs: list[Any],
+        lows: list[Any],
+        period: int,
+    ) -> dict[str, bool]:
+        """Incremental fractal matching full ``ta.fractal`` last sample.
+
+        Chart high/low. Warmup is ``2*period+1`` bars (both flags False). The
+        current (last) bar is a high/low fractal if it equals max/min of the
+        last ``period+1`` samples — the live-bar slice
+        ``[i-period : i+period+1]`` with no future bars yet. One call-site
+        slot every bar, including warmup.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        off = {"is_high_fractal": False, "is_low_fractal": False}
+        if n < 1:
+            return off
+        need = 2 * n + 1
+        cmp_len = n + 1
+        key = ("fractal", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "h": deque(maxlen=cmp_len),
+                "l": deque(maxlen=cmp_len),
+                "count": 0,
+                "value": off,
+            }
+            bucket[key] = st
+        h = self._finite_or_none(self._series_last(highs))
+        lo = self._finite_or_none(self._series_last(lows))
+        hw: deque[float | None] = st["h"]
+        lw: deque[float | None] = st["l"]
+        hw.append(h)
+        lw.append(lo)
+        st["count"] = int(st["count"]) + 1
+        if int(st["count"]) < need:
+            st["value"] = off
+            return off
+        hvals = [v for v in hw if v is not None]
+        lvals = [v for v in lw if v is not None]
+        is_high = h is not None and bool(hvals) and h == max(hvals)
+        is_low = lo is not None and bool(lvals) and lo == min(lvals)
+        val = {"is_high_fractal": is_high, "is_low_fractal": is_low}
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
