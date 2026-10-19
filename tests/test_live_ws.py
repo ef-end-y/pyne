@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -160,6 +161,39 @@ def test_unsubscribe_releases():
         conn.handle_dict({"type": "resume", "id": "s", "payload": {"count": 1, "last_time": 1}})[0]["code"]
         == "SESSION_GONE"
     )
+
+
+def test_unsubscribe_during_ensure_skips_attach():
+    started = threading.Event()
+    release = threading.Event()
+    attached: list[int] = []
+    bar = {"time": 1, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+
+    def ensurer(*_a, **_k):
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "ready", "session_id": None, "count": 1, "newest": 1}
+
+    conn = LiveConnection(
+        registry=LiveRegistry(),
+        authed=True,
+        ensurer=ensurer,
+        store_window=lambda *_a, **_k: [bar],
+        attacher=lambda *_a, **_k: attached.append(1),
+    )
+
+    def worker():
+        conn.handle_dict({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+
+    t = threading.Thread(target=worker)
+    t.start()
+    assert started.wait(2)
+    idle = conn.handle_dict({"type": "unsubscribe", "id": "s"})
+    assert idle[0]["payload"]["code"] == "idle"
+    release.set()
+    t.join(2)
+    assert attached == []
+    assert conn._registry.get("s") is None
 
 
 def test_unknown_type_and_non_dict():

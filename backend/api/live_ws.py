@@ -179,12 +179,86 @@ class LiveConnection:
         self._hub = hub
         self._sender = sender
         self._attacher = attacher
+        self._closed = False
+        self._lock = threading.Lock()
+        self._gens: dict[str, int] = {}
+        self._owned: set[str] = set()
 
-    def _attach(self, key_text: str, engine_session_id: str | None, client_id: str) -> None:
-        if engine_session_id is None:
+    @property
+    def closed(self) -> bool:
+        return self._closed
+
+    def generation(self, client_id: str) -> int:
+        with self._lock:
+            return self._gens.get(client_id, 0)
+
+    def still_current(self, client_id: str, token: int) -> bool:
+        with self._lock:
+            return (not self._closed) and self._gens.get(client_id, 0) == token
+
+    def invalidate(self, client_id: str) -> int:
+        """Bump so an in-flight ensure for this id cannot attach."""
+        with self._lock:
+            n = self._gens.get(client_id, 0) + 1
+            self._gens[client_id] = n
+            return n
+
+    def close(self) -> None:
+        """Socket gone: stale-token every owned sub and drop feed/hub listeners."""
+        with self._lock:
+            self._closed = True
+            ids = list(self._owned)
+            for cid in ids:
+                self._gens[cid] = self._gens.get(cid, 0) + 1
+            self._owned.clear()
+        for cid in ids:
+            self._detach(cid)
+
+    def _claim(self, client_id: str) -> None:
+        with self._lock:
+            if not self._closed:
+                self._owned.add(client_id)
+
+    def _detach(self, client_id: str) -> None:
+        record = self._registry.get(client_id)
+        if record is not None:
+            try:
+                from backend.api.feed_manager import get_feed_manager
+
+                get_feed_manager().unsubscribe(
+                    str(record.get("series_key") or ""),
+                    str(record.get("engine_session_id") or client_id),
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        if self._hub is not None:
+            try:
+                self._hub.unregister(client_id)
+            except Exception:  # noqa: BLE001
+                pass
+        self._registry.release(client_id)
+
+    def _attach(
+        self,
+        key_text: str,
+        engine_session_id: str | None,
+        client_id: str,
+        *,
+        token: int | None = None,
+    ) -> None:
+        if engine_session_id is None or self._closed:
+            return
+        if token is not None and not self.still_current(client_id, token):
             return
         if self._hub is not None and self._sender is not None:
             self._hub.register(client_id, self._sender)
+        if self._closed or (token is not None and not self.still_current(client_id, token)):
+            if self._hub is not None:
+                try:
+                    self._hub.unregister(client_id)
+                except Exception:  # noqa: BLE001
+                    pass
+            return
         attacher = self._attacher
         if attacher is None:
             from backend.api.live_push import attach_feed as _attach_feed
@@ -194,6 +268,9 @@ class LiveConnection:
             attacher(key_text, engine_session_id, client_id, self._registry, self._hub)
         except Exception:  # noqa: BLE001 — attach failure degrades to snapshot-only
             logger.warning("feed attach failed for %s (%s)", key_text, client_id, exc_info=True)
+            return
+        if token is not None and not self.still_current(client_id, token):
+            self._detach(client_id)
 
     def _ensure(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         ensurer = self._ensurer
@@ -279,9 +356,12 @@ class LiveConnection:
         history_bars = clamp_history_bars((meta or {}).get("history_bars"))
         if req_id is None:
             return [self._err(None, "subscribe needs an id", "BAD_SUBSCRIBE")]
+        client_id = str(req_id)
+        token = self.generation(client_id)
         # Tell the client we are fetching before the 4–9s first walk so the
         # HUD is honest and the socket is not silent during ensure.
-        pending = self._registry.subscribe(str(req_id), str(kind), series_key, history_bars)
+        pending = self._registry.subscribe(client_id, str(kind), series_key, history_bars)
+        self._claim(client_id)
         if self._sender is not None:
             try:
                 self._sender(
@@ -308,6 +388,8 @@ class LiveConnection:
             profiler=bool(payload.get("profiler")),
             symbol=str(meta.get("symbol", "")) if isinstance(meta, dict) else "",
         )
+        if not self.still_current(client_id, token):
+            return []
         if ensured.get("outcome") == "error":
             return [
                 self._err(
@@ -315,7 +397,7 @@ class LiveConnection:
                 )
             ]
         if ensured.get("outcome") == "short":
-            session = self._registry.subscribe(str(req_id), str(kind), series_key, history_bars)
+            session = self._registry.subscribe(client_id, str(kind), series_key, history_bars)
             return [
                 {
                     "type": "status",
@@ -329,7 +411,7 @@ class LiveConnection:
                     },
                 }
             ]
-        return self._emit_ready(str(req_id), str(kind), series_key, ensured)
+        return self._emit_ready(client_id, str(kind), series_key, ensured, token=token)
 
     def _handle_resume(self, req_id: Any, payload: Any) -> list[dict[str, Any]]:
         record = self._registry.get(str(req_id)) if req_id is not None else None
@@ -342,18 +424,28 @@ class LiveConnection:
                     retryable=True,
                 )
             ]
+        client_id = str(req_id)
+        token = self.generation(client_id)
         engine_session_id = record.get("engine_session_id")
         if engine_session_id:
             resumed = self._resume_session(str(engine_session_id))
+            if not self.still_current(client_id, token):
+                return []
             if resumed.get("outcome") == "ready":
-                return self._emit_snapshot(str(req_id), record, resumed.get("session"))
+                return self._emit_snapshot(client_id, record, resumed.get("session"), token=token)
         # Gone or series-kind: re-ensure history, then snapshot from the store.
         return self._emit_ready(
-            str(req_id), str(record.get("kind") or "series"), str(record.get("series_key") or ""), None
+            client_id, str(record.get("kind") or "series"), str(record.get("series_key") or ""), None, token=token
         )
 
     def _emit_ready(
-        self, client_id: str, kind: str, series_key: str, ensured: dict[str, Any] | None
+        self,
+        client_id: str,
+        kind: str,
+        series_key: str,
+        ensured: dict[str, Any] | None,
+        *,
+        token: int | None = None,
     ) -> list[dict[str, Any]]:
         """status(datafeed-ready) → [status(calculating)] → full → status(live)."""
         from backend.api.live_ensure import parse_live_key
@@ -361,8 +453,12 @@ class LiveConnection:
         if ensured is None:
             record = self._registry.get(client_id) or {}
             ensured = self._ensure(kind, series_key, int(record.get("history_bars") or DEFAULT_HISTORY_BARS))
+            if token is not None and not self.still_current(client_id, token):
+                return []
             if ensured.get("outcome") != "ready":
                 return [self._status_loading(client_id, ensured)]
+        if token is not None and not self.still_current(client_id, token):
+            return []
         session = self._registry.subscribe(
             client_id, kind, series_key, int(ensured.get("count") or 0) or DEFAULT_HISTORY_BARS
         )
@@ -396,7 +492,15 @@ class LiveConnection:
         # the frozen ensure-time snapshot. The registry's own live id is the
         # listener key — stable per client + series, so a re-subscribe replaces
         # the listener in place instead of stacking one per frame.
-        self._attach(series_key, ensured.get("session_id") or session["session_id"], client_id)
+        if token is not None and not self.still_current(client_id, token):
+            self._detach(client_id)
+            return []
+        self._attach(
+            series_key,
+            ensured.get("session_id") or session["session_id"],
+            client_id,
+            token=token,
+        )
         key = parse_live_key(series_key)
         watermark = closed_upto(bars, int(key.interval_seconds) if key else 60, int(time.time()))
         seq = self._registry.next_seq(client_id)
@@ -414,10 +518,19 @@ class LiveConnection:
         frames.append(make_status(session["session_id"], "live", client_id))
         return frames
 
-    def _emit_snapshot(self, client_id: str, record: dict[str, Any], live_session: Any) -> list[dict[str, Any]]:
+    def _emit_snapshot(
+        self,
+        client_id: str,
+        record: dict[str, Any],
+        live_session: Any,
+        *,
+        token: int | None = None,
+    ) -> list[dict[str, Any]]:
         """Resume answer: fresh full snapshot + live (delta-continuation is future work)."""
         from backend.api.live_ensure import parse_live_key
 
+        if token is not None and not self.still_current(client_id, token):
+            return []
         session_id = str(record.get("engine_session_id") or "")
         bars = self._bars_of(live_session)
         try:
@@ -489,23 +602,11 @@ class LiveConnection:
 
     def _handle_unsubscribe(self, req_id: Any) -> list[dict[str, Any]]:
         if req_id is not None:
-            record = self._registry.get(str(req_id))
-            if record is not None:
-                try:
-                    from backend.api.feed_manager import get_feed_manager
-
-                    get_feed_manager().unsubscribe(
-                        str(record.get("series_key") or ""),
-                        str(record.get("engine_session_id") or req_id),
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-            if self._hub is not None:
-                try:
-                    self._hub.unregister(str(req_id))
-                except Exception:  # noqa: BLE001
-                    pass
-            self._registry.release(str(req_id))
+            client_id = str(req_id)
+            self.invalidate(client_id)
+            with self._lock:
+                self._owned.discard(client_id)
+            self._detach(client_id)
         return [
             {
                 "type": "status",
@@ -533,9 +634,12 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
 
     sock_thread = threading.current_thread()
     outbound: _queue.Queue[dict[str, Any]] = _queue.Queue()
+    conn: LiveConnection
 
     def sender(frame: dict[str, Any]) -> None:
         # flask-sock is not safe from the feed thread; only this loop sends.
+        if conn.closed:
+            return
         if threading.current_thread() is sock_thread:
             ws.send(json.dumps(frame))
             return
@@ -547,12 +651,45 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
                 frame = outbound.get_nowait()
             except _queue.Empty:
                 return
+            if conn.closed:
+                continue
             try:
                 ws.send(json.dumps(frame))
             except Exception:  # noqa: BLE001
                 return
 
     conn = LiveConnection(registry, authed=authed, hub=HUB, sender=sender)
+    inflight: dict[str, threading.Thread] = {}
+    inflight_keys: dict[str, str] = {}
+
+    def dispatch(frame: dict[str, Any]) -> None:
+        try:
+            for reply in conn.handle_dict(frame):
+                sender(reply)
+        except Exception:  # noqa: BLE001 — a bad ensure must not kill the loop
+            logger.exception("live frame handler failed")
+
+    def run_ensure(frame: dict[str, Any], req_id: str) -> None:
+        try:
+            dispatch(frame)
+        finally:
+            if inflight.get(req_id) is threading.current_thread():
+                inflight.pop(req_id, None)
+                inflight_keys.pop(req_id, None)
+
+    def drop_inflight(req_id: str) -> None:
+        inflight.pop(req_id, None)
+        inflight_keys.pop(req_id, None)
+
+    def teardown() -> None:
+        inflight.clear()
+        inflight_keys.clear()
+        try:
+            conn.close()
+        except Exception:  # noqa: BLE001
+            logger.exception("live ws close failed")
+        drain_outbound()
+
     if authed:
         try:
             ws.send(json.dumps({"type": "auth.ok"}))
@@ -568,19 +705,47 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
             if "timeout" in name:
                 incoming = ""
             else:
+                teardown()
                 break
         drain_outbound()
         if incoming is None:
+            teardown()
             break
         if incoming == "":
+            dead = [k for k, t in inflight.items() if not t.is_alive()]
+            for k in dead:
+                inflight.pop(k, None)
+                inflight_keys.pop(k, None)
             continue
         try:
             msg = json.loads(incoming) if isinstance(incoming, str) else json.loads(incoming.decode("utf-8"))
         except Exception:  # noqa: BLE001
             ws.send(json.dumps({"type": "error", "message": "Invalid JSON frame", "code": "BAD_JSON"}))
             continue
-        for reply in conn.handle_dict(msg):
-            ws.send(json.dumps(reply))
+        mtype = str(msg.get("type") or "") if isinstance(msg, dict) else ""
+        # History ensure blocks; keep ping/pong and outbound drain on this thread.
+        if mtype in ("subscribe", "resume", "repair"):
+            req_id = str(msg.get("id") or "")
+            payload = msg.get("payload") if isinstance(msg.get("payload"), dict) else {}
+            meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+            new_key = canonical_series_key(meta) if mtype == "subscribe" else None
+            prev = inflight.get(req_id)
+            if prev is not None and prev.is_alive():
+                prev_key = inflight_keys.get(req_id)
+                if mtype == "subscribe" and new_key and prev_key and new_key != prev_key:
+                    conn.invalidate(req_id)
+                else:
+                    continue
+            t = threading.Thread(target=run_ensure, args=(msg, req_id), name="live-ws-ensure", daemon=True)
+            inflight[req_id] = t
+            if new_key:
+                inflight_keys[req_id] = new_key
+            t.start()
+        elif mtype == "unsubscribe":
+            drop_inflight(str(msg.get("id") or ""))
+            dispatch(msg)
+        else:
+            dispatch(msg)
         drain_outbound()
 
 

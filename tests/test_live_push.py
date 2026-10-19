@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 
 
@@ -70,18 +71,53 @@ class _Outcome:
 class FakeWs:
     def __init__(self):
         self.sent: list[dict] = []
-        self._script = [
-            json.dumps(
-                {"type": "subscribe", "id": "sub-1", "payload": {"kind": "script", "meta": META, "script": "x"}}
-            ),
-            None,
-        ]
+        self._started = False
+        self._idles = 0
 
-    def receive(self):
-        return self._script.pop(0) if self._script else None
+    def receive(self, timeout=None):
+        if not self._started:
+            self._started = True
+            return json.dumps(
+                {"type": "subscribe", "id": "sub-1", "payload": {"kind": "script", "meta": META, "script": "x"}}
+            )
+        if self.sent or self._idles > 100:
+            return None
+        self._idles += 1
+        if timeout is not None:
+            raise TimeoutError("timeout")
+        return ""
 
     def send(self, raw):
         self.sent.append(json.loads(raw))
+
+
+def _serve_loop(ws, registry, **conn_kw):
+    from backend.api.live_ws import serve_live_ws
+    from backend.app import app
+
+    import backend.api.live_ws as ws_mod
+
+    real_conn_cls = ws_mod.LiveConnection
+
+    def fake_conn_factory(registry=None, authed=False, **kw):
+        extras = {k: v for k, v in kw.items() if k in ("hub", "sender")}
+        return real_conn_cls(registry=registry, authed=True, **conn_kw, **extras)
+
+    ws_mod.LiveConnection = fake_conn_factory  # type: ignore[assignment]
+    try:
+        with app.test_request_context("/ws/live"):
+            serve_live_ws(ws, registry)
+    finally:
+        ws_mod.LiveConnection = real_conn_cls
+
+
+def _join_ensure_workers(timeout=2.0):
+    for t in list(threading.enumerate()):
+        if t.name == "live-ws-ensure" and t is not threading.current_thread():
+            t.join(timeout)
+
+
+_READY_BAR = {"time": 1, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
 
 
 def test_push_hub_routes_and_drops_dead_sockets():
@@ -180,32 +216,302 @@ def test_feed_batch_emits_delta_to_socket(monkeypatch):
 
 
 def test_serve_loop_subscribe_over_fake_socket():
-    from backend.api.live_ws import serve_live_ws
-    from backend.app import app
-
     ws = FakeWs()
     conn_registry = LiveRegistry()
-
-    import backend.api.live_ws as ws_mod
-
-    real_conn_cls = ws_mod.LiveConnection
-
-    def fake_conn_factory(registry=None, authed=False, **kw):
-        return real_conn_cls(
-            registry=conn_registry,
-            authed=True,
-            ensurer=lambda kind, key, history, **_: {"outcome": "short", "have": 0, "need": 50},
-            **{k: v for k, v in kw.items() if k in ("hub", "sender")},
-        )
-
-    ws_mod.LiveConnection = fake_conn_factory  # type: ignore[assignment]
-    try:
-        with app.test_request_context("/ws/live"):
-            serve_live_ws(ws, conn_registry)
-    finally:
-        ws_mod.LiveConnection = real_conn_cls
+    _serve_loop(
+        ws,
+        conn_registry,
+        ensurer=lambda kind, key, history, **_: {"outcome": "short", "have": 0, "need": 50},
+    )
     assert ws.sent and ws.sent[0]["payload"]["code"] == "datafeed-loading"
     assert HUB is not None
+
+
+def test_serve_loop_answers_ping_while_ensure_blocks():
+    started = threading.Event()
+    release = threading.Event()
+
+    def ensurer(*_a, **_k):
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "short", "have": 0, "need": 50}
+
+    class Ws:
+        def __init__(self):
+            self.sent: list[dict] = []
+            self.step = 0
+
+        def receive(self, timeout=None):
+            if self.step == 0:
+                self.step = 1
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 1:
+                assert started.wait(2)
+                self.step = 2
+                return json.dumps({"type": "ping", "id": "p"})
+            release.set()
+            self.step = 3
+            return None
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    ws = Ws()
+    _serve_loop(ws, LiveRegistry(), ensurer=ensurer)
+    types = [f.get("type") for f in ws.sent]
+    assert "pong" in types
+    assert any((f.get("payload") or {}).get("code") == "datafeed-loading" for f in ws.sent)
+
+
+def test_serve_loop_duplicate_subscribe_while_ensure_blocks_single_full():
+    started = threading.Event()
+    release = threading.Event()
+    ensure_calls: list[int] = []
+    attached: list[str] = []
+
+    def ensurer(*_a, **_k):
+        ensure_calls.append(1)
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "ready", "session_id": None, "count": 1, "newest": 1}
+
+    class Ws:
+        def __init__(self):
+            self.sent: list[dict] = []
+            self.step = 0
+
+        def receive(self, timeout=None):
+            if self.step == 0:
+                self.step = 1
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 1:
+                assert started.wait(2)
+                self.step = 2
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if not any(f.get("type") == "full" for f in self.sent):
+                release.set()
+                if timeout is not None:
+                    raise TimeoutError("timeout")
+                return ""
+            return None
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    ws = Ws()
+    registry = LiveRegistry()
+    _serve_loop(
+        ws,
+        registry,
+        ensurer=ensurer,
+        store_window=lambda *_a, **_k: [_READY_BAR],
+        attacher=lambda *_a, **_k: attached.append("s"),
+    )
+    fulls = [f for f in ws.sent if f.get("type") == "full"]
+    assert len(ensure_calls) == 1
+    assert len(fulls) == 1
+    assert len(attached) == 1
+
+
+def test_serve_loop_close_during_ensure_does_not_attach(monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+    attached: list[str] = []
+    hub = PushHub()
+    monkeypatch.setattr("backend.api.live_push.HUB", hub)
+
+    def ensurer(*_a, **_k):
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "ready", "session_id": None, "count": 1, "newest": 1}
+
+    class Ws:
+        def __init__(self):
+            self.sent: list[dict] = []
+            self.step = 0
+
+        def receive(self, timeout=None):
+            if self.step == 0:
+                self.step = 1
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 1:
+                assert started.wait(2)
+                self.step = 2
+                return None
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    ws = Ws()
+    registry = LiveRegistry()
+    _serve_loop(
+        ws,
+        registry,
+        ensurer=ensurer,
+        store_window=lambda *_a, **_k: [_READY_BAR],
+        attacher=lambda *_a, **_k: attached.append("s"),
+    )
+    release.set()
+    _join_ensure_workers()
+    assert attached == []
+    assert hub._senders.get("s") is None
+    assert registry.get("s") is None
+
+
+def test_serve_loop_receive_error_during_ensure_does_not_attach(monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+    attached: list[str] = []
+    hub = PushHub()
+    monkeypatch.setattr("backend.api.live_push.HUB", hub)
+
+    def ensurer(*_a, **_k):
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "ready", "session_id": None, "count": 1, "newest": 1}
+
+    class Ws:
+        def __init__(self):
+            self.sent: list[dict] = []
+            self.step = 0
+
+        def receive(self, timeout=None):
+            if self.step == 0:
+                self.step = 1
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 1:
+                assert started.wait(2)
+                self.step = 2
+                raise ConnectionError("socket gone")
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    ws = Ws()
+    registry = LiveRegistry()
+    _serve_loop(
+        ws,
+        registry,
+        ensurer=ensurer,
+        store_window=lambda *_a, **_k: [_READY_BAR],
+        attacher=lambda *_a, **_k: attached.append("s"),
+    )
+    release.set()
+    _join_ensure_workers()
+    assert attached == []
+    assert hub._senders.get("s") is None
+    assert registry.get("s") is None
+
+
+def test_serve_loop_unsubscribe_during_ensure_skips_attach():
+    started = threading.Event()
+    release = threading.Event()
+    attached: list[str] = []
+
+    def ensurer(*_a, **_k):
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "ready", "session_id": None, "count": 1, "newest": 1}
+
+    class Ws:
+        def __init__(self):
+            self.sent: list[dict] = []
+            self.step = 0
+            self._idles = 0
+
+        def receive(self, timeout=None):
+            if self.step == 0:
+                self.step = 1
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 1:
+                assert started.wait(2)
+                self.step = 2
+                return json.dumps({"type": "unsubscribe", "id": "s"})
+            if self.step == 2:
+                release.set()
+                self.step = 3
+            if any(f.get("type") == "full" for f in self.sent):
+                return None
+            if self._idles > 100:
+                return None
+            self._idles += 1
+            if timeout is not None:
+                raise TimeoutError("timeout")
+            return ""
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    ws = Ws()
+    registry = LiveRegistry()
+    _serve_loop(
+        ws,
+        registry,
+        ensurer=ensurer,
+        store_window=lambda *_a, **_k: [_READY_BAR],
+        attacher=lambda *_a, **_k: attached.append("s"),
+    )
+    assert any((f.get("payload") or {}).get("code") == "idle" for f in ws.sent)
+    assert not any(f.get("type") == "full" for f in ws.sent)
+    assert attached == []
+    assert registry.get("s") is None
+
+
+def test_serve_loop_unsubscribe_then_subscribe_gets_full():
+    started = threading.Event()
+    release = threading.Event()
+    attached: list[str] = []
+    ensure_calls: list[int] = []
+
+    def ensurer(*_a, **_k):
+        ensure_calls.append(1)
+        started.set()
+        assert release.wait(2)
+        return {"outcome": "ready", "session_id": None, "count": 1, "newest": 1}
+
+    class Ws:
+        def __init__(self):
+            self.sent: list[dict] = []
+            self.step = 0
+
+        def receive(self, timeout=None):
+            if self.step == 0:
+                self.step = 1
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 1:
+                assert started.wait(2)
+                started.clear()
+                self.step = 2
+                return json.dumps({"type": "unsubscribe", "id": "s"})
+            if self.step == 2:
+                self.step = 3
+                return json.dumps({"type": "subscribe", "id": "s", "payload": {"kind": "series", "meta": META}})
+            if self.step == 3:
+                assert started.wait(2), "second subscribe did not start ensure"
+                self.step = 4
+                release.set()
+            if any(f.get("type") == "full" for f in self.sent):
+                return None
+            if timeout is not None:
+                raise TimeoutError("timeout")
+            return ""
+
+        def send(self, raw):
+            self.sent.append(json.loads(raw))
+
+    ws = Ws()
+    registry = LiveRegistry()
+    _serve_loop(
+        ws,
+        registry,
+        ensurer=ensurer,
+        store_window=lambda *_a, **_k: [_READY_BAR],
+        attacher=lambda *_a, **_k: attached.append("s"),
+    )
+    _join_ensure_workers()
+    assert any((f.get("payload") or {}).get("code") == "idle" for f in ws.sent)
+    assert len([f for f in ws.sent if f.get("type") == "full"]) == 1
+    assert len(attached) == 1
 
 
 def test_series_push_emits_bars_delta_and_close():

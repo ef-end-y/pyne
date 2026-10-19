@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- **`WS /ws/live` history ensure no longer blocks the socket loop.** `subscribe`/`resume`/`repair` run `_ensure()` on a worker so ping/pong keep moving. Per-id generation tokens skip late `_attach` after unsubscribe/close; a resubscribe is not treated as a duplicate of a stale worker.
 - **`request.security` resamples allowlisted `ta.cum(source)` / 1-arg `ta.ao(fast)` on HTF (D-06).** Same-symbol `ta.cum(close)` (running sum on unique HTF bars; `na` as 0) / `ta.ao(5)` (HTF hl2, SMA fast − SMA 34) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*` stay `na`. Disk IR cache v34.
 - **`request.security` resamples allowlisted 1-arg `ta.change(source)` on HTF (D-06).** Same-symbol `ta.change(close)` (length defaults to 1) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*` stay `na`. Disk IR cache v35.
 
