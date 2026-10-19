@@ -1021,6 +1021,67 @@ class TestConvertToV6:
         assert any(a.kind == lsp.CodeActionKind.RefactorRewrite for a in actions)
         assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
 
+    def test_w002_quickfix_replaces_old_pragma(self) -> None:
+        src = '//@version=4\nstudy("t")\nplot(close)\n'
+        params = lsp.CodeActionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///t.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=0, character=1),
+            ),
+            context=lsp.CodeActionContext(diagnostics=[]),
+        )
+        actions = handle_code_action(params, src)
+        assert any(a.kind == lsp.CodeActionKind.RefactorRewrite for a in actions)
+        quick = [a for a in actions if a.kind == lsp.CodeActionKind.QuickFix]
+        assert len(quick) == 1
+        edit = _first_text_edit(quick[0])
+        assert edit.new_text == "//@version=6"
+        from pynescript.langserver.workspace import _apply_text_edit
+
+        fixed = _apply_text_edit(src, edit.range, edit.new_text)
+        assert fixed.startswith("//@version=6\n")
+        assert "//@version=4" not in fixed
+        assert fixed.count("//@version=") == 1
+
+    def test_w002_quickfix_from_lint_warnings(self) -> None:
+        from pynescript.ast.linter import lint_script
+
+        src = '// license\n//@version=3\nindicator("t")\nplot(close)\n'
+        warnings = lint_script(src)
+        assert any(w.code == "W002" for w in warnings)
+        params = lsp.CodeActionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///t.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=1, character=0),
+                end=lsp.Position(line=1, character=1),
+            ),
+            context=lsp.CodeActionContext(diagnostics=[]),
+        )
+        actions = handle_code_action(params, src, warnings)
+        quick = [a for a in actions if a.kind == lsp.CodeActionKind.QuickFix]
+        assert len(quick) == 1
+        edit = _first_text_edit(quick[0])
+        from pynescript.langserver.workspace import _apply_text_edit
+
+        fixed = _apply_text_edit(src, edit.range, edit.new_text)
+        assert fixed.startswith("// license\n//@version=6\n")
+        assert "//@version=3" not in fixed
+        assert fixed.count("//@version=") == 1
+
+    def test_w002_quickfix_hidden_for_v6(self) -> None:
+        src = '//@version=6\nindicator("t")\nplot(close)\n'
+        params = lsp.CodeActionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///t.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=0, character=1),
+            ),
+            context=lsp.CodeActionContext(diagnostics=[]),
+        )
+        actions = handle_code_action(params, src)
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
+
 
 def _first_text_edit(action: lsp.CodeAction) -> lsp.TextEdit:
     """Return the first TextEdit on a code action workspace edit."""

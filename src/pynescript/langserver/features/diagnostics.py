@@ -36,6 +36,9 @@ from lsprotocol import types as lsp
 
 from pynescript.ast.linter import LintWarning
 
+# Same pattern as ``PineLinter._check_version`` (flexible whitespace).
+_VERSION_PRAGMA_RE = re.compile(r"//\s*@version\s*=\s*\d+")
+
 
 def lint_warnings_to_diagnostics(warnings: list[LintWarning], source: str) -> list[lsp.Diagnostic]:
     """Map linter warnings to LSP :class:`~lsprotocol.types.Diagnostic` objects.
@@ -208,6 +211,24 @@ def create_quick_fix(warning: LintWarning, uri: str, source: str) -> lsp.CodeAct
             is_preferred=True,
         )
 
+    if warning.code == "W002":
+        edit = _w002_pragma_replace_edit(source, warning)
+        if edit is None:
+            return None
+        return lsp.CodeAction(
+            title="Replace @version with 6",
+            kind=lsp.CodeActionKind.QuickFix,
+            edit=lsp.WorkspaceEdit(
+                document_changes=[
+                    lsp.TextDocumentEdit(
+                        text_document=lsp.OptionalVersionedTextDocumentIdentifier(uri=uri),
+                        edits=[edit],
+                    )
+                ]
+            ),
+            is_preferred=True,
+        )
+
     if warning.code == "C002":
         line_index = max(0, (warning.line or 1) - 1)
         line_text = _get_line_text(source, line_index)
@@ -223,6 +244,38 @@ def create_quick_fix(warning: LintWarning, uri: str, source: str) -> lsp.CodeAct
             )
 
     return None
+
+
+def _w002_pragma_replace_edit(source: str, warning: LintWarning) -> lsp.TextEdit | None:
+    """Replace the existing ``//@version=N`` line with ``//@version=6``.
+
+    Prefers the warning's line when that line holds a pragma; otherwise the
+    first pragma match in *source*. Returns None when no pragma is found so
+    the fix never inserts a second declaration.
+    """
+    if not source:
+        return None
+    lines = source.split("\n")
+    line_index: int | None = None
+    if warning.line is not None:
+        idx = max(0, warning.line - 1)
+        if 0 <= idx < len(lines) and _VERSION_PRAGMA_RE.search(lines[idx]):
+            line_index = idx
+    if line_index is None:
+        match = _VERSION_PRAGMA_RE.search(source)
+        if not match:
+            return None
+        line_index = source[: match.start()].count("\n")
+    if line_index >= len(lines):
+        return None
+    line_text = lines[line_index]
+    return lsp.TextEdit(
+        range=lsp.Range(
+            start=lsp.Position(line=line_index, character=0),
+            end=lsp.Position(line=line_index, character=len(line_text)),
+        ),
+        new_text="//@version=6",
+    )
 
 
 def create_diagnostic_related_info(

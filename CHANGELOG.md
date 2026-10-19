@@ -3,6 +3,7 @@
 ### Added
 
 - **LSP folding ranges.** `textDocument/foldingRange` for `if`/`for`/`while`/`switch`/`once` blocks, `FunctionDef`/`TypeDef`/`EnumDef`, and `//#region`/`//#endregion` (plus `# region` hash comments). Empty or unparsed documents return `[]`. Advertised via `foldingRangeProvider`.
+- **LSP W002 QuickFix.** `textDocument/codeAction` replaces an old `//@version=N` (N < 5) with `//@version=6` on the existing pragma line (does not insert a second pragma). v5 still gets Convert-to-v6 `RefactorRewrite` only.
 - **LSP W001 QuickFix.** `textDocument/codeAction` inserts `//@version=6` at the document start when the version pragma is missing. Advertised as `QuickFix` alongside Convert-to-v6 `RefactorRewrite`.
 - **LSP rename across open workspace documents.** `textDocument/rename` updates the ident in every currently open document that contains that Pine ident (same rules: no keywords / builtin namespaces; valid Pine ident). Documents that are not open are not in the workspace edit. `prepareRename` stays the cursor document's ident range.
 - **LSP document highlight and rename** — `textDocument/documentHighlight`, `textDocument/prepareRename`, and `textDocument/rename` for user identifiers (character-precise). Keywords and builtin namespaces (`ta`, `strategy`, `math`, …) are not renamed. Advertised via `documentHighlightProvider` and `renameProvider` (`prepareProvider`).

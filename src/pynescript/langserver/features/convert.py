@@ -19,9 +19,11 @@
 
 """Convert the active Pine document toward v6 (editor command + code action).
 
-``textDocument/codeAction`` also returns the W001 QuickFix (insert
-``//@version=6``) via :func:`~pynescript.langserver.features.diagnostics.create_quick_fix`
-when the pragma is missing.
+``textDocument/codeAction`` also returns version QuickFixes via
+:func:`~pynescript.langserver.features.diagnostics.create_quick_fix`:
+
+- W001 — insert ``//@version=6`` when the pragma is missing
+- W002 — replace an existing ``//@version=N`` (N < 5) with ``//@version=6``
 """
 
 from __future__ import annotations
@@ -80,7 +82,7 @@ def handle_code_action(
     source: str | None,
     warnings: list[LintWarning] | None = None,
 ) -> list[lsp.CodeAction]:
-    """Offer Convert-to-v6 (older than v6) and a W001 QuickFix (missing pragma)."""
+    """Offer Convert-to-v6, a W001 QuickFix (missing pragma), and W002 (old pragma)."""
     if not source:
         return []
     declared = detect_version(source)
@@ -111,6 +113,19 @@ def handle_code_action(
                 line=1,
             )
         fix = create_quick_fix(w001, uri, source)
+        if fix is not None:
+            actions.append(fix)
+    elif declared < 5:
+        w002 = None
+        if warnings:
+            w002 = next((w for w in warnings if w.code == "W002"), None)
+        if w002 is None:
+            w002 = LintWarning(
+                code="W002",
+                message=f"Pine Script v{declared} is deprecated. Consider upgrading to v6.",
+                line=1,
+            )
+        fix = create_quick_fix(w002, uri, source)
         if fix is not None:
             actions.append(fix)
     return actions
