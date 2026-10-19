@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range + 1-arg wpr/highest/lowest on HTF."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance + 1-arg wpr/highest/lowest on HTF."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -467,7 +467,8 @@ plot(ta.atr(3), title="catr")
         HTF path. Nested ``ta.sma(ta.ema(...))``, 4-arg ``ta.cci``, and 4-arg
         ``ta.wpr`` stay na; 2-arg ``ta.cci(close, n)`` / 1-arg ``ta.cci(n)`` /
         ``ta.hma`` / ``ta.vwma`` / ``ta.dema`` / ``ta.tema`` / 1-arg ``ta.wpr(n)`` /
-        ``ta.highest`` / ``ta.lowest`` (2-arg and 1-arg) / ``ta.range``
+        ``ta.highest`` / ``ta.lowest`` (2-arg and 1-arg) / ``ta.range`` /
+        ``ta.median`` / ``ta.dev`` / ``ta.variance``
         are allowlisted.
         """
         from backend.runtime import Runtime
@@ -561,6 +562,12 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "lowest" and m.source == "low" and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.range(close, 14)"))
         assert m is not None and m.name == "range" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.median(close, 14)"))
+        assert m is not None and m.name == "median" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.dev(hlc3, 10)"))
+        assert m is not None and m.name == "dev" and m.source == "hlc3" and m.length == 10
+        m = match_htf_simple_ta_ast(_expr("ta.variance(hl2, 20)"))
+        assert m is not None and m.name == "variance" and m.source == "hl2" and m.length == 20
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
@@ -569,6 +576,10 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.highest(ta.sma(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.lowest(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.range(14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.median(ta.sma(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.dev(ta.ema(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.variance(ta.sma(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.median(14)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
 
     def test_htf_cmo_stdev_linreg_hourly_to_daily_last_completed(self) -> None:
@@ -904,6 +915,55 @@ plot(ta.range(close, 3), title="crng")
         assert abs(float(hhi[-1]) - float(out["series"]["chi"][-1])) > 1e-6
         assert abs(float(hlo[-1]) - float(out["series"]["clo"][-1])) > 1e-6
         assert abs(float(hrng[-1]) - float(out["series"]["crng"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_median_dev_variance_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily median/dev/variance."""
+        import statistics
+
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.median(close, 3)), title="hmed")
+plot(request.security(syminfo.tickerid, "D", ta.dev(close, 3)), title="hdev")
+plot(request.security(syminfo.tickerid, "D", ta.variance(close, 3)), title="hvar")
+plot(ta.median(close, 3), title="cmed")
+plot(ta.dev(close, 3), title="cdev")
+plot(ta.variance(close, 3), title="cvar")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hmed = out["series"]["hmed"]
+        hdev = out["series"]["hdev"]
+        hvar = out["series"]["hvar"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes = [float(bars[24 * (d + 1) - 1]["close"]) for d in range(7)]
+        # median/dev/variance(3) need 3 HTF samples.
+        assert all(_is_na(x) for x in hmed[1:72])
+        assert all(_is_na(x) for x in hdev[1:72])
+        assert all(_is_na(x) for x in hvar[1:72])
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = hmed[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        win3 = daily_closes[-3:]
+        expect_med = statistics.median(win3)
+        mean = sum(win3) / 3
+        expect_dev = sum(abs(v - mean) for v in win3) / 3
+        expect_var = statistics.variance(win3)
+        assert abs(float(hmed[-1]) - expect_med) < 1e-9
+        assert abs(float(hdev[-1]) - expect_dev) < 1e-9
+        assert abs(float(hvar[-1]) - expect_var) < 1e-9
+        # Not chart-TF passthrough.
+        assert abs(float(hmed[-1]) - float(out["series"]["cmed"][-1])) > 1e-6
+        assert abs(float(hdev[-1]) - float(out["series"]["cdev"][-1])) > 1e-6
+        assert abs(float(hvar[-1]) - float(out["series"]["cvar"][-1])) > 1e-6
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

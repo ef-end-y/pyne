@@ -294,6 +294,30 @@ plot(ta.highest(close, 3), title="chi")
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["hi"][-1]) - float(sc["series"]["chi"][-1])) > 1e-6
 
+    def test_htf_median_dev_variance_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed median/dev/variance: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.median(close, 3)), title="med")
+plot(request.security(syminfo.tickerid, "D", ta.dev(close, 3)), title="dev")
+plot(request.security(syminfo.tickerid, "D", ta.variance(close, 3)), title="var")
+plot(ta.median(close, 3), title="cmed")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("med", "dev", "var"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = sc["series"]["med"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["med"][-1]) - float(sc["series"]["cmed"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
