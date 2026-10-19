@@ -162,7 +162,7 @@ Engine parity improvements, observability tooling, and documentation refresh.
 
 ### Unreleased (local, post-0.6.13)
 
-- **HTF allowlist** (D-06) — `cmo`/`stdev`/`linreg`, `cci`/`roc`/`mom`, `hma`/`vwma` + 1-arg `ta.cci(n)`, `dema`/`tema` + 1-arg `ta.wpr(n)`, `highest`/`lowest` (2-arg and 1-arg high/low) + `ta.range` (2-arg and 1-arg high−low), `median`/`dev`/`variance`, `mode`/`percentrank`/`change`, `cog`/`highestbars`/`lowestbars` (2-arg and 1-arg high/low), 2-arg `kama` (Kaufman 2/30) / `rising` / `falling`, `swma` (1-arg source, 4-period) / 0-arg `ao()` / 2-arg `ao(fast, slow)` / 3-arg `linreg(source, n, offset)` (disk IR v32)
+- **HTF allowlist** (D-06) — `cmo`/`stdev`/`linreg`, `cci`/`roc`/`mom`, `hma`/`vwma` + 1-arg `ta.cci(n)`, `dema`/`tema` + 1-arg `ta.wpr(n)`, `highest`/`lowest` (2-arg and 1-arg high/low) + `ta.range` (2-arg and 1-arg high−low), `median`/`dev`/`variance`, `mode`/`percentrank`/`change`, `cog`/`highestbars`/`lowestbars` (2-arg and 1-arg high/low), 2-arg `kama` (Kaufman 2/30) / `rising` / `falling`, `swma` (1-arg source, 4-period) / 0-arg `ao()` / 2-arg `ao(fast, slow)` / 3-arg `linreg(source, n, offset)` / 0-arg `vwap()` (HTF hlc3) / 1-arg `vwap(source)` (disk IR v33)
 - **T2 incremental** — `rci`/`bb_pct`/`atr_normalized`, `cumulative_delta`/`volume_momentum`, `sma_weighted`, `range`/`max`/`min`, `stoch_smooth`, `rsi_divergence`, `fractal`, `engulfing`/`hammer`, `double_top_bottom`, `gap_detector`, `inside_bar_pattern`, `ema_cross_signal`
 - **Forming-bar realtime** — trail ratchet (D-01), MAE/MFE (D-03), nested list/dict snapshot (D-04)
 - **LSP** — document highlight + rename (open docs), W001/W002/C002 QuickFix, `textDocument/foldingRange`, `textDocument/selectionRange`, `documentColor` / `colorPresentation`
