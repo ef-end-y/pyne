@@ -375,14 +375,23 @@ class OscillatorIndicators(TechnicalHelpers):
 
         ta.rsi_oversold_overbought(rsi_series, oversold_level, overbought_level)
         Returns boolean flags for oversold/overbought conditions.
+        Bar-mode incremental last sample uses ``_rsi_oversold_overbought_inc_update``.
         """
         if len(args) < TERNARY:
             msg = "ta.rsi_oversold_overbought() requires 3 arguments: rsi_series, oversold, overbought"
             self._error(msg)
 
-        rsi_series = args[0] if isinstance(args[0], list) else [args[0]]
         oversold = self._expect_int(args[1], "oversold must be integer")
         overbought = self._expect_int(args[2], "overbought must be integer")
+
+        if self._use_incremental_ta():
+            return self._rsi_oversold_overbought_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                oversold,
+                overbought,
+            )
+
+        rsi_series = args[0] if isinstance(args[0], list) else [args[0]]
 
         if not rsi_series or len(rsi_series) == 0:
             return {"is_oversold": False, "is_overbought": False, "rsi": None}

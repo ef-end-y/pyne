@@ -7529,3 +7529,250 @@ plot(t.trend_direction, "td2")
     # Injected close-vs-open crossover must fire buy on both hosts.
     assert r_on["series"]["sig"][20] == pytest.approx(1.0)
     assert r_off["series"]["sig"][20] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# T2: rsi_oversold_overbought incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_RSI_OBOS_OFF = {"is_oversold": False, "is_overbought": False, "rsi": None}
+
+
+def _rsi_like(n: int = 120) -> list[float]:
+    """Synthetic RSI path that crosses oversold (30) and overbought (70)."""
+    out: list[float] = []
+    for i in range(n):
+        out.append(50.0 + 40.0 * math.sin(i / 5.0))
+    return out
+
+
+def _bar_walk_full_rsi_obos(
+    src: list[Any],
+    oversold: int,
+    overbought: int,
+) -> list[dict[str, Any]]:
+    ev = _FullTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(src)):
+        out.append(
+            ev._builtin_ta_rsi_oversold_overbought(
+                [src[: i + 1], oversold, overbought]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_rsi_obos(
+    src: list[Any],
+    oversold: int,
+    overbought: int,
+) -> list[dict[str, Any]]:
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._rsi_oversold_overbought_inc_update(
+                src[: i + 1], oversold, overbought
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_rsi_obos_last_sample(
+    src: list[Any],
+    oversold: int,
+    overbought: int,
+) -> list[dict[str, Any]]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._rsi_oversold_overbought_inc_update(src[i], oversold, overbought)
+        )
+    return out
+
+
+def test_incremental_rsi_oversold_overbought_matches_full() -> None:
+    src = _rsi_like(120)
+    got = _bar_walk_inc_rsi_obos(src, 30, 70)
+    exp = _bar_walk_full_rsi_obos(src, 30, 70)
+    _assert_pattern_close(got, exp)
+    last = _bar_walk_inc_rsi_obos_last_sample(src, 30, 70)
+    _assert_pattern_close(last, exp)
+
+
+def test_incremental_rsi_oversold_overbought_warmup() -> None:
+    """Empty series / None last sample is False / rsi None, matching full."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._rsi_oversold_overbought_inc_update([], 30, 70) == _RSI_OBOS_OFF
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._rsi_oversold_overbought_inc_update(None, 30, 70) == _RSI_OBOS_OFF
+    assert ev._ta_call_i == 1
+
+    got = _bar_walk_inc_rsi_obos([None], 30, 70)
+    exp = _bar_walk_full_rsi_obos([None], 30, 70)
+    assert got == [_RSI_OBOS_OFF]
+    assert exp == [_RSI_OBOS_OFF]
+
+
+def test_incremental_rsi_oversold_overbought_oversold() -> None:
+    """rsi < oversold → is_oversold; equality is not oversold."""
+    src = [50.0, 20.0]
+    got = _bar_walk_inc_rsi_obos(src, 30, 70)
+    exp = _bar_walk_full_rsi_obos(src, 30, 70)
+    _assert_pattern_close(got, exp)
+    assert got[-1]["is_oversold"] is True
+    assert exp[-1]["is_oversold"] is True
+    assert got[-1]["is_overbought"] is False
+    assert got[-1]["rsi"] == pytest.approx(20.0)
+
+    eq = _bar_walk_inc_rsi_obos([30.0], 30, 70)
+    eq_exp = _bar_walk_full_rsi_obos([30.0], 30, 70)
+    _assert_pattern_close(eq, eq_exp)
+    assert eq[-1]["is_oversold"] is False
+    assert eq_exp[-1]["is_oversold"] is False
+
+
+def test_incremental_rsi_oversold_overbought_overbought() -> None:
+    """rsi > overbought → is_overbought; equality is not overbought."""
+    src = [50.0, 80.0]
+    got = _bar_walk_inc_rsi_obos(src, 30, 70)
+    exp = _bar_walk_full_rsi_obos(src, 30, 70)
+    _assert_pattern_close(got, exp)
+    assert got[-1]["is_overbought"] is True
+    assert exp[-1]["is_overbought"] is True
+    assert got[-1]["is_oversold"] is False
+    assert got[-1]["rsi"] == pytest.approx(80.0)
+
+    eq = _bar_walk_inc_rsi_obos([70.0], 30, 70)
+    eq_exp = _bar_walk_full_rsi_obos([70.0], 30, 70)
+    _assert_pattern_close(eq, eq_exp)
+    assert eq[-1]["is_overbought"] is False
+    assert eq_exp[-1]["is_overbought"] is False
+
+
+def test_incremental_rsi_oversold_overbought_neutral() -> None:
+    """Inside the band is neither flag; na last sample stays off."""
+    src: list[float | None] = [50.0, 40.0, None, 55.0]
+    got = _bar_walk_inc_rsi_obos(src, 30, 70)
+    exp = _bar_walk_full_rsi_obos(src, 30, 70)
+    _assert_pattern_close(got, exp)
+    assert got[0] == {"is_oversold": False, "is_overbought": False, "rsi": 50.0}
+    assert got[2] == _RSI_OBOS_OFF
+    assert got[-1]["is_oversold"] is False
+    assert got[-1]["is_overbought"] is False
+    assert got[-1]["rsi"] == pytest.approx(55.0)
+
+
+def test_incremental_rsi_oversold_overbought_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    src: list[float | None] = list(_rsi_like(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._rsi_oversold_overbought_inc_update(src[: i + 1], 30, 70)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_rsi_oversold_overbought_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _rsi_like(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_rsi_oversold_overbought([src[: i + 1], 30, 70])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_rsi_oversold_overbought_two_call_sites_independent() -> None:
+    src = _rsi_like(80)
+    ev = _IncTA()
+    a_out: list[dict[str, Any]] = []
+    b_out: list[dict[str, Any]] = []
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._rsi_oversold_overbought_inc_update(prefix, 30, 70))
+        b_out.append(ev._rsi_oversold_overbought_inc_update(prefix, 20, 80))
+    _assert_pattern_close(a_out, _bar_walk_full_rsi_obos(src, 30, 70))
+    _assert_pattern_close(b_out, _bar_walk_full_rsi_obos(src, 20, 80))
+
+
+def test_runtime_rsi_oversold_overbought_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Inject a close well below 30 (oversold) and well above 70 (overbought).
+    bars[19] = {
+        "open": 25.0,
+        "high": 26.0,
+        "low": 18.0,
+        "close": 20.0,
+        "volume": 1019,
+        "time": 1_700_000_000 + 19 * 86_400,
+    }
+    bars[20] = {
+        "open": 75.0,
+        "high": 90.0,
+        "low": 74.0,
+        "close": 85.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    src = """//@version=5
+indicator("rsi obos")
+s = ta.rsi_oversold_overbought(close, 30, 70)
+t = ta.rsi_oversold_overbought(close, 20, 80)
+plot(s.is_oversold ? 1 : 0, "os")
+plot(s.is_overbought ? 1 : 0, "ob")
+plot(s.rsi, "rsi")
+plot(t.is_oversold ? 1 : 0, "os2")
+plot(t.is_overbought ? 1 : 0, "ob2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"os", "ob", "rsi", "os2", "ob2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+    assert r_on["series"]["os"][19] == pytest.approx(1.0)
+    assert r_off["series"]["os"][19] == pytest.approx(1.0)
+    assert r_on["series"]["ob"][20] == pytest.approx(1.0)
+    assert r_off["series"]["ob"][20] == pytest.approx(1.0)
+    assert r_on["series"]["rsi"][19] == pytest.approx(20.0)
+    assert r_on["series"]["rsi"][20] == pytest.approx(85.0)

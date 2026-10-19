@@ -1571,6 +1571,35 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _rsi_oversold_overbought_inc_update(
+        self,
+        rsi_series: Any,
+        oversold: int,
+        overbought: int,
+    ) -> dict[str, Any]:
+        """Incremental RSI threshold matching full ``ta.rsi_oversold_overbought``.
+
+        Last RSI sample vs two int levels → ``{is_oversold, is_overbought, rsi}``.
+        ``False`` / ``rsi: None`` while the series is empty or the last sample
+        is ``None``. Oversold is ``rsi < oversold``; overbought is
+        ``rsi > overbought`` (equality is neither). One call-site slot every
+        bar, including warmup / na.
+        """
+        self._ta_next_slot()
+        off: dict[str, Any] = {
+            "is_oversold": False,
+            "is_overbought": False,
+            "rsi": None,
+        }
+        rsi_current = self._series_last(rsi_series)
+        if rsi_current is None:
+            return off
+        return {
+            "is_oversold": rsi_current < oversold,
+            "is_overbought": rsi_current > overbought,
+            "rsi": rsi_current,
+        }
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

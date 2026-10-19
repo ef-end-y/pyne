@@ -160,6 +160,10 @@ Engine parity improvements, observability tooling, and documentation refresh.
 - **JSON key-store atomic save** — flock + `os.replace`
 - **Webhook DNS pin** — POST connects to the resolved public IP with HTTPS SNI on the original name
 
+### Unreleased (local, post-0.6.14)
+
+- **T2 incremental** — `rsi_oversold_overbought`
+
 ### 0.6.14 — HTF allowlist, incremental TA, LSP
 
 - **HTF allowlist** (D-06) — `cmo`/`stdev`/`linreg`, `cci`/`roc`/`mom`, `hma`/`vwma` + 1-arg `ta.cci(n)`, `dema`/`tema` + 1-arg `ta.wpr(n)`, `highest`/`lowest` (2-arg and 1-arg high/low) + `ta.range` (2-arg and 1-arg high−low), `median`/`dev`/`variance`, `mode`/`percentrank`/`change`, `cog`/`highestbars`/`lowestbars` (2-arg and 1-arg high/low), 2-arg `kama` (Kaufman 2/30) / `rising` / `falling`, `swma` (1-arg source, 4-period) / 0-arg `ao()` / 2-arg `ao(fast, slow)` / 3-arg `linreg(source, n, offset)` / 0-arg `vwap()` (HTF hlc3) / 1-arg `vwap(source)` (disk IR v33)
