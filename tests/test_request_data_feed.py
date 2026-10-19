@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma on resampled HTF bars."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema + 1-arg wpr on HTF."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -464,8 +464,9 @@ plot(ta.atr(3), title="catr")
 
         Chart pre-eval of nested SMA can occasionally equal an OHLCV sample and
         hit the pre-existing passthrough heuristic — that is not the simple-ta
-        HTF path. Nested ``ta.sma(ta.ema(...))`` and 4-arg ``ta.cci`` stay na;
-        2-arg ``ta.cci(close, n)`` / 1-arg ``ta.cci(n)`` / ``ta.hma`` / ``ta.vwma``
+        HTF path. Nested ``ta.sma(ta.ema(...))``, 4-arg ``ta.cci``, and 4-arg
+        ``ta.wpr`` stay na; 2-arg ``ta.cci(close, n)`` / 1-arg ``ta.cci(n)`` /
+        ``ta.hma`` / ``ta.vwma`` / ``ta.dema`` / ``ta.tema`` / 1-arg ``ta.wpr(n)``
         are allowlisted.
         """
         from backend.runtime import Runtime
@@ -475,10 +476,12 @@ plot(ta.atr(3), title="catr")
 indicator("t")
 plot(request.security(syminfo.tickerid, "60", ta.sma(ta.ema(close, 3), 3)), title="nested")
 plot(request.security(syminfo.tickerid, "60", ta.cci(high, low, close, 5)), title="cci4")
+plot(request.security(syminfo.tickerid, "60", ta.wpr(high, low, close, 5)), title="wpr4")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
         assert all(_is_na(x) for x in out["series"]["cci4"])
+        assert all(_is_na(x) for x in out["series"]["wpr4"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -541,9 +544,17 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "vwma" and m.source == "close" and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.cci(14)"))
         assert m is not None and m.name == "cci" and m.source == "hlc3" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.dema(close, 14)"))
+        assert m is not None and m.name == "dema" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.tema(hl2, 9)"))
+        assert m is not None and m.name == "tema" and m.source == "hl2" and m.length == 9
+        m = match_htf_simple_ta_ast(_expr("ta.wpr(14)"))
+        assert m is not None and m.name == "wpr" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.kama(close, 14, 2, 30)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
 
     def test_htf_cmo_stdev_linreg_hourly_to_daily_last_completed(self) -> None:
@@ -721,6 +732,101 @@ plot(ta.cci(3), title="ccci1")
         assert abs(float(hvwma[-1]) - float(out["series"]["cvwma"][-1])) > 1e-6
         ccci_day5 = out["series"]["ccci1"][5 * 24 : 6 * 24]
         assert any(not _is_na(v) and abs(float(v) - float(ccci_day5[0])) > 1e-6 for v in ccci_day5)
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_dema_tema_wpr_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily dema/tema/1-arg wpr."""
+        from backend.runtime import Runtime
+
+        def _ema_full(src: list[float | None], period: int) -> list[float | None]:
+            """Match interpret ``_ema`` (SMA seed, skip None until seeded)."""
+            alpha = 2.0 / (period + 1)
+            out: list[float | None] = []
+            seed: list[float] = []
+            seeded = False
+            ema: float | None = None
+            for raw in src:
+                x: float | None
+                if raw is None:
+                    x = None
+                else:
+                    try:
+                        fv = float(raw)
+                    except (TypeError, ValueError):
+                        fv = float("nan")
+                    x = None if fv != fv else fv
+                if not seeded:
+                    if x is None:
+                        out.append(None)
+                        continue
+                    seed.append(x)
+                    if len(seed) < period:
+                        out.append(None)
+                        continue
+                    ema = sum(seed) / period
+                    seeded = True
+                    out.append(ema)
+                    continue
+                if x is None:
+                    out.append(ema)
+                    continue
+                ema = alpha * x + (1.0 - alpha) * float(ema)
+                out.append(ema)
+            return out
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.dema(close, 3)), title="hdema")
+plot(request.security(syminfo.tickerid, "D", ta.tema(close, 3)), title="htema")
+plot(request.security(syminfo.tickerid, "D", ta.wpr(3)), title="hwpr")
+plot(ta.dema(close, 3), title="cdema")
+plot(ta.tema(close, 3), title="ctema")
+plot(ta.wpr(3), title="cwpr")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hdema = out["series"]["hdema"]
+        htema = out["series"]["htema"]
+        hwpr = out["series"]["hwpr"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes: list[float] = []
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+        # dema(3) seeds at unique index 4; tema(3) at 6; wpr(3) at 2.
+        assert all(_is_na(x) for x in hdema[1:120])
+        assert all(_is_na(x) for x in htema[1:168])
+        assert all(_is_na(x) for x in hwpr[1:72])
+        # Stepwise constant inside day 6 (last completed = day 5).
+        day6 = hdema[6 * 24 : 7 * 24]
+        assert all(not _is_na(x) for x in day6)
+        ref = float(day6[0])
+        for v in day6:
+            assert abs(float(v) - ref) < 1e-9
+        e1 = _ema_full(daily_closes, 3)
+        e2 = _ema_full(e1, 3)
+        e3 = _ema_full(e2, 3)
+        expect_dema = 2.0 * float(e1[-1]) - float(e2[-1])
+        assert abs(float(hdema[-1]) - expect_dema) < 1e-9
+        expect_tema = 3.0 * float(e1[-1]) - 3.0 * float(e2[-1]) + float(e3[-1])
+        assert abs(float(htema[-1]) - expect_tema) < 1e-9
+        win_h = daily_highs[-3:]
+        win_l = daily_lows[-3:]
+        hh = max(win_h)
+        ll = min(win_l)
+        expect_wpr = 0.0 if hh == ll else -100.0 * (hh - daily_closes[-1]) / (hh - ll)
+        assert abs(float(hwpr[-1]) - expect_wpr) < 1e-9
+        # Not chart-TF passthrough.
+        assert abs(float(hdema[-1]) - float(out["series"]["cdema"][-1])) > 1e-6
+        assert abs(float(htema[-1]) - float(out["series"]["ctema"][-1])) > 1e-6
+        assert abs(float(hwpr[-1]) - float(out["series"]["cwpr"][-1])) > 1e-6
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
