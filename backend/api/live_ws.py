@@ -709,8 +709,14 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
                 break
         drain_outbound()
         if incoming is None:
-            teardown()
-            break
+            # ``simple_websocket`` returns **None on a timeout**, not only when
+            # the peer closed — a quiet socket (a slow history ensure, the
+            # client between heartbeats) must not tear the plane down. A real
+            # disconnect raises ``ConnectionClosed`` and is handled above.
+            if not getattr(ws, "connected", True):
+                teardown()
+                break
+            continue
         if incoming == "":
             dead = [k for k, t in inflight.items() if not t.is_alive()]
             for k in dead:

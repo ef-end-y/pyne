@@ -1,3 +1,9 @@
+## [0.6.17] — 2026-10-19
+
+### Fixed
+
+- **`WS /ws/live` no longer tears the plane down on a quiet socket.** `simple_websocket` returns `None` on a receive *timeout* (it does not raise) — the live loop read that as a disconnect and closed the socket ~50 ms after the handshake. A slow history ensure or the gap between client heartbeats therefore dropped the subscription before its snapshot arrived (the client saw "no snapshot" and fell back to venue + REST). A timeout now keeps the socket alive; a real disconnect still closes it.
+
 ## [0.6.16] — 2026-10-19
 
 ### Fixed

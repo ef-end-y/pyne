@@ -23,6 +23,7 @@ from backend.api.live_ws import (  # noqa: E402
     canonical_series_key,
     clamp_history_bars,
     extract_handshake_key,
+    serve_live_ws,
 )
 
 
@@ -318,3 +319,66 @@ def test_resume_replies_snapshot_and_live():
     assert types == ["full", "status"]
     assert replies[0]["seq"] == 2
     assert replies[1]["payload"]["code"] == "live"
+
+
+class _QuietSocket:
+    """A socket whose ``receive`` returns None on a timeout (simple-websocket).
+
+    ``simple_websocket`` signals "nothing arrived within the timeout" by
+    returning ``None`` — a quiet socket must not tear the live plane down.
+    """
+
+    connected = True
+
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+        self.frames: list[str] = []
+        self.closed = False
+
+    def send(self, data: str) -> None:
+        self.sent.append(data)
+
+    def receive(self, timeout=None):  # noqa: ANN001 — transport signature
+        if self.frames:
+            return self.frames.pop(0)
+        if self.closed:
+            raise ConnectionError("peer closed")
+        # Timeout: simple-websocket returns None, it does not raise.
+        return None
+
+    def close(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003 — transport API
+        self.closed = True
+
+
+def test_quiet_socket_does_not_tear_down_the_live_plane(monkeypatch):
+    """A timeout is not a disconnect: the loop must keep serving the socket."""
+    import backend.api.live_ws as live_ws
+
+    sock = _QuietSocket()
+
+    def fake_request():
+        class _Req:
+            headers = {}
+            args = {}
+
+        return _Req()
+
+    monkeypatch.setattr(live_ws, "_flask_request", fake_request, raising=False)
+    # The route reads `flask.request` — patch the module-level import target.
+    import flask
+
+    monkeypatch.setattr(flask, "request", fake_request())
+
+    calls = {"n": 0}
+
+    def fake_receive(timeout=None):  # noqa: ANN001 — transport signature
+        calls["n"] += 1
+        if calls["n"] > 3:
+            sock.closed = True
+            raise ConnectionError("peer closed")
+        return None
+
+    sock.receive = fake_receive  # type: ignore[method-assign]
+    serve_live_ws(sock, LiveRegistry())
+    # More than one receive attempt: the loop survived the None timeouts.
+    assert calls["n"] > 3
