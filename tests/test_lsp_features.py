@@ -1653,9 +1653,33 @@ ch = color.r
 title = "#00ff00"
 """
 
+_COLOR_QUOTED_SOURCE = """//@version=6
+indicator("T")
+a = "#ff0000"
+b = "#00ff00aa"
+c = "#2962FF"
+skip = "not-a-color"
+bare = "ff0000"
+"""
+
+_COLOR_NEW_SOURCE = """//@version=6
+indicator("T")
+n = color.new(color.white, 50)
+n2 = color.new(#ff0000, 25)
+n3 = color.new("#00ff00", 0)
+n4 = color.new(color.red, transp=75)
+n5 = color.new(color=#2962FF, transp=10)
+kw = color.new(transp=50, color=color.blue)
+one = color.new(color.white)
+skip = color.new(x, 50)
+skip2 = color.new(color.white, t)
+skip3 = color.new(color.rgb(1, 2, 3), 50)
+extra = color.new(color.white, 50, 1)
+"""
+
 
 class TestDocumentColorHandler:
-    """Test textDocument/documentColor and colorPresentation for #hex, color.*, rgb."""
+    """Test textDocument/documentColor and colorPresentation for #hex, color.*, rgb, color.new."""
 
     def test_handle_document_color_empty_and_unparsed(self) -> None:
         """Empty source and parse failure return an empty list."""
@@ -1677,12 +1701,20 @@ class TestDocumentColorHandler:
         _assert_rgba(_color_at(result, src, "#2962FF"), 0x29, 0x62, 0xFF)
         _assert_rgba(_color_at(result, src, "#22AB94"), 0x22, 0xAB, 0x94)
 
-    def test_handle_document_color_skips_quoted_hex_strings(self) -> None:
-        """Quoted hex strings are not document colors (title= is not a color)."""
-        result = handle_document_color(_color_params(), _COLOR_SOURCE)
-        texts = [_slice_range(_COLOR_SOURCE, info.range) for info in result]
-        assert "#ff00ff" not in texts
-        assert "red" not in texts
+    def test_handle_document_color_quoted_hex_strings(self) -> None:
+        """Quoted \"#rrggbb\" / \"#rrggbbaa\" Constants are document colors (range includes quotes)."""
+        src = _COLOR_QUOTED_SOURCE
+        result = handle_document_color(_color_params(), src)
+        found = {_slice_range(src, info.range) for info in result}
+        assert found == {'"#ff0000"', '"#00ff00aa"', '"#2962FF"'}
+        _assert_rgba(_color_at(result, src, '"#ff0000"'), 0xFF, 0, 0)
+        _assert_rgba(_color_at(result, src, '"#00ff00aa"'), 0, 0xFF, 0, 0xAA)
+        _assert_rgba(_color_at(result, src, '"#2962FF"'), 0x29, 0x62, 0xFF)
+        texts = list(found)
+        assert "not-a-color" not in texts
+        assert '"not-a-color"' not in texts
+        assert "ff0000" not in texts
+        assert '"ff0000"' not in texts
 
     def test_handle_document_color_named_constants(self) -> None:
         """color.red / color.green / … Attributes become palette RGBA swatches."""
@@ -1696,11 +1728,13 @@ class TestDocumentColorHandler:
         _assert_rgba(_color_at(result, src, "color.fuchsia"), 0xE0, 0x40, 0xFB)
 
     def test_handle_document_color_hex_source_includes_named(self) -> None:
-        """Mixed hex + color.red source reports both; quoted title hex is skipped."""
+        """Mixed hex + color.red + quoted title hex are all reported."""
         result = handle_document_color(_color_params(), _COLOR_SOURCE)
         found = {_slice_range(_COLOR_SOURCE, info.range) for info in result}
         assert "color.red" in found
+        assert '"#ff00ff"' in found
         _assert_rgba(_color_at(result, _COLOR_SOURCE, "color.red"), 0xF2, 0x36, 0x45)
+        _assert_rgba(_color_at(result, _COLOR_SOURCE, '"#ff00ff"'), 0xFF, 0, 0xFF)
 
     def test_handle_document_color_rgb_literals(self) -> None:
         """color.rgb with numeric literals (optional transp 0-100) is a swatch."""
@@ -1714,19 +1748,54 @@ class TestDocumentColorHandler:
         _assert_rgba(_color_at(result, src, "color.rgb(red=1, green=2, blue=3)"), 1, 2, 3)
 
     def test_handle_document_color_rgb_skips_non_literals(self) -> None:
-        """Non-literal rgb args, color.new, unknown color.foo, color.r are skipped."""
+        """Non-literal rgb args, unknown color.foo, and color.r are skipped."""
         src = _COLOR_RGB_SOURCE
         result = handle_document_color(_color_params(), src)
         texts = [_slice_range(src, info.range) for info in result]
         assert "color.rgb(x, 0, 0)" not in texts
         assert "color.rgb(color.r(color.blue), 0, 0)" not in texts
-        assert not any(t.startswith("color.new") for t in texts)
         assert "color.foo" not in texts
         assert "color.r" not in texts
-        assert "#00ff00" not in texts
         # nested named constant inside the skipped rgb call is still a swatch
         assert "color.blue" in texts
         assert "color.white" in texts
+        # leftover quoted hex / color.new in this source are now swatches
+        assert '"#00ff00"' in texts
+        assert "color.new(color.white, 50)" in texts
+
+    def test_handle_document_color_color_new_literals(self) -> None:
+        """color.new with literal color + transp (0-100) applies Pine transparency."""
+        src = _COLOR_NEW_SOURCE
+        result = handle_document_color(_color_params(), src)
+        # transp 50 → alpha = round(255 * 0.5) = 128
+        _assert_rgba(_color_at(result, src, "color.new(color.white, 50)"), 0xFF, 0xFF, 0xFF, 128)
+        # transp 25 → alpha = round(255 * 0.75) = 191
+        _assert_rgba(_color_at(result, src, "color.new(#ff0000, 25)"), 0xFF, 0, 0, 191)
+        _assert_rgba(_color_at(result, src, 'color.new("#00ff00", 0)'), 0, 0xFF, 0)
+        # transp 75 → alpha = round(255 * 0.25) = 64
+        _assert_rgba(_color_at(result, src, "color.new(color.red, transp=75)"), 0xF2, 0x36, 0x45, 64)
+        # transp 10 → alpha = round(255 * 0.9) = 230
+        _assert_rgba(_color_at(result, src, "color.new(color=#2962FF, transp=10)"), 0x29, 0x62, 0xFF, 230)
+        _assert_rgba(_color_at(result, src, "color.new(transp=50, color=color.blue)"), 0x29, 0x62, 0xFF, 128)
+        # inner literals remain swatches
+        found = {_slice_range(src, info.range) for info in result}
+        assert "color.white" in found
+        assert "#ff0000" in found
+        assert '"#00ff00"' in found
+        assert "color.red" in found
+        assert "color.blue" in found
+        assert "color.rgb(1, 2, 3)" in found
+
+    def test_handle_document_color_color_new_skips_non_literals(self) -> None:
+        """color.new needs both args as literals; extra/non-literal args skip the call."""
+        src = _COLOR_NEW_SOURCE
+        result = handle_document_color(_color_params(), src)
+        texts = [_slice_range(src, info.range) for info in result]
+        assert "color.new(color.white)" not in texts
+        assert "color.new(x, 50)" not in texts
+        assert "color.new(color.white, t)" not in texts
+        assert "color.new(color.rgb(1, 2, 3), 50)" not in texts
+        assert "color.new(color.white, 50, 1)" not in texts
 
     def test_handle_document_color_reuses_tree(self) -> None:
         """Passing a pre-parsed tree must not require re-parse of source."""
@@ -1735,8 +1804,9 @@ class TestDocumentColorHandler:
         tree = parse(_COLOR_SOURCE, filename="file:///test.pine")
         result = handle_document_color(_color_params(), source=None, tree=tree)
         found = {_slice_range(_COLOR_SOURCE, info.range) for info in result}
-        assert found == {"#ff0000", "#00ff00aa", "#2962FF", "#22AB94", "color.red"}
+        assert found == {"#ff0000", "#00ff00aa", "#2962FF", "#22AB94", "color.red", '"#ff00ff"'}
         _assert_rgba(_color_at(result, _COLOR_SOURCE, "#ff0000"), 0xFF, 0, 0)
+        _assert_rgba(_color_at(result, _COLOR_SOURCE, '"#ff00ff"'), 0xFF, 0, 0xFF)
 
     def test_handle_document_color_rgb_shorthand_on_tree(self) -> None:
         """#rgb Constants (kind='#') expand each nibble when present on the tree."""

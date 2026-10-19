@@ -24,16 +24,18 @@ Public handlers: :func:`handle_document_color` and
 
 - lexer ``COLOR`` tokens (``#rgb`` / ``#rrggbb`` / ``#rrggbbaa``) as
   :class:`~pynescript.ast.node.Constant` with ``kind="#"``
+- quoted ``"#rrggbb"`` / ``"#rrggbbaa"`` string Constants (``kind`` is ``None``)
 - named ``color.*`` constants (``color.red``, …) as :class:`~pynescript.ast.node.Attribute`
   on ``Name("color")``
 - ``color.rgb(r, g, b[, transp])`` with numeric literals (Pine transp 0-100,
   0 = opaque)
+- ``color.new(color, transp)`` when both args are literals (named ``color.*``,
+  ``#hex`` token, or quoted hex; transp 0-100)
 
 Each becomes a 0-1 RGBA :class:`~lsprotocol.types.ColorInformation`.
 ``colorPresentation`` rewrites the range as ``#rrggbb`` (or ``#rrggbbaa`` when
 alpha != 1), including when the original text was a ``color.*`` name. Empty
-source or parse failure returns ``[]``. Quoted ``"#rrggbb"`` strings are not
-reported (``title="#ff00ff"`` is not a color).
+source or parse failure returns ``[]``.
 """
 
 from __future__ import annotations
@@ -61,9 +63,12 @@ _CHANNEL_MAX = 255.0
 _TRANSP_MAX = 100.0
 _COLOR_NS = "color"
 _RGB_ATTR = "rgb"
+_NEW_ATTR = "new"
 _RGB_POS = ("red", "green", "blue", "transp")
 _RGB_ALIASES = {"r": "red", "g": "green", "b": "blue", "t": "transp"}
 _RGB_KEYS = frozenset(_RGB_POS)
+_NEW_POS = ("color", "transp")
+_NEW_KEYS = frozenset(_NEW_POS)
 
 
 def handle_document_color(
@@ -81,8 +86,9 @@ def handle_document_color(
             Omit (default ``...``) to parse from *source*.
 
     Returns:
-        Color information for each hex literal, ``color.*`` name, and literal
-        ``color.rgb`` call (possibly empty). Never ``None``.
+        Color information for each hex literal, quoted ``"#hex"`` string,
+        ``color.*`` name, and literal ``color.rgb`` / ``color.new`` call
+        (possibly empty). Never ``None``.
     """
     if tree is ...:
         if not source:
@@ -124,14 +130,14 @@ def handle_color_presentation(
 
 
 def _color_info_for_node(node: Any) -> lsp.ColorInformation | None:
-    """Return ColorInformation for a hex / ``color.*`` / ``color.rgb`` node."""
+    """Return ColorInformation for a hex / ``color.*`` / ``color.rgb`` / ``color.new`` node."""
     color = None
     if isinstance(node, ast.Constant):
         color = _hex_constant_color(node)
     elif isinstance(node, ast.Attribute):
         color = _named_attr_color(node)
     elif isinstance(node, ast.Call):
-        color = _rgb_call_color(node)
+        color = _rgb_call_color(node) or _new_call_color(node)
     if color is None:
         return None
     rng = _node_to_range(node)
@@ -141,11 +147,16 @@ def _color_info_for_node(node: Any) -> lsp.ColorInformation | None:
 
 
 def _hex_constant_color(node: ast.Constant) -> lsp.Color | None:
-    """Parse a ``kind="#"`` hex Constant, or ``None``."""
-    if getattr(node, "kind", None) != "#":
-        return None
+    """Parse a ``kind="#"`` hex Constant or quoted ``"#hex"`` string, or ``None``."""
     value = node.value
     if not isinstance(value, str):
+        return None
+    kind = getattr(node, "kind", None)
+    if kind == "#":
+        return _hex_to_color(value)
+    if kind is not None:
+        return None
+    if not value.startswith("#"):
         return None
     return _hex_to_color(value)
 
@@ -178,6 +189,71 @@ def _rgb_call_color(node: ast.Call) -> lsp.Color | None:
         blue=b / _CHANNEL_MAX,
         alpha=a / _CHANNEL_MAX,
     )
+
+
+def _new_call_color(node: ast.Call) -> lsp.Color | None:
+    """Parse ``color.new(color, transp)`` with literal args, or ``None``."""
+    func = node.func
+    if not isinstance(func, ast.Attribute) or func.attr != _NEW_ATTR:
+        return None
+    if not isinstance(func.value, ast.Name) or func.value.id != _COLOR_NS:
+        return None
+    pair = _new_literal_args(node.args)
+    if pair is None:
+        return None
+    base, transp = pair
+    return lsp.Color(
+        red=base.red,
+        green=base.green,
+        blue=base.blue,
+        alpha=_transp_to_alpha_byte(transp) / _CHANNEL_MAX,
+    )
+
+
+def _literal_color(node: Any) -> lsp.Color | None:
+    """Color from a hex / quoted-hex Constant or named ``color.*`` Attribute."""
+    if isinstance(node, ast.Constant):
+        return _hex_constant_color(node)
+    if isinstance(node, ast.Attribute):
+        return _named_attr_color(node)
+    return None
+
+
+def _new_literal_args(args: list[Any]) -> tuple[lsp.Color, float] | None:
+    """Merge positional/keyword ``color.new`` literals to (color, transp)."""
+    color: lsp.Color | None = None
+    transp: float | None = None
+    pos_i = 0
+    for arg in args:
+        if not isinstance(arg, ast.Arg):
+            return None
+        raw_name = arg.name
+        if raw_name:
+            if raw_name not in _NEW_KEYS:
+                return None
+            key = raw_name
+        else:
+            if pos_i >= len(_NEW_POS):
+                return None
+            key = _NEW_POS[pos_i]
+            pos_i += 1
+        if key == "color":
+            if color is not None:
+                return None
+            parsed = _literal_color(arg.value)
+            if parsed is None:
+                return None
+            color = parsed
+            continue
+        if transp is not None:
+            return None
+        num = _literal_number(arg.value)
+        if num is None:
+            return None
+        transp = num
+    if color is None or transp is None:
+        return None
+    return color, transp
 
 
 def _literal_number(node: Any) -> float | None:
