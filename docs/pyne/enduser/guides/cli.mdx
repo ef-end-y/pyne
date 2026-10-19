@@ -56,7 +56,8 @@ flowchart LR
 | `data` | `pynescript.util.data.get_provider` |
 | `runner` | HTTP client for Flask `/scripts` + `/cron/run` (`PYNE_RUNNER`) |
 | `info` | version + optional extras |
-| `mcp` | `pynescript.mcp` stdio server ([MCP](/pyne/docs/enduser/guides/mcp)) |
+| `execute` / `symbols` / `parity` / `diagnostics` / `builtin` | MCP ops (`Runtime.run`, outline, last-value parity) |
+| `mcp` | `pynescript.mcp` stdio server, `tools`, in-process `call` ([MCP](/pyne/docs/enduser/guides/mcp)) |
 
 ## Interface surface
 
@@ -78,11 +79,13 @@ pyne <command> --help
 | `compile PATH` | file | emit Python or compile-check |
 | `prewarm [PATH…]` | optional files | warm Numba / IR cache |
 | `run PATH` | file | synthetic-bar execute |
+| `execute PATH` | file | `Runtime.run` JSON (`--mode interpret\|compile\|auto`) |
+| `symbols` / `parity` / `diagnostics` / `builtin` | file / name | MCP-backed JSON |
 | `optimize PATH` | file + `--space` JSON | strategy hyperparameter search |
 | `data SYMBOL` | symbol + provider opts | table / json / csv |
 | `runner …` | file / id | hosted deploy + tick ([runner](/pyne/docs/api/endpoints/runner)) |
 | `info` | — | version + extras |
-| `mcp` | — | stdio MCP server; `pyne mcp config` prints client JSON |
+| `mcp` | — | stdio MCP server; `config` / `tools` / `call TOOL` |
 
 **Not** part of this Click group: language server — use **`pyne-lsp`** (alias `pynescript-lsp`). MCP also has console script **`pyne-mcp`**.
 

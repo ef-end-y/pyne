@@ -23,6 +23,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pynescript.mcp.catalog import TOOL_NAMES
+from pynescript.mcp.dispatch import call_tool
+from pynescript.mcp.dispatch import parse_kv
+from pynescript.mcp.dispatch import resolve_tool_name
 from pynescript.mcp.ops.builtins import lookup_builtin
 from pynescript.mcp.ops.compile import compile_source
 from pynescript.mcp.ops.compile import run_synthetic
@@ -239,3 +243,43 @@ def test_jsonable_nan_and_strip_secrets() -> None:
     redacted = strip_secrets({"api_key": "secret", "symbol": "BTC"})
     assert redacted["api_key"] == "***"
     assert redacted["symbol"] == "BTC"
+
+
+def test_resolve_tool_name_aliases() -> None:
+    assert resolve_tool_name("pyne_lint") == "pyne_lint"
+    assert resolve_tool_name("lint") == "pyne_lint"
+    assert resolve_tool_name("pyne-execute") == "pyne_execute"
+    assert resolve_tool_name("not-a-tool") is None
+    assert resolve_tool_name("") is None
+
+
+def test_parse_kv_json_and_string() -> None:
+    assert parse_kv("bars=24") == ("bars", 24)
+    assert parse_kv("mode=interpret") == ("mode", "interpret")
+    assert parse_kv("flag=true") == ("flag", True)
+    assert parse_kv("name=ta.sma") == ("name", "ta.sma")
+
+
+def test_call_tool_lint_and_alias() -> None:
+    named = call_tool("pyne_lint", {"source": MINI})
+    short = call_tool("lint", {"source": MINI})
+    assert named["ok"] is True
+    assert short["ok"] is True
+    assert isinstance(named["findings"], list)
+
+
+def test_call_tool_execute_and_unknown() -> None:
+    executed = call_tool("execute", {"source": MINI, "bars": 16, "mode": "interpret", "sample": 4})
+    assert executed["ok"] is True
+    assert executed["bars"] == 16
+    assert executed["plots"]
+    unknown = call_tool("nope")
+    assert unknown["ok"] is False
+    assert unknown["kind"] == "io"
+    assert "pyne_lint" in unknown["tools"]
+
+
+def test_call_tool_covers_catalog() -> None:
+    from pynescript.mcp.dispatch import _handlers
+
+    assert set(_handlers()) == set(TOOL_NAMES)

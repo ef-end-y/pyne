@@ -87,6 +87,8 @@ def test_root_help(runner: CliRunner) -> None:
     assert "download-builtins" in out
     assert "runner" in out
     assert "mcp" in out
+    assert "execute" in out
+    assert "symbols" in out
     assert "pyne check" in out
     assert "pynescript remains a compatibility alias" in out
     # Windows GH runners default to cp1252; Click --help must not use → / —.
@@ -313,6 +315,113 @@ def test_mcp_help(runner: CliRunner) -> None:
     r = runner.invoke(cli, ["mcp", "--help"])
     assert r.exit_code == 0
     assert "config" in r.output
+    assert "tools" in r.output
+    assert "call" in r.output
+
+
+def test_mcp_tools_list(runner: CliRunner) -> None:
+    r = runner.invoke(cli, ["mcp", "tools"])
+    assert r.exit_code == 0, r.output
+    assert "pyne_lint" in r.output
+    assert "pyne_execute" in r.output
+    r2 = runner.invoke(cli, ["mcp", "tools", "--json"])
+    assert r2.exit_code == 0
+    names = json.loads(r2.output)
+    assert "pyne_execute" in names
+    assert "pyne_parity" in names
+
+
+def test_mcp_call_lint_and_builtin(runner: CliRunner, pine_file: Path) -> None:
+    r = runner.invoke(cli, ["mcp", "call", "lint", str(pine_file)])
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.output)
+    assert payload["ok"] is True
+    assert isinstance(payload["findings"], list)
+    b = runner.invoke(cli, ["mcp", "call", "builtin", "--name", "ta.sma"])
+    assert b.exit_code == 0, b.output
+    hit = json.loads(b.output)
+    assert hit["ok"] is True
+    assert hit["name"] == "ta.sma"
+
+
+def test_mcp_call_execute(runner: CliRunner, pine_file: Path) -> None:
+    r = runner.invoke(
+        cli,
+        ["mcp", "call", "execute", str(pine_file), "--arg", "bars=16", "--arg", "mode=interpret", "--arg", "sample=4"],
+    )
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.output)
+    assert payload["ok"] is True
+    assert payload["bars"] == 16
+    assert payload["plots"]
+
+
+def test_mcp_call_unknown_tool(runner: CliRunner) -> None:
+    r = runner.invoke(cli, ["mcp", "call", "not-a-real-tool"])
+    assert r.exit_code == 1
+    payload = json.loads(r.output)
+    assert payload["ok"] is False
+    assert payload["kind"] == "io"
+
+
+def test_mcp_call_lint_fails_on_errors(runner: CliRunner, tmp_path: Path) -> None:
+    """``pyne lint`` exits non-zero on errors — the MCP call path must match."""
+    bad = tmp_path / "bad.pine"
+    bad.write_text('//@version=6\nindicator("bad"\nplot(close)\n', encoding="utf-8")
+    r = runner.invoke(cli, ["mcp", "call", "lint", str(bad)])
+    assert r.exit_code == 1, r.output
+    payload = json.loads(r.output)
+    assert payload["error_count"] >= 1
+
+
+def test_execute_cmd(runner: CliRunner, pine_file: Path) -> None:
+    r = runner.invoke(cli, ["execute", str(pine_file), "--bars", "16", "--mode", "interpret"])
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.output)
+    assert payload["ok"] is True
+    assert payload["bars"] == 16
+    assert payload["plots"]
+    assert "compile_ms" not in payload["plots"]
+
+
+def test_execute_cmd_parse_error(runner: CliRunner, tmp_path: Path) -> None:
+    bad = tmp_path / "bad.pine"
+    bad.write_text('//@version=6\nindicator("bad"\nplot(close)\n', encoding="utf-8")
+    r = runner.invoke(cli, ["execute", str(bad), "--mode", "interpret", "--bars", "8"])
+    assert r.exit_code == 1
+    payload = json.loads(r.output)
+    assert payload["ok"] is False
+
+
+def test_symbols_and_diagnostics_cmd(runner: CliRunner, pine_file: Path) -> None:
+    s = runner.invoke(cli, ["symbols", str(pine_file)])
+    assert s.exit_code == 0, s.output
+    outline = json.loads(s.output)
+    assert outline["ok"] is True
+    assert {item["kind"] for item in outline["symbols"]} >= {"plot"}
+    d = runner.invoke(cli, ["diagnostics", str(pine_file)])
+    assert d.exit_code == 0, d.output
+    diag = json.loads(d.output)
+    assert diag["ok"] is True
+    assert isinstance(diag["diagnostics"], list)
+
+
+def test_parity_and_builtin_cmd(runner: CliRunner, tmp_path: Path) -> None:
+    pine = tmp_path / "sma.pine"
+    pine.write_text('//@version=6\nindicator("sma")\nplot(ta.sma(close, 5))\n', encoding="utf-8")
+    p = runner.invoke(cli, ["parity", str(pine), "--bars", "24"])
+    assert p.exit_code == 0, p.output
+    payload = json.loads(p.output)
+    assert payload["ok"] is True
+    assert payload["match"] is True
+    b = runner.invoke(cli, ["builtin", "ta.sma"])
+    assert b.exit_code == 0, b.output
+    hit = json.loads(b.output)
+    assert hit["ok"] is True
+    assert hit["name"] == "ta.sma"
+    miss = runner.invoke(cli, ["builtin", "not.a.real.builtin.zzz"])
+    assert miss.exit_code == 1
+    assert json.loads(miss.output)["ok"] is False
 
 
 # ---------------------------------------------------------------------------

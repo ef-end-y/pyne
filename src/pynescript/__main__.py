@@ -41,7 +41,9 @@ Commands
 - ``data`` — fetch market bars (mock / Yahoo / …)
 - ``download-builtins`` — fetch TradingView builtin Pine templates
 - ``info`` — version and optional extras (numba, rich, …)
-- ``mcp`` — stdio MCP server (``pyne mcp``) and client JSON (``pyne mcp config``)
+- ``execute`` — ``Runtime.run`` (MCP ``pyne_execute``: interpret / compile / auto)
+- ``symbols`` / ``parity`` / ``diagnostics`` / ``builtin`` — MCP-backed JSON tools
+- ``mcp`` — stdio server, client JSON, ``tools``, and in-process ``call``
 
 The Language Server is a **separate** console script (``pyne-lsp`` /
 ``pynescript-lsp``), not a subcommand of this group. See
@@ -61,6 +63,8 @@ import click
 
 # Explicit version: PyPI dist is ``hoox-pyne``; import package is ``pynescript``.
 from pynescript.__about__ import __version__ as _CLI_VERSION
+from pynescript.mcp.cli import mcp_group
+from pynescript.mcp.cli import register_cli_commands
 from pynescript.util.runner_cli import runner_group
 
 
@@ -110,7 +114,11 @@ Examples:
   pyne download-builtins --list
   pyne download-builtins --yes
   pyne info
+  pyne execute script.pine --mode interpret --bars 50
+  pyne builtin ta.sma
   pyne mcp config
+  pyne mcp tools
+  pyne mcp call execute script.pine --arg bars=24
   pyne mcp
 
 \b
@@ -1402,47 +1410,8 @@ def download_builtins_cmd(
 
 
 cli.add_command(runner_group)
-
-
-@cli.group(
-    "mcp",
-    invoke_without_command=True,
-    short_help="MCP server (stdio) and client config JSON.",
-)
-@click.pass_context
-def mcp_group(ctx: click.Context) -> None:
-    """Run the PYNE MCP server over stdio, or print client JSON.
-
-    Requires ``pip install 'hoox-pyne[mcp]'`` to serve. ``pyne mcp config``
-    always prints JSON (no extra needed).
-
-    \b
-    Examples:
-      pyne mcp config
-      pyne mcp config --module
-      pyne mcp
-    """
-    if ctx.invoked_subcommand is None:
-        try:
-            from pynescript.mcp.server import run_stdio
-
-            run_stdio()
-        except ImportError as exc:
-            raise click.ClickException(str(exc)) from exc
-
-
-@mcp_group.command("config", short_help="Print MCP client JSON for Cursor / Claude / Inspector.")
-@click.option(
-    "--module",
-    "use_module",
-    is_flag=True,
-    help="Use python -m pynescript.mcp instead of the pyne-mcp console script.",
-)
-def mcp_config_cmd(use_module: bool) -> None:
-    """Print an ``mcpServers.pyne`` snippet (no secrets)."""
-    from pynescript.mcp.server import client_config
-
-    click.echo(json.dumps(client_config(module=use_module), indent=2))
+cli.add_command(mcp_group)
+register_cli_commands(cli)
 
 
 if __name__ == "__main__":

@@ -52,6 +52,10 @@ Clients may enable PYNE MCP and AXIS MCP together.
 ```bash
 pip install "hoox-pyne[mcp]"
 pyne mcp config          # print mcpServers JSON
+pyne mcp tools           # catalog names
+pyne mcp call lint script.pine
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
+pyne execute script.pine --mode interpret --bars 50
 pyne mcp                 # stdio (blocks)
 pyne-mcp                 # same as pyne mcp
 python -m pynescript.mcp
@@ -70,6 +74,8 @@ python -m pynescript.mcp
 
 `pyne mcp config --module` uses `python -m pynescript.mcp` instead of the console script.
 
+`pyne mcp call` and `pyne execute` / `symbols` / `parity` / `diagnostics` / `builtin` invoke the same ops in-process and print JSON (no stdio host, no `mcp` extra). TOOL may be `pyne_lint` or the short alias `lint`. Extra arguments: `--arg KEY=VALUE` (JSON-coerced) or `--json '{"bars":50}'`.
+
 Every tool returns `{ "ok": true, ... }` or `{ "ok": false, "error", "kind", "line?", "column?" }`. Pine syntax errors are tool results, not protocol failures. Prefer `source=` (pasted script) over `path=`. Plot series are truncated (last N samples). Default data provider is `mock`. Runner tools use `PYNE_API_URL` / `ADMIN_TOKEN` and hit the network.
 
 Catalog: [MCP tools](/pyne/docs/enduser/reference/mcp-tools).
@@ -77,6 +83,8 @@ Catalog: [MCP tools](/pyne/docs/enduser/reference/mcp-tools).
 ## Internals (repo paths)
 
 - `src/pynescript/mcp/server.py` — `MCPServer`, tool registration
+- `src/pynescript/mcp/dispatch.py` — in-process `call_tool` (CLI `pyne mcp call`)
+- `src/pynescript/mcp/cli.py` — Click `mcp` group + `execute` / `symbols` / `parity` / `diagnostics` / `builtin`
 - `src/pynescript/mcp/ops/` — library-backed operations
 - Extra: `[mcp]` in `pyproject.toml` (`mcp>=2.0,<3`, `lsprotocol`)
 - Entry: `pyne-mcp = pynescript.mcp.__main__:main`

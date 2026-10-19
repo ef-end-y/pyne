@@ -58,17 +58,19 @@ Runner tools read `PYNE_API_URL` / `ADMIN_TOKEN`. They never echo tokens or webh
 
 ## Deeper tools
 
-| Tool | Result |
-| --- | --- |
-| `pyne_parse` | `{version, kind, title, errors[{line,column,message}]}` |
-| `pyne_symbols` | functions, types, enums, `input.*`, plots, `strategy.entry` |
-| `pyne_execute` | `Runtime.run`; caller `ohlcv` rows; truncated plots; strategy extras |
-| `pyne_parity` | interpret vs compile last values (`rtol=1e-5`, `atol=1e-6`) |
-| `pyne_hover` | markdown at 0-based `line` / `character` |
-| `pyne_complete` | completion items at cursor |
-| `pyne_signature` | signature help for the enclosing call |
-| `pyne_builtin` | `builtin_metadata.json` row (`ta.sma`, …) |
-| `pyne_diagnostics` | parse errors + lint in one list |
+These also run from the CLI (`pyne mcp call TOOL`, plus first-class commands where listed).
+
+| Tool | CLI | Result |
+| --- | --- | --- |
+| `pyne_parse` | `pyne mcp call parse PATH` | `{version, kind, title, errors[{line,column,message}]}` |
+| `pyne_symbols` | `pyne symbols PATH` | functions, types, enums, `input.*`, plots, `strategy.entry` |
+| `pyne_execute` | `pyne execute PATH` | `Runtime.run`; caller `ohlcv` rows; truncated plots; strategy extras |
+| `pyne_parity` | `pyne parity PATH` | interpret vs compile last values (`rtol=1e-5`, `atol=1e-6`) |
+| `pyne_hover` | `pyne mcp call hover PATH --arg line=0 --arg character=0` | markdown at 0-based `line` / `character` |
+| `pyne_complete` | `pyne mcp call complete PATH` | completion items at cursor |
+| `pyne_signature` | `pyne mcp call signature PATH` | signature help for the enclosing call |
+| `pyne_builtin` | `pyne builtin ta.sma` | `builtin_metadata.json` row (`ta.sma`, …) |
+| `pyne_diagnostics` | `pyne diagnostics PATH` | parse errors + lint in one list |
 
 `pyne_execute` plot cells: `{len, last, na_count, sample}` (`sample` default 8, max 64). Timeout default 30s, cap 120s. Bars cap 5000.
 
