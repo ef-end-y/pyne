@@ -396,25 +396,47 @@ class OscillatorIndicators(TechnicalHelpers):
 
         return {"is_oversold": is_oversold, "is_overbought": is_overbought, "rsi": rsi_current}
 
-    def _builtin_ta_rsi_divergence(self, args: list[Any]) -> list[float | None]:
-        """RSI Divergence Detector."""
+    def _builtin_ta_rsi_divergence(self, args: list[Any]) -> Any:
+        """RSI Divergence Detector.
+
+        Last-(period+1) min/max of numeric RSI scaled to [-1, 1]:
+        ``(rsi - min) / (max - min) * 2 - 1``. 0.0 while ``i < period``,
+        when fewer than 2 numeric values are in the window, when the current
+        sample is non-numeric, or when the range is 0. Bar-mode incremental
+        returns the last sample.
+        """
         if len(args) < BINARY:
             msg = "ta.rsi_divergence() requires 2 arguments: rsi_series, period"
             self._error(msg)
 
-        rsi_series = args[0] if isinstance(args[0], list) else [args[0]]
         period = self._expect_int(args[1], "ta.rsi_divergence period must be integer")
 
-        divergence_values = []
+        if self._use_incremental_ta():
+            return self._rsi_divergence_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        rsi_series = self._as_series(args[0])
+        divergence_values: list[float] = []
         for i in range(len(rsi_series)):
             if i < period:
                 divergence_values.append(0.0)
                 continue
 
             start_idx = max(0, i - period)
-            rsi_values = [rsi_series[j] for j in range(start_idx, i + 1) if rsi_series[j] is not None]
+            rsi_values: list[float] = []
+            for j in range(start_idx, i + 1):
+                v = self._finite_or_none(rsi_series[j])
+                if v is not None:
+                    rsi_values.append(v)
 
             if len(rsi_values) < BINARY:
+                divergence_values.append(0.0)
+                continue
+
+            cur = self._finite_or_none(rsi_series[i])
+            if cur is None:
                 divergence_values.append(0.0)
                 continue
 
@@ -423,13 +445,13 @@ class OscillatorIndicators(TechnicalHelpers):
             rsi_range = rsi_max - rsi_min
 
             if rsi_range > 0:
-                divergence = (rsi_series[i] - rsi_min) / rsi_range * BINARY - 1
+                divergence = (cur - rsi_min) / rsi_range * BINARY - 1
             else:
                 divergence = 0.0
 
             divergence_values.append(divergence)
 
-        return divergence_values
+        return self._finalize_series(divergence_values)
 
     def _builtin_ta_macd_signal(self, args: list[Any]) -> float | None:
         """MACD Signal Strength."""

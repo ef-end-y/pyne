@@ -5921,3 +5921,176 @@ plot(ta.stoch_smooth(high, low, close, 5, 3, 3), "ss5")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: rsi_divergence incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _rsi_divergence_last(full: Any) -> float | None:
+    if full is None:
+        return None
+    if isinstance(full, list):
+        if not full:
+            return None
+        last = full[-1]
+    else:
+        last = full
+    if isinstance(last, float) and math.isnan(last):
+        return None
+    return last
+
+
+def _bar_walk_full_rsi_divergence(src: list[Any], period: int) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        _rsi_divergence_last(ev._builtin_ta_rsi_divergence([src[: i + 1], period]))
+        for i in range(len(src))
+    ]
+
+
+def _bar_walk_inc_rsi_divergence(src: list[Any], period: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._rsi_divergence_inc_update(src[: i + 1], period))
+    return out
+
+
+def test_incremental_rsi_divergence_matches_full() -> None:
+    src = _series(120)
+    for period in (5, 14, 20, 1):
+        _assert_series_close(
+            _bar_walk_inc_rsi_divergence(src, period),
+            _bar_walk_full_rsi_divergence(src, period),
+        )
+
+
+def test_incremental_rsi_divergence_warmup() -> None:
+    src = _series(40)
+    period = 14
+    got = _bar_walk_inc_rsi_divergence(src, period)
+    exp = _bar_walk_full_rsi_divergence(src, period)
+    for i in range(period):
+        assert got[i] == 0.0, f"warmup bar {i}: expected 0.0, got {got[i]}"
+        assert exp[i] == 0.0, f"full warmup bar {i}: expected 0.0, got {exp[i]}"
+    assert got[period] != 0.0
+    _assert_series_close(got, exp)
+
+
+def test_incremental_rsi_divergence_na_in_window() -> None:
+    """None / NaN in the last-(period+1) window matches full recompute last sample."""
+    src: list[float | None] = list(_series(80))
+    src[20] = None
+    src[35] = None
+    src[48] = math.nan
+    mixed: list[float | None] = [None, None, 1.0, 3.0, None, 2.0, 5.0, None, 4.0, 0.5, 6.0, None]
+    for period in (5, 14):
+        _assert_series_close(
+            _bar_walk_inc_rsi_divergence(src, period),
+            _bar_walk_full_rsi_divergence(src, period),
+        )
+    for period in (3, 5, 7):
+        _assert_series_close(
+            _bar_walk_inc_rsi_divergence(mixed, period),
+            _bar_walk_full_rsi_divergence(mixed, period),
+        )
+
+
+def test_incremental_rsi_divergence_zero_range() -> None:
+    """Constant window (max==min) yields 0.0 after warmup, matching full recompute."""
+    src = [50.0] * 40
+    period = 10
+    got = _bar_walk_inc_rsi_divergence(src, period)
+    exp = _bar_walk_full_rsi_divergence(src, period)
+    for i, (g, e) in enumerate(zip(got, exp, strict=True)):
+        assert g == 0.0, f"inc bar {i}: expected 0.0, got {g}"
+        assert e == 0.0, f"full bar {i}: expected 0.0, got {e}"
+    # Two distinct values → last sample at the high end is +1.
+    step = [10.0] * 12 + [20.0]
+    got_step = _bar_walk_inc_rsi_divergence(step, 5)
+    exp_step = _bar_walk_full_rsi_divergence(step, 5)
+    _assert_series_close(got_step, exp_step)
+    assert got_step[-1] == pytest.approx(1.0)
+
+
+def test_incremental_rsi_divergence_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._rsi_divergence_inc_update(src[: i + 1], 10)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_rsi_divergence_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_rsi_divergence([prefix, 14])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_rsi_divergence_two_call_sites_independent() -> None:
+    src = _series(80)
+    ev = _IncTA()
+    a_out: list[float | None] = []
+    b_out: list[float | None] = []
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._rsi_divergence_inc_update(prefix, 14))
+        b_out.append(ev._rsi_divergence_inc_update(prefix, 5))
+    _assert_series_close(a_out, _bar_walk_full_rsi_divergence(src, 14))
+    _assert_series_close(b_out, _bar_walk_full_rsi_divergence(src, 5))
+
+
+def test_runtime_rsi_divergence_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("rsi_divergence")
+plot(ta.rsi_divergence(close, 14), "div")
+plot(ta.rsi_divergence(close, 5), "div5")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"div", "div5"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

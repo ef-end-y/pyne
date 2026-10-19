@@ -1161,6 +1161,51 @@ class TechnicalHelpers:
         st["value"] = d_val
         return d_val
 
+    def _rsi_divergence_inc_update(
+        self,
+        series: list[Any],
+        period: int,
+    ) -> float:
+        """Incremental RSI divergence matching full ``ta.rsi_divergence``.
+
+        Last-(period+1) min/max scaled to [-1, 1]:
+        ``(rsi - min) / (max - min) * 2 - 1``. 0.0 while ``i < period``, when
+        fewer than 2 numeric values are in the window, when the current sample
+        is non-numeric, or when the range is 0. One call-site slot every bar,
+        including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n < 1:
+            return 0.0
+        key = ("rsi_divergence", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "w": deque(maxlen=n + 1),
+                "count": 0,
+                "value": 0.0,
+            }
+            bucket[key] = st
+        x = self._finite_or_none(self._series_last(series))
+        w: deque[float | None] = st["w"]
+        w.append(x)
+        st["count"] = int(st["count"]) + 1
+        if int(st["count"]) <= n:
+            st["value"] = 0.0
+            return 0.0
+        vals = [v for v in w if v is not None]
+        if len(vals) < 2 or x is None:
+            st["value"] = 0.0
+            return 0.0
+        lo = min(vals)
+        hi = max(vals)
+        rng = hi - lo
+        val = (x - lo) / rng * 2.0 - 1.0 if rng > 0 else 0.0
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
