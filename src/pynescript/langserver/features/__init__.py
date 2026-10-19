@@ -38,6 +38,7 @@ Modules:
 - :mod:`.symbols` — ``textDocument/documentSymbol``
 - :mod:`.semantic_tokens` — ``textDocument/semanticTokens/full``
 - :mod:`.inlay_hints` — ``textDocument/inlayHint``
+- :mod:`.folding` — ``textDocument/foldingRange``
 - :mod:`.convert` — ``workspace/executeCommand`` Convert-to-v6 + code action (incl. W001 QuickFix)
 
 This package re-exports :mod:`.diagnostics` for convenience; other features are

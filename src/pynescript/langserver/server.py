@@ -36,7 +36,7 @@
 - documentHighlight, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
-- inlayHint, semanticTokens/full
+- inlayHint, semanticTokens/full, foldingRange
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
 
 Advertised capabilities come from :func:`pynescript.langserver.config.get_server_capabilities`
@@ -63,6 +63,7 @@ from pynescript.langserver import config
 from pynescript.langserver.features import completion as completion_feature
 from pynescript.langserver.features import convert as convert_feature
 from pynescript.langserver.features import definitions as definitions_feature
+from pynescript.langserver.features import folding as folding_feature
 from pynescript.langserver.features import formatting as formatting_feature
 from pynescript.langserver.features import highlight as highlight_feature
 from pynescript.langserver.features import hover as hover_feature
@@ -451,6 +452,22 @@ class PynescriptLanguageServer(LanguageServer):
                 return cached
             result = inlay_hints_feature.handle_inlay_hints(params, doc.source, tree=doc.ast)
             doc.feature_cache["inlay_hints"] = result
+            return result
+
+        @self.feature(lsp.TEXT_DOCUMENT_FOLDING_RANGE)
+        def text_folding_range(
+            params: lsp.FoldingRangeParams,
+        ) -> list[lsp.FoldingRange]:
+            """Handle textDocument/foldingRange request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return folding_feature.handle_folding_range(params, None)
+            cached = doc.feature_cache.get("folding_range", _MISSING)
+            if cached is not _MISSING:
+                return cached
+            result = folding_feature.handle_folding_range(params, doc.source, tree=doc.ast)
+            doc.feature_cache["folding_range"] = result
             return result
 
         @self.feature(lsp.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL)

@@ -28,6 +28,7 @@ from pynescript.langserver.features.completion import handle_completion_resolve
 from pynescript.langserver.features.convert import handle_code_action
 from pynescript.langserver.features.convert import handle_convert_to_v6
 from pynescript.langserver.features.definitions import handle_definition
+from pynescript.langserver.features.folding import handle_folding_range
 from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
 from pynescript.langserver.features.highlight import handle_document_highlight
@@ -1118,6 +1119,145 @@ class TestSignatureHelpHandler:
         assert handle_signature_help(params, None) is None
 
 
+_FOLD_SOURCE = """//@version=6
+indicator("T")
+
+if close > 0
+    x = 1
+    y = 2
+else if close < 0
+    x = 3
+else
+    x = 4
+
+for i = 0 to 10
+    s = i
+
+for v in array.from(1, 2)
+    t = v
+
+while bar_index < 3
+    n = 1
+
+switch close
+    0 => 0
+    => 1
+
+once bar_index == 0
+    z = 1
+
+f() =>
+    a = 1
+    a
+
+g() => 1
+
+type Point
+    float x
+    float y
+
+enum Side
+    buy
+    sell
+
+//#region foo
+plot(close)
+//#endregion
+
+# region hash
+plot(1)
+# endregion
+"""
+
+
+def _folding_params() -> lsp.FoldingRangeParams:
+    return lsp.FoldingRangeParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+    )
+
+
+def _line_of(source: str, needle: str) -> int:
+    for i, line in enumerate(source.splitlines()):
+        if needle in line:
+            return i
+    msg = f"needle not found: {needle!r}"
+    raise AssertionError(msg)
+
+
+def _fold_starting(ranges: list[lsp.FoldingRange], start_line: int) -> lsp.FoldingRange:
+    matches = [r for r in ranges if r.start_line == start_line]
+    assert matches, f"no fold starting at line {start_line}"
+    return max(matches, key=lambda r: r.end_line)
+
+
+def _assert_block_fold(
+    ranges: list[lsp.FoldingRange],
+    source: str,
+    start_needle: str,
+    last_body_needle: str,
+    next_needle: str | None = None,
+) -> lsp.FoldingRange:
+    start = _line_of(source, start_needle)
+    last_body = _line_of(source, last_body_needle)
+    rng = _fold_starting(ranges, start)
+    assert rng.end_line >= last_body, (start_needle, rng, last_body)
+    if next_needle is not None:
+        nxt = _line_of(source, next_needle)
+        assert rng.end_line < nxt, (start_needle, rng, nxt)
+    return rng
+
+
+class TestFoldingRangeHandler:
+    """Test textDocument/foldingRange for blocks and region comments."""
+
+    def test_handle_folding_range_blocks_and_regions(self) -> None:
+        """if/for/while/switch/once/type/enum/function and //#region folds."""
+        result = handle_folding_range(_folding_params(), _FOLD_SOURCE)
+        assert result
+        src = _FOLD_SOURCE
+
+        _assert_block_fold(result, src, "if close > 0", "x = 4", "for i = 0 to 10")
+        _assert_block_fold(result, src, "else if close < 0", "x = 4", "for i = 0 to 10")
+        _assert_block_fold(result, src, "for i = 0 to 10", "s = i", "for v in")
+        _assert_block_fold(result, src, "for v in", "t = v", "while bar_index")
+        _assert_block_fold(result, src, "while bar_index", "n = 1", "switch close")
+        _assert_block_fold(result, src, "switch close", "=> 1", "once bar_index")
+        _assert_block_fold(result, src, "once bar_index", "z = 1", "f() =>")
+        _assert_block_fold(result, src, "f() =>", "    a", "g() =>")
+        _assert_block_fold(result, src, "type Point", "float y", "enum Side")
+        _assert_block_fold(result, src, "enum Side", "sell", "//#region foo")
+
+        # One-line function is not a fold.
+        g_line = _line_of(src, "g() => 1")
+        assert all(r.start_line != g_line for r in result)
+
+        regions = [r for r in result if r.kind == lsp.FoldingRangeKind.Region]
+        assert len(regions) == 2
+        slash = next(r for r in regions if r.start_line == _line_of(src, "//#region foo"))
+        assert slash.end_line == _line_of(src, "//#endregion")
+        hashed = next(r for r in regions if r.start_line == _line_of(src, "# region hash"))
+        assert hashed.end_line == _line_of(src, "# endregion")
+
+    def test_handle_folding_range_empty_and_unparsed(self) -> None:
+        """Empty source and parse failure return an empty list."""
+        params = _folding_params()
+        assert handle_folding_range(params, "") == []
+        assert handle_folding_range(params, None) == []
+        assert handle_folding_range(params, "this is not valid pine @#$") == []
+        assert handle_folding_range(params, "x = 1", tree=None) == []
+
+    def test_handle_folding_range_reuses_tree(self) -> None:
+        """Passing a pre-parsed tree must not require re-parse of source."""
+        from pynescript.ast.helper import parse
+
+        tree = parse(_FOLD_SOURCE, filename="file:///test.pine")
+        result = handle_folding_range(_folding_params(), source=None, tree=tree)
+        if_fold = _fold_starting(result, _line_of(_FOLD_SOURCE, "if close > 0"))
+        assert if_fold.end_line > if_fold.start_line
+        # Regions come from source lines; omitted when source is None.
+        assert all(r.kind != lsp.FoldingRangeKind.Region for r in result)
+
+
 class TestCapabilities:
     """Advertised capabilities must match implemented handlers only."""
 
@@ -1143,6 +1283,7 @@ class TestCapabilities:
         assert caps.semantic_tokens_provider is not None
         assert caps.semantic_tokens_provider.full is True
         assert caps.semantic_tokens_provider.range is False
+        assert caps.folding_range_provider is True
 
 
 _FOO_SOURCE = """//@version=6
