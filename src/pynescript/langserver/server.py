@@ -37,6 +37,7 @@
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full, foldingRange, selectionRange
+- documentColor / colorPresentation (``#hex`` literals)
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
 
 Advertised capabilities come from :func:`pynescript.langserver.config.get_server_capabilities`
@@ -63,6 +64,7 @@ from pynescript.langserver import config
 from pynescript.langserver.features import completion as completion_feature
 from pynescript.langserver.features import convert as convert_feature
 from pynescript.langserver.features import definitions as definitions_feature
+from pynescript.langserver.features import document_color as document_color_feature
 from pynescript.langserver.features import folding as folding_feature
 from pynescript.langserver.features import formatting as formatting_feature
 from pynescript.langserver.features import highlight as highlight_feature
@@ -481,6 +483,32 @@ class PynescriptLanguageServer(LanguageServer):
             if not doc:
                 return selection_range_feature.handle_selection_range(params, None)
             return selection_range_feature.handle_selection_range(params, doc.source, tree=doc.ast)
+
+        @self.feature(lsp.TEXT_DOCUMENT_DOCUMENT_COLOR)
+        def text_document_color(
+            params: lsp.DocumentColorParams,
+        ) -> list[lsp.ColorInformation]:
+            """Handle textDocument/documentColor request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return document_color_feature.handle_document_color(params, None)
+            cached = doc.feature_cache.get("document_color", _MISSING)
+            if cached is not _MISSING:
+                return cached
+            result = document_color_feature.handle_document_color(params, doc.source, tree=doc.ast)
+            doc.feature_cache["document_color"] = result
+            return result
+
+        @self.feature(lsp.TEXT_DOCUMENT_COLOR_PRESENTATION)
+        def text_color_presentation(
+            params: lsp.ColorPresentationParams,
+        ) -> list[lsp.ColorPresentation]:
+            """Handle textDocument/colorPresentation request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            source = doc.source if doc else None
+            return document_color_feature.handle_color_presentation(params, source)
 
         @self.feature(lsp.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL)
         def text_semantic_tokens(

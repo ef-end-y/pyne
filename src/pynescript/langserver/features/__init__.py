@@ -40,6 +40,7 @@ Modules:
 - :mod:`.inlay_hints` — ``textDocument/inlayHint``
 - :mod:`.folding` — ``textDocument/foldingRange``
 - :mod:`.selection_range` — ``textDocument/selectionRange``
+- :mod:`.document_color` — ``textDocument/documentColor``, ``textDocument/colorPresentation``
 - :mod:`.convert` — ``workspace/executeCommand`` Convert-to-v6 + code action (incl. W001 QuickFix)
 
 This package re-exports :mod:`.diagnostics` for convenience; other features are

@@ -28,6 +28,8 @@ from pynescript.langserver.features.completion import handle_completion_resolve
 from pynescript.langserver.features.convert import handle_code_action
 from pynescript.langserver.features.convert import handle_convert_to_v6
 from pynescript.langserver.features.definitions import handle_definition
+from pynescript.langserver.features.document_color import handle_color_presentation
+from pynescript.langserver.features.document_color import handle_document_color
 from pynescript.langserver.features.folding import handle_folding_range
 from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
@@ -1587,6 +1589,157 @@ class TestSelectionRangeHandler:
         assert chain[0].start.line == _line_of(_SEL_SOURCE, "x = foo + 1")
 
 
+_COLOR_SOURCE = """//@version=6
+indicator("T")
+c1 = #ff0000
+c2 = #00ff00aa
+plot(close, color=#2962FF)
+bgcolor(#22AB94)
+plot(close, title="#ff00ff")
+col = color.red
+"""
+
+
+def _color_params() -> lsp.DocumentColorParams:
+    return lsp.DocumentColorParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+    )
+
+
+def _range_of_hex(source: str, needle: str) -> lsp.Range:
+    idx = source.index(needle)
+    line = source.count("\n", 0, idx)
+    col = idx - (source.rfind("\n", 0, idx) + 1)
+    return lsp.Range(
+        start=lsp.Position(line=line, character=col),
+        end=lsp.Position(line=line, character=col + len(needle)),
+    )
+
+
+def _color_at(infos: list[lsp.ColorInformation], source: str, needle: str) -> lsp.Color:
+    rng = _range_of_hex(source, needle)
+    matches = [info for info in infos if info.range == rng]
+    assert matches, f"no ColorInformation for {needle!r}"
+    return matches[0].color
+
+
+def _assert_rgba(color: lsp.Color, r: int, g: int, b: int, a: int = 255) -> None:
+    assert color.red == r / 255.0
+    assert color.green == g / 255.0
+    assert color.blue == b / 255.0
+    assert color.alpha == a / 255.0
+
+
+class TestDocumentColorHandler:
+    """Test textDocument/documentColor and colorPresentation for #hex literals."""
+
+    def test_handle_document_color_empty_and_unparsed(self) -> None:
+        """Empty source and parse failure return an empty list."""
+        params = _color_params()
+        assert handle_document_color(params, "") == []
+        assert handle_document_color(params, None) == []
+        assert handle_document_color(params, "this is not valid pine @#$") == []
+        assert handle_document_color(params, "x = 1", tree=None) == []
+
+    def test_handle_document_color_hex_literals(self) -> None:
+        """#rrggbb / #rrggbbaa literals become 0-1 RGBA ColorInformation."""
+        result = handle_document_color(_color_params(), _COLOR_SOURCE)
+        src = _COLOR_SOURCE
+        hexes = ("#ff0000", "#00ff00aa", "#2962FF", "#22AB94")
+        assert len(result) == len(hexes)
+        found = {_slice_range(src, info.range) for info in result}
+        assert found == set(hexes)
+        _assert_rgba(_color_at(result, src, "#ff0000"), 0xFF, 0, 0)
+        _assert_rgba(_color_at(result, src, "#00ff00aa"), 0, 0xFF, 0, 0xAA)
+        _assert_rgba(_color_at(result, src, "#2962FF"), 0x29, 0x62, 0xFF)
+        _assert_rgba(_color_at(result, src, "#22AB94"), 0x22, 0xAB, 0x94)
+
+    def test_handle_document_color_skips_strings_and_named(self) -> None:
+        """Quoted hex strings and color.red are not document colors."""
+        result = handle_document_color(_color_params(), _COLOR_SOURCE)
+        texts = [_slice_range(_COLOR_SOURCE, info.range) for info in result]
+        assert "#ff00ff" not in texts
+        assert "color.red" not in texts
+        assert "red" not in texts
+
+    def test_handle_document_color_reuses_tree(self) -> None:
+        """Passing a pre-parsed tree must not require re-parse of source."""
+        from pynescript.ast.helper import parse
+
+        tree = parse(_COLOR_SOURCE, filename="file:///test.pine")
+        result = handle_document_color(_color_params(), source=None, tree=tree)
+        assert len(result) == 4
+        _assert_rgba(_color_at(result, _COLOR_SOURCE, "#ff0000"), 0xFF, 0, 0)
+
+    def test_handle_document_color_rgb_shorthand_on_tree(self) -> None:
+        """#rgb Constants (kind='#') expand each nibble when present on the tree."""
+        from pynescript.ast import node as ast
+
+        lit = ast.Constant(value="#f0a", kind="#")
+        lit.lineno = 1
+        lit.col_offset = 5
+        lit.end_lineno = 1
+        lit.end_col_offset = 9
+        tree = ast.Script(body=[ast.Expr(value=lit)])
+        result = handle_document_color(_color_params(), source=None, tree=tree)
+        assert len(result) == 1
+        _assert_rgba(result[0].color, 0xFF, 0x00, 0xAA)
+        assert result[0].range == lsp.Range(
+            start=lsp.Position(line=0, character=5),
+            end=lsp.Position(line=0, character=9),
+        )
+
+    def test_handle_color_presentation_opaque_hex(self) -> None:
+        """Opaque colors rewrite as #rrggbb at the given range."""
+        rng = _range_of_hex(_COLOR_SOURCE, "#ff0000")
+        params = lsp.ColorPresentationParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            color=lsp.Color(red=1.0, green=0.0, blue=0.0, alpha=1.0),
+            range=rng,
+        )
+        result = handle_color_presentation(params, _COLOR_SOURCE)
+        assert len(result) == 1
+        pres = result[0]
+        assert pres.label == "#ff0000"
+        assert pres.text_edit is not None
+        assert pres.text_edit.range == rng
+        assert pres.text_edit.new_text == "#ff0000"
+
+    def test_handle_color_presentation_alpha_hex(self) -> None:
+        """Alpha ≠ 1 rewrites as #rrggbbaa."""
+        rng = _range_of_hex(_COLOR_SOURCE, "#00ff00aa")
+        params = lsp.ColorPresentationParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            color=lsp.Color(red=0.0, green=1.0, blue=0.0, alpha=0xAA / 255.0),
+            range=rng,
+        )
+        result = handle_color_presentation(params, _COLOR_SOURCE)
+        assert len(result) == 1
+        pres = result[0]
+        assert pres.label == "#00ff00aa"
+        assert pres.text_edit is not None
+        assert pres.text_edit.range == rng
+        assert pres.text_edit.new_text == "#00ff00aa"
+
+    def test_handle_color_presentation_no_document(self) -> None:
+        """Presentation still rewrites hex when the document is missing."""
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=7),
+        )
+        params = lsp.ColorPresentationParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///missing.pine"),
+            color=lsp.Color(red=0.2, green=0.4, blue=0.6, alpha=0.5),
+            range=rng,
+        )
+        result = handle_color_presentation(params, None)
+        assert len(result) == 1
+        assert result[0].label.startswith("#")
+        assert len(result[0].label) == 9
+        assert result[0].text_edit is not None
+        assert result[0].text_edit.new_text == result[0].label
+
+
 class TestCapabilities:
     """Advertised capabilities must match implemented handlers only."""
 
@@ -1614,6 +1767,7 @@ class TestCapabilities:
         assert caps.semantic_tokens_provider.range is False
         assert caps.folding_range_provider is True
         assert caps.selection_range_provider is True
+        assert caps.color_provider is True
 
 
 _FOO_SOURCE = """//@version=6
