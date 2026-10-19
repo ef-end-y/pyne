@@ -1429,6 +1429,46 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _gap_detector_inc_update(
+        self,
+        highs: Any,
+        lows: Any,
+        prev_close: Any,
+    ) -> dict[str, float | int]:
+        """Incremental gap detector matching full ``ta.gap_detector`` last sample.
+
+        Last high/low vs previous close. Zeros while any sample is missing
+        (bar 0 / na prev_close). One call-site slot every bar, including warmup.
+        """
+        self._ta_next_slot()
+        off: dict[str, float | int] = {
+            "gap_size": 0.0,
+            "gap_type": 0,
+            "gap_percent": 0.0,
+        }
+        h = self._finite_or_none(self._series_last(highs))
+        lo = self._finite_or_none(self._series_last(lows))
+        pc = self._finite_or_none(self._series_last(prev_close))
+        if h is None or lo is None or pc is None:
+            return off
+        upside_gap = max(0.0, lo - pc)
+        downside_gap = max(0.0, pc - h)
+        if upside_gap > downside_gap:
+            gap_size = upside_gap
+            gap_type = 1
+            gap_percent = (upside_gap / pc * 100.0) if pc != 0 else 0.0
+        elif downside_gap > 0:
+            gap_size = downside_gap
+            gap_type = -1
+            gap_percent = (downside_gap / pc * 100.0) if pc != 0 else 0.0
+        else:
+            return off
+        return {
+            "gap_size": gap_size,
+            "gap_type": gap_type,
+            "gap_percent": gap_percent,
+        }
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

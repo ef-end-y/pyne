@@ -6828,3 +6828,240 @@ plot(e.breakout_level, "brk14")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: gap_detector incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_GAP_OFF = {"gap_size": 0.0, "gap_type": 0, "gap_percent": 0.0}
+
+
+def _prev_closes(closes: list[Any]) -> list[Any]:
+    """Bar-i previous close: ``None`` on bar 0, else ``closes[i-1]``."""
+    return [None, *closes[:-1]]
+
+
+def _bar_walk_full_gap(
+    highs: list[Any],
+    lows: list[Any],
+    prev_closes: list[Any],
+) -> list[dict[str, Any]]:
+    ev = _FullTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(highs)):
+        out.append(
+            ev._builtin_ta_gap_detector(
+                [highs[: i + 1], lows[: i + 1], prev_closes[i]]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_gap(
+    highs: list[Any],
+    lows: list[Any],
+    prev_closes: list[Any],
+) -> list[dict[str, Any]]:
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._gap_detector_inc_update(
+                highs[: i + 1], lows[: i + 1], prev_closes[i]
+            )
+        )
+    return out
+
+
+def test_incremental_gap_detector_matches_full() -> None:
+    highs, lows, closes = _ohlc(120)
+    prev = _prev_closes(closes)
+    _assert_pattern_close(
+        _bar_walk_inc_gap(highs, lows, prev),
+        _bar_walk_full_gap(highs, lows, prev),
+    )
+
+
+def test_incremental_gap_detector_warmup() -> None:
+    """Missing prev_close (bar 0 / na) is zeros, matching full recompute."""
+    highs = [12.0]
+    lows = [8.0]
+    prev = [None]
+    got = _bar_walk_inc_gap(highs, lows, prev)
+    exp = _bar_walk_full_gap(highs, lows, prev)
+    assert got[0] == _GAP_OFF
+    assert exp[0] == _GAP_OFF
+    _assert_pattern_close(got, exp)
+
+    # Empty last samples → zeros.
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._gap_detector_inc_update([], [], None) == _GAP_OFF
+    assert ev._ta_call_i == 1
+
+
+def test_incremental_gap_detector_no_gap() -> None:
+    """Prev close inside current high/low → type 0 / size 0."""
+    highs = [12.0, 13.0]
+    lows = [8.0, 9.0]
+    prev = [None, 10.0]
+    got = _bar_walk_inc_gap(highs, lows, prev)
+    exp = _bar_walk_full_gap(highs, lows, prev)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _GAP_OFF
+    assert got[-1] == _GAP_OFF
+    assert exp[-1]["gap_type"] == 0
+
+
+def test_incremental_gap_detector_up_gap() -> None:
+    """Current low > prev close → type 1, size = low - prev_close."""
+    highs = [12.0, 15.0]
+    lows = [8.0, 12.0]
+    prev = [None, 10.0]
+    got = _bar_walk_inc_gap(highs, lows, prev)
+    exp = _bar_walk_full_gap(highs, lows, prev)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _GAP_OFF
+    assert got[-1]["gap_type"] == 1
+    assert got[-1]["gap_size"] == pytest.approx(2.0)
+    assert got[-1]["gap_percent"] == pytest.approx(20.0)
+    assert exp[-1]["gap_type"] == 1
+
+
+def test_incremental_gap_detector_down_gap() -> None:
+    """Current high < prev close → type -1, size = prev_close - high."""
+    highs = [12.0, 8.0]
+    lows = [8.0, 5.0]
+    prev = [None, 10.0]
+    got = _bar_walk_inc_gap(highs, lows, prev)
+    exp = _bar_walk_full_gap(highs, lows, prev)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _GAP_OFF
+    assert got[-1]["gap_type"] == -1
+    assert got[-1]["gap_size"] == pytest.approx(2.0)
+    assert got[-1]["gap_percent"] == pytest.approx(20.0)
+    assert exp[-1]["gap_type"] == -1
+
+
+def test_incremental_gap_detector_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup."""
+    highs, lows, closes = _ohlc(40)
+    prev = _prev_closes(closes)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._gap_detector_inc_update(highs[: i + 1], lows[: i + 1], prev[i])
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_gap_detector_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    highs, lows, closes = _ohlc(30)
+    prev = _prev_closes(closes)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_gap_detector(
+            [highs[: i + 1], lows[: i + 1], prev[i]]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_gap_detector_two_call_sites_independent() -> None:
+    highs, lows, closes = _ohlc(80)
+    prev_a = _prev_closes(closes)
+    prev_b = [None, *([c + 5.0 for c in closes[:-1]])]
+    ev = _IncTA()
+    a_out: list[dict[str, Any]] = []
+    b_out: list[dict[str, Any]] = []
+    for i in range(len(highs)):
+        prefix_h = highs[: i + 1]
+        prefix_l = lows[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._gap_detector_inc_update(prefix_h, prefix_l, prev_a[i]))
+        b_out.append(ev._gap_detector_inc_update(prefix_h, prefix_l, prev_b[i]))
+    _assert_pattern_close(a_out, _bar_walk_full_gap(highs, lows, prev_a))
+    _assert_pattern_close(b_out, _bar_walk_full_gap(highs, lows, prev_b))
+
+
+def test_runtime_gap_detector_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Inject an up-gap (bar 20 low > bar 19 close) and a down-gap (bar 40).
+    bars[19] = {
+        "open": 10.5,
+        "high": 11.0,
+        "low": 9.5,
+        "close": 10.0,
+        "volume": 1019,
+        "time": 1_700_000_000 + 19 * 86_400,
+    }
+    bars[20] = {
+        "open": 12.5,
+        "high": 15.0,
+        "low": 12.0,
+        "close": 13.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    bars[39] = {
+        "open": 10.5,
+        "high": 11.0,
+        "low": 9.5,
+        "close": 10.0,
+        "volume": 1039,
+        "time": 1_700_000_000 + 39 * 86_400,
+    }
+    bars[40] = {
+        "open": 7.5,
+        "high": 8.0,
+        "low": 5.0,
+        "close": 6.0,
+        "volume": 1040,
+        "time": 1_700_000_000 + 40 * 86_400,
+    }
+    src = """//@version=5
+indicator("gap detector")
+g = ta.gap_detector(high, low, close[1])
+h = ta.gap_detector(high, low, close)
+plot(g.gap_size, "size")
+plot(g.gap_type, "gtype")
+plot(g.gap_percent, "pct")
+plot(h.gap_type, "htype")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"size", "gtype", "pct", "htype"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"

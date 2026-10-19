@@ -114,8 +114,15 @@ class PatternIndicators(TechnicalHelpers):
             msg = "ta.gap_detector() requires 3 arguments: high, low, prev_close"
             self._error(msg)
 
-        highs = args[0] if isinstance(args[0], list) else [args[0]]
-        lows = args[1] if isinstance(args[1], list) else [args[1]]
+        if self._use_incremental_ta():
+            return self._gap_detector_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+            )
+
+        highs = self._as_series(args[0])
+        lows = self._as_series(args[1])
         prev_close = float(args[2]) if isinstance(args[2], (int, float)) else None
 
         if not highs or not lows or prev_close is None:
