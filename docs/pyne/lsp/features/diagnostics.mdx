@@ -19,7 +19,7 @@
 
 ---
 title: "Diagnostics"
-description: "Push and pull diagnostics: parse errors, lint rules, severity mapping, and code-action stubs."
+description: "Push and pull diagnostics: parse errors, lint rules, severity mapping, and the W001 QuickFix."
 ---
 
 # Diagnostics
@@ -102,12 +102,12 @@ On exception from `parse`:
 
 ### Quick fixes (feature module)
 
-`create_quick_fix` (not yet fully wired through `workspace/executeCommand` / codeAction handlers in `server.py`):
+`create_quick_fix` is wired through `textDocument/codeAction` (`server.py` → `convert.handle_code_action`) for **W001**:
 
-- **W001** → insert `//@version=6\n` at document start
-- **C002** (long line) → suggest format document command
+- **W001** (missing `//@version`) → QuickFix inserting `//@version=6\n` at document start (line 0, character 0). Offered even when Convert-to-v6 is also available (undeclared version is treated as v1 for convert).
+- **C002** (long line) → still a stub: suggests the format-document command; not advertised as a code-action kind.
 
-Capability advertises QuickFix / Refactor / SourceOrganizeImports kinds for future wiring.
+Capability advertises `QuickFix` and `RefactorRewrite` (Convert-to-v6). A v6 script that already has `//@version=6` has no W001 and no W001 QuickFix.
 
 ## Invariants and edge cases
 
@@ -127,7 +127,7 @@ indicator("x")
 plot(close)
 ```
 
-If the linter emits a missing-version warning (code `W001`), the client receives a Warning diagnostic on the relevant line with `source: "PineScript"` and may offer the version-header quick fix when code actions are connected.
+If the linter emits a missing-version warning (code `W001`), the client receives a Warning diagnostic on the relevant line with `source: "PineScript"`. `textDocument/codeAction` also returns a preferred QuickFix that inserts `//@version=6` at the top of the buffer.
 
 On a hard parse failure at line 3, expect:
 

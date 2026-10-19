@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP W001 QuickFix.** `textDocument/codeAction` inserts `//@version=6` at the document start when the version pragma is missing. Advertised as `QuickFix` alongside Convert-to-v6 `RefactorRewrite`.
 - **LSP rename across open workspace documents.** `textDocument/rename` updates the ident in every currently open document that contains that Pine ident (same rules: no keywords / builtin namespaces; valid Pine ident). Documents that are not open are not in the workspace edit. `prepareRename` stays the cursor document's ident range.
 - **LSP document highlight and rename** — `textDocument/documentHighlight`, `textDocument/prepareRename`, and `textDocument/rename` for user identifiers (character-precise). Keywords and builtin namespaces (`ta`, `strategy`, `math`, …) are not renamed. Advertised via `documentHighlightProvider` and `renameProvider` (`prepareProvider`).
 - **Compile-mode realtime multi-pass (D-04).** Object-mode compile honors `Runtime.run` `realtime_ticks` / `realtime_bars` / `realtime_from_bar` / `realtime_last_bar`: last-bar `barstate.isrealtime`, intermediate ticks overwrite the same plot cell, `var` commits once, `varip` re-inits, `once` latches only when confirmed. Numeric nopython stays historical unless the script already forced object mode (an active realtime window re-emits object mode).

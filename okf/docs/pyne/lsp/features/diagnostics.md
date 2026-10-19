@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Diagnostics"
-description: "Push and pull diagnostics: parse errors, lint rules, severity mapping, and code-action stubs."
+description: "Push and pull diagnostics: parse errors, lint rules, severity mapping, and the W001 QuickFix."
 resource: "docs/pyne/lsp/features/diagnostics.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-19T01:10:26Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/diagnostics.mdx"

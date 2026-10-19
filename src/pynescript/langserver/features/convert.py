@@ -17,7 +17,12 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Convert the active Pine document toward v6 (editor command + code action)."""
+"""Convert the active Pine document toward v6 (editor command + code action).
+
+``textDocument/codeAction`` also returns the W001 QuickFix (insert
+``//@version=6``) via :func:`~pynescript.langserver.features.diagnostics.create_quick_fix`
+when the pragma is missing.
+"""
 
 from __future__ import annotations
 
@@ -25,6 +30,8 @@ from typing import Any
 
 from lsprotocol import types as lsp
 
+from pynescript.ast.linter import LintWarning
+from pynescript.langserver.features.diagnostics import create_quick_fix
 from pynescript.util.pine_convert import convert_to_v6
 from pynescript.util.pine_convert import detect_version
 
@@ -69,25 +76,41 @@ def handle_convert_to_v6(source: str | None) -> dict[str, Any]:
 
 
 def handle_code_action(
-    params: lsp.CodeActionParams, source: str | None
+    params: lsp.CodeActionParams,
+    source: str | None,
+    warnings: list[LintWarning] | None = None,
 ) -> list[lsp.CodeAction]:
-    """Offer ``Convert to Pine v6`` when the document is older than v6."""
+    """Offer Convert-to-v6 (older than v6) and a W001 QuickFix (missing pragma)."""
     if not source:
         return []
     declared = detect_version(source)
     from_ver = 1 if declared is None else declared
-    if from_ver >= _V6:
-        return []
     uri = params.text_document.uri
-    payload = convert_payload(source)
-    title = f"Convert Pine v{from_ver} to v6"
-    edit = lsp.WorkspaceEdit(
-        changes={uri: [whole_document_edit(source, payload["source"])]},
-    )
-    return [
-        lsp.CodeAction(
-            title=title,
-            kind=lsp.CodeActionKind.RefactorRewrite,
-            edit=edit,
+    actions: list[lsp.CodeAction] = []
+    if from_ver < _V6:
+        payload = convert_payload(source)
+        title = f"Convert Pine v{from_ver} to v6"
+        edit = lsp.WorkspaceEdit(
+            changes={uri: [whole_document_edit(source, payload["source"])]},
         )
-    ]
+        actions.append(
+            lsp.CodeAction(
+                title=title,
+                kind=lsp.CodeActionKind.RefactorRewrite,
+                edit=edit,
+            )
+        )
+    if declared is None:
+        w001 = None
+        if warnings:
+            w001 = next((w for w in warnings if w.code == "W001"), None)
+        if w001 is None:
+            w001 = LintWarning(
+                code="W001",
+                message="Missing @version declaration. Add '//@version=6' at the top.",
+                line=1,
+            )
+        fix = create_quick_fix(w001, uri, source)
+        if fix is not None:
+            actions.append(fix)
+    return actions

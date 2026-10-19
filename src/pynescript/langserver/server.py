@@ -37,7 +37,7 @@
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full
-- codeAction + ``pynescript.convertToV6`` executeCommand
+- codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
 
 Advertised capabilities come from :func:`pynescript.langserver.config.get_server_capabilities`
 — only list methods that have implementations here.
@@ -294,11 +294,12 @@ class PynescriptLanguageServer(LanguageServer):
 
         @self.feature(lsp.TEXT_DOCUMENT_CODE_ACTION)
         def code_action(params: lsp.CodeActionParams) -> list[lsp.CodeAction]:
-            """Offer Convert-to-v6 when the script is older than v6."""
+            """Offer Convert-to-v6 and a W001 QuickFix (insert ``//@version=6``)."""
             uri = params.text_document.uri
             doc = self.pine_workspace.get_document(uri)
             source = doc.source if doc else None
-            return convert_feature.handle_code_action(params, source)
+            warnings = doc.diagnostics if doc else None
+            return convert_feature.handle_code_action(params, source, warnings)
 
         @self.feature(lsp.TEXT_DOCUMENT_COMPLETION)
         def text_completion(

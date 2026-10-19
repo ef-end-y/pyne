@@ -21,7 +21,7 @@
 
 :func:`get_server_capabilities` is returned from the ``initialize`` handler in
 :mod:`pynescript.langserver.server`. Only declare providers that have working
-handlers. Code actions expose Convert-to-v6.
+handlers. Code actions expose Convert-to-v6 and the W001 QuickFix.
 
 Semantic token type/modifier order in :func:`semantic_token_types` /
 :func:`semantic_token_modifiers` **must** stay aligned with indices used by
@@ -78,7 +78,10 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
         document_formatting_provider=True,
         document_range_formatting_provider=True,
         code_action_provider=lsp.CodeActionOptions(
-            code_action_kinds=[lsp.CodeActionKind.RefactorRewrite],
+            code_action_kinds=[
+                lsp.CodeActionKind.QuickFix,
+                lsp.CodeActionKind.RefactorRewrite,
+            ],
         ),
         execute_command_provider=lsp.ExecuteCommandOptions(
             commands=["pynescript.convertToV6"],

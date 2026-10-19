@@ -974,6 +974,71 @@ class TestConvertToV6:
         )
         assert handle_code_action(params, src) == []
 
+    def test_w001_quickfix_inserts_version_pragma(self) -> None:
+        src = 'indicator("t")\nplot(close)\n'
+        params = lsp.CodeActionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///t.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=0, character=1),
+            ),
+            context=lsp.CodeActionContext(diagnostics=[]),
+        )
+        actions = handle_code_action(params, src)
+        quick = [a for a in actions if a.kind == lsp.CodeActionKind.QuickFix]
+        assert len(quick) == 1
+        action = quick[0]
+        edit = _first_text_edit(action)
+        assert edit.new_text == "//@version=6\n"
+        assert edit.range.start == lsp.Position(line=0, character=0)
+        assert edit.range.end == lsp.Position(line=0, character=0)
+
+    def test_w001_quickfix_hidden_when_version_present(self) -> None:
+        src = '//@version=6\nindicator("t")\nplot(close)\n'
+        params = lsp.CodeActionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///t.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=0, character=1),
+            ),
+            context=lsp.CodeActionContext(diagnostics=[]),
+        )
+        actions = handle_code_action(params, src)
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
+
+    def test_v5_still_offers_convert_not_w001(self) -> None:
+        src = '//@version=5\nindicator("t")\nplot(close)\n'
+        params = lsp.CodeActionParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///t.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=0, character=1),
+            ),
+            context=lsp.CodeActionContext(diagnostics=[]),
+        )
+        actions = handle_code_action(params, src)
+        assert any(a.kind == lsp.CodeActionKind.RefactorRewrite for a in actions)
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
+
+
+def _first_text_edit(action: lsp.CodeAction) -> lsp.TextEdit:
+    """Return the first TextEdit on a code action workspace edit."""
+    edit = action.edit
+    assert edit is not None
+    if edit.document_changes:
+        change = edit.document_changes[0]
+        assert isinstance(change, lsp.TextDocumentEdit)
+        first = change.edits[0]
+        assert isinstance(first, lsp.TextEdit)
+        return first
+    if edit.changes:
+        uri_edits = next(iter(edit.changes.values()))
+        first = uri_edits[0]
+        assert isinstance(first, lsp.TextEdit)
+        return first
+    missing = "code action has no text edit"
+    raise AssertionError(missing)
+
 
 def _position_after(source: str, prefix: str) -> lsp.Position:
     """LSP position immediately after the first occurrence of *prefix*."""
@@ -1065,6 +1130,9 @@ class TestCapabilities:
         assert "(" in triggers
         assert "," in triggers
         assert caps.code_action_provider is not None
+        kinds = list(caps.code_action_provider.code_action_kinds or [])
+        assert lsp.CodeActionKind.QuickFix in kinds
+        assert lsp.CodeActionKind.RefactorRewrite in kinds
         assert caps.execute_command_provider is not None
         assert "pynescript.convertToV6" in (caps.execute_command_provider.commands or [])
         assert caps.hover_provider is True
