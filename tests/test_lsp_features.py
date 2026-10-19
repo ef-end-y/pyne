@@ -1692,9 +1692,27 @@ skip3 = color(color.rgb(1, 2, 3), 50)
 extra = color(color.white, 50, 1)
 """
 
+_COLOR_GRAD_SOURCE = """//@version=6
+indicator("T")
+g = color.from_gradient(5, 0, 10, #000000, #ffffff)
+g2 = color.from_gradient(50, 0, 100, color.red, color.green)
+g3 = color.from_gradient(0, 0, 100, "#ff0000", #00ff00aa)
+g4 = color.from_gradient(value=99, bottom_value=0, top_value=10, bottom_color=#000000, top_color=#ffffff)
+g5 = color.from_gradient(5, 5, 5, color.black, color.white)
+g6 = color.from_gradient(-5, -10, 10, #ff0000, #00ff00)
+kw = color.from_gradient(bottom_color=color.blue, top_color=color.yellow, value=25, bottom_value=0, top_value=100)
+py = color.from_gradient(value=5, min_val=0, max_val=10, color1=#111111, color2=#eeeeee)
+skip = color.from_gradient(close, 0, 100, color.red, color.green)
+skip2 = color.from_gradient(50, lo, 100, color.red, color.green)
+skip3 = color.from_gradient(50, 0, 100, color.rgb(1, 2, 3), color.green)
+skip4 = color.from_gradient(50, 0, 100, color.red)
+skip5 = color.from_gradient(50, 0, 100, color.red, color.green, 1)
+one = color.from_gradient(50, 0, 100, x, color.green)
+"""
+
 
 class TestDocumentColorHandler:
-    """Test textDocument/documentColor and colorPresentation for #hex, color.*, rgb, color.new / color()."""
+    """Test documentColor / colorPresentation for #hex, color.*, rgb, new, color(), from_gradient."""
 
     def test_handle_document_color_empty_and_unparsed(self) -> None:
         """Empty source and parse failure return an empty list."""
@@ -1844,6 +1862,100 @@ class TestDocumentColorHandler:
         assert "color(color.white, t)" not in texts
         assert "color(color.rgb(1, 2, 3), 50)" not in texts
         assert "color(color.white, 50, 1)" not in texts
+
+    def test_handle_document_color_from_gradient_literals(self) -> None:
+        """color.from_gradient interpolates RGBA when all five args are literals."""
+        src = _COLOR_GRAD_SOURCE
+        result = handle_document_color(_color_params(), src)
+        # 5 in [0, 10] black→white: int(255 * 0.5) = 127
+        _assert_rgba(
+            _color_at(result, src, "color.from_gradient(5, 0, 10, #000000, #ffffff)"),
+            127,
+            127,
+            127,
+        )
+        # 50 in [0, 100] color.red (#F23645) → color.green (#22AB94)
+        _assert_rgba(
+            _color_at(result, src, "color.from_gradient(50, 0, 100, color.red, color.green)"),
+            138,
+            112,
+            108,
+        )
+        # value == min → color1; quoted hex + #rrggbbaa token
+        _assert_rgba(
+            _color_at(result, src, 'color.from_gradient(0, 0, 100, "#ff0000", #00ff00aa)'),
+            0xFF,
+            0,
+            0,
+        )
+        # value above max clamps to color2 (white)
+        _assert_rgba(
+            _color_at(
+                result,
+                src,
+                "color.from_gradient(value=99, bottom_value=0, top_value=10, bottom_color=#000000, top_color=#ffffff)",
+            ),
+            0xFF,
+            0xFF,
+            0xFF,
+        )
+        # min == max → color1 (black)
+        _assert_rgba(
+            _color_at(result, src, "color.from_gradient(5, 5, 5, color.black, color.white)"),
+            0,
+            0,
+            0,
+        )
+        # unary-minus numeric literals: -5 in [-10, 10] red→lime
+        _assert_rgba(
+            _color_at(result, src, "color.from_gradient(-5, -10, 10, #ff0000, #00ff00)"),
+            191,
+            63,
+            0,
+        )
+        # keyword order + named palette
+        kw_call = (
+            "color.from_gradient(bottom_color=color.blue, top_color=color.yellow,"
+            " value=25, bottom_value=0, top_value=100)"
+        )
+        _assert_rgba(_color_at(result, src, kw_call), 94, 127, 204)
+        # evaluator aliases min_val/max_val/color1/color2
+        _assert_rgba(
+            _color_at(
+                result,
+                src,
+                "color.from_gradient(value=5, min_val=0, max_val=10, color1=#111111, color2=#eeeeee)",
+            ),
+            127,
+            127,
+            127,
+        )
+        found = {_slice_range(src, info.range) for info in result}
+        assert "#000000" in found
+        assert "#ffffff" in found
+        assert "color.red" in found
+        assert "color.green" in found
+        assert '"#ff0000"' in found
+        assert "#00ff00aa" in found
+        assert "color.black" in found
+        assert "color.white" in found
+        assert "#ff0000" in found
+        assert "#00ff00" in found
+        assert "color.blue" in found
+        assert "color.yellow" in found
+        assert "color.rgb(1, 2, 3)" in found
+
+    def test_handle_document_color_from_gradient_skips_non_literals(self) -> None:
+        """from_gradient needs all five args as literals; nested rgb / names skip the call."""
+        src = _COLOR_GRAD_SOURCE
+        result = handle_document_color(_color_params(), src)
+        texts = [_slice_range(src, info.range) for info in result]
+        assert "color.from_gradient(close, 0, 100, color.red, color.green)" not in texts
+        assert "color.from_gradient(50, lo, 100, color.red, color.green)" not in texts
+        assert "color.from_gradient(50, 0, 100, color.rgb(1, 2, 3), color.green)" not in texts
+        assert "color.from_gradient(50, 0, 100, color.red)" not in texts
+        assert "color.from_gradient(50, 0, 100, color.red, color.green, 1)" not in texts
+        assert "color.from_gradient(50, 0, 100, x, color.green)" not in texts
 
     def test_handle_document_color_reuses_tree(self) -> None:
         """Passing a pre-parsed tree must not require re-parse of source."""

@@ -32,6 +32,9 @@ Public handlers: :func:`handle_document_color` and
 - ``color.new(color, transp)`` and the Pine alias ``color(color, transp)``
   when both args are literals (named ``color.*``, ``#hex`` token, or quoted
   hex; transp 0-100)
+- ``color.from_gradient(value, min, max, color1, color2)`` when all five
+  args are literals (numeric value/min/max plus named ``color.*`` /
+  ``#hex`` token / quoted hex)
 
 Each becomes a 0-1 RGBA :class:`~lsprotocol.types.ColorInformation`.
 ``colorPresentation`` rewrites the range as ``#rrggbb`` (or ``#rrggbbaa`` when
@@ -50,6 +53,8 @@ from lsprotocol import types as lsp
 
 from pynescript.ast import node as ast
 from pynescript.ast.evaluator.builtins.color import _NAMED_COLORS
+from pynescript.ast.evaluator.builtins.color import Color as _PineColor
+from pynescript.ast.evaluator.builtins.color import color_from_gradient
 from pynescript.ast.helper import parse
 from pynescript.ast.helper import walk
 
@@ -70,6 +75,25 @@ _RGB_ALIASES = {"r": "red", "g": "green", "b": "blue", "t": "transp"}
 _RGB_KEYS = frozenset(_RGB_POS)
 _NEW_POS = ("color", "transp")
 _NEW_KEYS = frozenset(_NEW_POS)
+_GRAD_ATTR = "from_gradient"
+_GRAD_POS = ("value", "bottom_value", "top_value", "bottom_color", "top_color")
+_GRAD_ALIASES = {
+    "value": "value",
+    "bottom_value": "bottom_value",
+    "bottom": "bottom_value",
+    "min_val": "bottom_value",
+    "min": "bottom_value",
+    "top_value": "top_value",
+    "top": "top_value",
+    "max_val": "top_value",
+    "max": "top_value",
+    "bottom_color": "bottom_color",
+    "color1": "bottom_color",
+    "top_color": "top_color",
+    "color2": "top_color",
+}
+_GRAD_NUM_KEYS = frozenset({"value", "bottom_value", "top_value"})
+_GRAD_COLOR_KEYS = frozenset({"bottom_color", "top_color"})
 
 
 def handle_document_color(
@@ -89,7 +113,8 @@ def handle_document_color(
     Returns:
         Color information for each hex literal, quoted ``"#hex"`` string,
         ``color.*`` name, and literal ``color.rgb`` / ``color.new`` /
-        ``color()`` call (possibly empty). Never ``None``.
+        ``color()`` / ``color.from_gradient`` call (possibly empty). Never
+        ``None``.
     """
     if tree is ...:
         if not source:
@@ -131,14 +156,14 @@ def handle_color_presentation(
 
 
 def _color_info_for_node(node: Any) -> lsp.ColorInformation | None:
-    """Return ColorInformation for a hex / ``color.*`` / ``color.rgb`` / ``color.new`` / ``color()`` node."""
+    """Return ColorInformation for a hex / named / rgb / new / ``color()`` / from_gradient node."""
     color = None
     if isinstance(node, ast.Constant):
         color = _hex_constant_color(node)
     elif isinstance(node, ast.Attribute):
         color = _named_attr_color(node)
     elif isinstance(node, ast.Call):
-        color = _rgb_call_color(node) or _new_call_color(node)
+        color = _rgb_call_color(node) or _new_call_color(node) or _from_gradient_call_color(node)
     if color is None:
         return None
     rng = _node_to_range(node)
@@ -224,6 +249,101 @@ def _is_color_new_func(func: Any) -> bool:
     return False
 
 
+def _from_gradient_call_color(node: ast.Call) -> lsp.Color | None:
+    """Parse ``color.from_gradient`` with five literal args, or ``None``."""
+    func = node.func
+    if not isinstance(func, ast.Attribute) or func.attr != _GRAD_ATTR:
+        return None
+    if not isinstance(func.value, ast.Name) or func.value.id != _COLOR_NS:
+        return None
+    parsed = _from_gradient_literal_args(node.args)
+    if parsed is None:
+        return None
+    value, min_val, max_val, color1, color2 = parsed
+    result = color_from_gradient(
+        value,
+        min_val,
+        max_val,
+        _lsp_color_to_pine(color1),
+        _lsp_color_to_pine(color2),
+    )
+    return lsp.Color(
+        red=result.r / _CHANNEL_MAX,
+        green=result.g / _CHANNEL_MAX,
+        blue=result.b / _CHANNEL_MAX,
+        alpha=result.a / _CHANNEL_MAX,
+    )
+
+
+def _lsp_color_to_pine(color: lsp.Color) -> _PineColor:
+    """Convert a 0-1 LSP Color to a 0-255 Pine :class:`Color`."""
+    return _PineColor(
+        _channel_byte(color.red),
+        _channel_byte(color.green),
+        _channel_byte(color.blue),
+        _channel_byte(color.alpha),
+    )
+
+
+def _from_gradient_literal_args(
+    args: list[Any],
+) -> tuple[float, float, float, lsp.Color, lsp.Color] | None:
+    """Merge positional/keyword ``from_gradient`` literals to (value, min, max, c1, c2)."""
+    nums: dict[str, float] = {}
+    colors: dict[str, lsp.Color] = {}
+    pos_i = 0
+    for arg in args:
+        if not isinstance(arg, ast.Arg):
+            return None
+        key = _grad_arg_key(arg.name, pos_i)
+        if key is None:
+            return None
+        if not arg.name:
+            pos_i += 1
+        if key in nums or key in colors:
+            return None
+        if not _store_grad_arg(key, arg.value, nums, colors):
+            return None
+    if set(nums) != _GRAD_NUM_KEYS or set(colors) != _GRAD_COLOR_KEYS:
+        return None
+    return (
+        nums["value"],
+        nums["bottom_value"],
+        nums["top_value"],
+        colors["bottom_color"],
+        colors["top_color"],
+    )
+
+
+def _grad_arg_key(raw_name: str | None, pos_i: int) -> str | None:
+    """Resolve a ``from_gradient`` arg name or next positional slot."""
+    if raw_name:
+        return _GRAD_ALIASES.get(raw_name)
+    if pos_i >= len(_GRAD_POS):
+        return None
+    return _GRAD_POS[pos_i]
+
+
+def _store_grad_arg(
+    key: str,
+    value: Any,
+    nums: dict[str, float],
+    colors: dict[str, lsp.Color],
+) -> bool:
+    """Store one literal ``from_gradient`` arg; False if the value is not a literal."""
+    if key in _GRAD_NUM_KEYS:
+        num = _literal_number(value)
+        if num is None:
+            return False
+        nums[key] = num
+        return True
+    parsed = _literal_color(value)
+    if parsed is None:
+        return False
+    colors[key] = parsed
+    return True
+
+
 def _literal_color(node: Any) -> lsp.Color | None:
     """Color from a hex / quoted-hex Constant or named ``color.*`` Attribute."""
     if isinstance(node, ast.Constant):
@@ -271,7 +391,14 @@ def _new_literal_args(args: list[Any]) -> tuple[lsp.Color, float] | None:
 
 
 def _literal_number(node: Any) -> float | None:
-    """Return a numeric Constant as float; reject bool and non-literals."""
+    """Return a numeric Constant (or unary ``+/-`` of one) as float."""
+    if isinstance(node, ast.UnaryOp):
+        if isinstance(node.op, ast.USub):
+            num = _literal_number(node.operand)
+            return None if num is None else -num
+        if isinstance(node.op, ast.UAdd):
+            return _literal_number(node.operand)
+        return None
     if not isinstance(node, ast.Constant):
         return None
     value = node.value

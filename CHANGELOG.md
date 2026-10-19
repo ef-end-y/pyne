@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- **LSP documentColor for `color.from_gradient`.** `textDocument/documentColor` reports `color.from_gradient(value, min, max, color1, color2)` as a 0–1 RGBA `ColorInformation` when all five args are literals (numeric value/min/max plus named `color.*` / `#hex` token / quoted hex). Interpolation matches interpret `color.from_gradient` (RGBA lerp, clamp to `[min, max]`, equal min/max → color1). Existing hex / named / `color.rgb` / `color.new` / `color()` paths are unchanged.
+
 ## [0.6.14] — 2026-10-19
 
 ### Added
