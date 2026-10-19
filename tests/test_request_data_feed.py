@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom on resampled HTF bars."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma on resampled HTF bars."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -460,12 +460,13 @@ plot(ta.atr(3), title="catr")
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
 
     def test_nested_ta_still_complex_htf_na(self) -> None:
-        """Nested / 1-arg / 4-arg cci never use htf_simple_ta_resample.
+        """Nested / 4-arg cci never use htf_simple_ta_resample.
 
         Chart pre-eval of nested SMA can occasionally equal an OHLCV sample and
         hit the pre-existing passthrough heuristic — that is not the simple-ta
-        HTF path. Nested ``ta.sma(ta.ema(...))`` and 1-arg / 4-arg ``ta.cci``
-        stay na; 2-arg ``ta.cci(close, n)`` / ``ta.roc`` / ``ta.mom`` are allowlisted.
+        HTF path. Nested ``ta.sma(ta.ema(...))`` and 4-arg ``ta.cci`` stay na;
+        2-arg ``ta.cci(close, n)`` / 1-arg ``ta.cci(n)`` / ``ta.hma`` / ``ta.vwma``
+        are allowlisted.
         """
         from backend.runtime import Runtime
 
@@ -473,12 +474,10 @@ plot(ta.atr(3), title="catr")
         src = """//@version=6
 indicator("t")
 plot(request.security(syminfo.tickerid, "60", ta.sma(ta.ema(close, 3), 3)), title="nested")
-plot(request.security(syminfo.tickerid, "60", ta.cci(5)), title="cci1")
 plot(request.security(syminfo.tickerid, "60", ta.cci(high, low, close, 5)), title="cci4")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
-        assert all(_is_na(x) for x in out["series"]["cci1"])
         assert all(_is_na(x) for x in out["series"]["cci4"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
@@ -536,8 +535,13 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "roc" and m.source == "close" and m.length == 9
         m = match_htf_simple_ta_ast(_expr("ta.mom(hl2, 10)"))
         assert m is not None and m.name == "mom" and m.source == "hl2" and m.length == 10
+        m = match_htf_simple_ta_ast(_expr("ta.hma(close, 14)"))
+        assert m is not None and m.name == "hma" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.vwma(close, 14)"))
+        assert m is not None and m.name == "vwma" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.cci(14)"))
+        assert m is not None and m.name == "cci" and m.source == "hlc3" and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
-        assert match_htf_simple_ta_ast(_expr("ta.cci(14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
@@ -653,6 +657,69 @@ plot(ta.mom(close, 3), title="cmom")
         assert abs(float(hroc[-1]) - float(out["series"]["croc"][-1])) > 1e-6
         assert abs(float(hmom[-1]) - float(out["series"]["cmom"][-1])) > 1e-6
         ccci_day5 = out["series"]["ccci"][5 * 24 : 6 * 24]
+        assert any(not _is_na(v) and abs(float(v) - float(ccci_day5[0])) > 1e-6 for v in ccci_day5)
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_hma_vwma_cci1_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily hma/vwma/1-arg cci."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.hma(close, 3)), title="hhma")
+plot(request.security(syminfo.tickerid, "D", ta.vwma(close, 3)), title="hvwma")
+plot(request.security(syminfo.tickerid, "D", ta.cci(3)), title="hcci1")
+plot(ta.hma(close, 3), title="chma")
+plot(ta.vwma(close, 3), title="cvwma")
+plot(ta.cci(3), title="ccci1")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hhma = out["series"]["hhma"]
+        hvwma = out["series"]["hvwma"]
+        hcci1 = out["series"]["hcci1"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes: list[float] = []
+        daily_vols: list[float] = []
+        daily_tp: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+            hi = max(float(b["high"]) for b in chunk)
+            lo = min(float(b["low"]) for b in chunk)
+            cl = float(chunk[-1]["close"])
+            daily_tp.append((hi + lo + cl) / 3.0)
+        # hma(3)/vwma(3)/cci(3) need 3 HTF samples (hma sqrt(3)=1).
+        assert all(_is_na(x) for x in hhma[1:72])
+        assert all(_is_na(x) for x in hvwma[1:72])
+        assert all(_is_na(x) for x in hcci1[1:72])
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = hhma[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        win3 = daily_closes[-3:]
+        wma3 = (win3[0] * 1.0 + win3[1] * 2.0 + win3[2] * 3.0) / 6.0
+        expect_hma = 2.0 * win3[-1] - wma3
+        assert abs(float(hhma[-1]) - expect_hma) < 1e-9
+        win3_v = daily_vols[-3:]
+        sv = sum(win3_v)
+        expect_vwma = sum(c * v for c, v in zip(win3, win3_v, strict=True)) / sv
+        assert abs(float(hvwma[-1]) - expect_vwma) < 1e-9
+        tp3 = daily_tp[-3:]
+        mean = sum(tp3) / 3.0
+        mean_dev = sum(abs(v - mean) for v in tp3) / 3.0
+        expect_cci = 0.0 if mean_dev == 0.0 else (tp3[-1] - mean) / (0.015 * mean_dev)
+        assert abs(float(hcci1[-1]) - expect_cci) < 1e-9
+        # Not chart-TF passthrough.
+        assert abs(float(hhma[-1]) - float(out["series"]["chma"][-1])) > 1e-6
+        assert abs(float(hvwma[-1]) - float(out["series"]["cvwma"][-1])) > 1e-6
+        ccci_day5 = out["series"]["ccci1"][5 * 24 : 6 * 24]
         assert any(not _is_na(v) and abs(float(v) - float(ccci_day5[0])) > 1e-6 for v in ccci_day5)
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})

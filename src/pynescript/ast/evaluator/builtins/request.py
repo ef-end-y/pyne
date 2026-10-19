@@ -101,7 +101,7 @@ _FUNDAMENTAL_TOKENS = ("DIVIDEND", "FACTSET", "EARNINGS", "ESD_")
 # Matched only when the security expression *AST* is exactly one of these shapes
 # (visit_Call attaches :class:`HtfSimpleTaExpr` before chart pre-eval wins).
 _HTF_SIMPLE_TA_FUNCS = frozenset(
-    {"sma", "ema", "rsi", "atr", "wma", "rma", "cmo", "stdev", "linreg", "cci", "roc", "mom"}
+    {"sma", "ema", "rsi", "atr", "wma", "rma", "cmo", "stdev", "linreg", "cci", "roc", "mom", "hma", "vwma"}
 )
 
 _LOG = logging.getLogger("pynescript.request.security")
@@ -118,7 +118,7 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "(htf_ohlcv_resample, last completed HTF bar by default — not full expression re-eval).",
     "Provider/feed OHLCV that is already coarser than the chart and carries bar times "
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
-    "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom on coarser TF "
+    "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -148,8 +148,8 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom
-    source: str | None  # normalized OHLCV field; None for atr (uses h/l/c)
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma
+    source: str | None  # normalized OHLCV field; None for atr (uses h/l/c); 1-arg cci is hlc3
     length: int
 
 
@@ -177,14 +177,15 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
 
     - ``ta.sma(close, 14)`` / ``ta.ema`` / ``ta.rsi`` / ``ta.wma`` / ``ta.rma``
       / ``ta.cmo`` / ``ta.stdev`` / ``ta.linreg`` / ``ta.cci`` / ``ta.roc`` /
-      ``ta.mom`` — source is a bare OHLCV name (``close``, ``open``, ``high``,
-      ``low``, ``volume``, ``hl2``, …); length is a positive integer literal.
-      ``ta.linreg`` is the 2-arg form (offset 0). ``ta.cci`` is the 2-arg
-      ``(source, length)`` form only.
+      ``ta.mom`` / ``ta.hma`` / ``ta.vwma`` — source is a bare OHLCV name
+      (``close``, ``open``, ``high``, ``low``, ``volume``, ``hl2``, …); length
+      is a positive integer literal. ``ta.linreg`` is the 2-arg form (offset 0).
+      ``ta.cci`` is 2-arg ``(source, length)`` or 1-arg ``(length)`` (hlc3).
     - ``ta.atr(14)`` — length-only form (uses HTF high/low/close).
+    - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
 
     Nested calls (``ta.sma(ta.ema(...), n)``), multi-arg atr, 3-arg linreg,
-    1-arg / 4-arg ``ta.cci``, variables as length, and non-ta callees return
+    4-arg ``ta.cci``, variables as length, and non-ta callees return
     ``None`` (existing complex-na path).
     """
     if type(expr_ast) is not ast_mod.Call:
@@ -203,7 +204,11 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
         return HtfSimpleTaExpr("atr", None, length) if length else None
 
-    # sma / ema / rsi / wma / rma / cmo / stdev / linreg / cci / roc / mom: (source, length)
+    if fname == "cci" and len(arg_nodes) == 1:
+        length = _const_positive_int(arg_nodes[0].value)
+        return HtfSimpleTaExpr("cci", "hlc3", length) if length else None
+
+    # sma / ema / rsi / wma / rma / cmo / stdev / linreg / cci / roc / mom / hma / vwma: (source, length)
     if len(arg_nodes) != 2:  # noqa: PLR2004 - fixed allowlist arity
         return None
     src_node = arg_nodes[0].value
@@ -1398,6 +1403,73 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = acc / denom if ok else None
         return out
 
+    def _htf_hma_full_series(self, src: list[float | None], period: int) -> list[float | None]:
+        """Full-list HMA via interpret ``_hma`` on unique HTF source windows."""
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        hma_fn = getattr(self, "_hma", None)
+        if not callable(hma_fn):
+            return out
+        need = period + max(1, int(math.sqrt(period))) - 1
+        for i in range(need - 1, n):
+            vals = self._htf_finite_window(src[i - need + 1 : i + 1])
+            if vals is None:
+                continue
+            try:
+                v = hma_fn(vals, period)
+                fv = float(v) if v is not None else float("nan")
+            except (TypeError, ValueError):
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
+    @staticmethod
+    def _htf_finite_window(window: list[float | None]) -> list[float] | None:
+        """Strict finite window, or None if any slot is missing/non-numeric."""
+        vals: list[float] = []
+        for v in window:
+            if v is None:
+                return None
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                return None
+            if fv != fv:
+                return None
+            vals.append(fv)
+        return vals
+
+    def _htf_vwma_full_series(
+        self, src: list[float | None], vol: list[float | None], period: int
+    ) -> list[float | None]:
+        """Full-list VWMA on unique HTF source + HTF volume (no LTF invent)."""
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        if not vol or len(vol) < period:
+            sma_fn = getattr(self, "_sma", None)
+            if not callable(sma_fn):
+                return out
+            raw = sma_fn(src, period)
+            return list(raw) if raw is not None else out
+        for i in range(period - 1, n):
+            window_s = src[i + 1 - period : i + 1]
+            window_v = vol[i + 1 - period : i + 1]
+            if any(x is None or y is None for x, y in zip(window_s, window_v, strict=True)):
+                out[i] = None
+                continue
+            try:
+                sp = sum(float(x) * float(y) for x, y in zip(window_s, window_v, strict=True))
+                sv = sum(float(y) for y in window_v)
+            except (TypeError, ValueError):
+                out[i] = None
+                continue
+            out[i] = (sp / sv) if sv else None
+        return out
+
     @staticmethod
     def _htf_stdev_full_series(src: list[float | None], period: int) -> list[float | None]:
         """Full-list sample stdev matching interpret ``_stdev`` (strict window, ddof=1)."""
@@ -1481,10 +1553,11 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     def _htf_cci_full_series(self, src: list[float | None], period: int) -> list[float | None]:
-        """Full-list CCI matching 2-arg interpret ``ta.cci(source, length)``.
+        """Full-list CCI matching interpret ``ta.cci(source, length)``.
 
         Typical price is the named OHLCV field (same as ``_cci(src, src, src, n)``).
-        1-arg / 4-arg CCI stay off this path (matcher arity).
+        1-arg ``ta.cci(n)`` arrives as source ``hlc3`` (HTF typical price).
+        4-arg CCI stays off this path (matcher arity).
         """
         n = len(src)
         out: list[float | None] = [None] * n
@@ -1677,7 +1750,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return []
         name = expr.name
         period = int(expr.length)
-        if name in ("sma", "ema", "rsi", "wma", "rma", "cmo", "stdev", "linreg", "cci", "roc", "mom"):
+        if name in ("sma", "ema", "rsi", "wma", "rma", "cmo", "stdev", "linreg", "cci", "roc", "mom", "hma", "vwma"):
             field = expr.source or "close"
             src = self._htf_source_series(unique, field)
             if name == "sma":
@@ -1701,6 +1774,11 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 return list(raw) if raw is not None else [None] * n
             if name == "wma":
                 return self._htf_wma_full_series(src, period)
+            if name == "hma":
+                return self._htf_hma_full_series(src, period)
+            if name == "vwma":
+                vol = self._htf_source_series(unique, "volume")
+                return self._htf_vwma_full_series(src, vol, period)
             if name == "cmo":
                 return self._htf_cmo_full_series(src, period)
             if name == "stdev":
@@ -1925,6 +2003,11 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         elif name == "wma":
             last = self._htf_wma_full_series(src, period)
             raw = last
+        elif name == "hma":
+            raw = self._htf_hma_full_series(src, period)
+        elif name == "vwma":
+            vol = self._series_chrono_values("volume")
+            raw = self._htf_vwma_full_series(src, vol, period)
         elif name == "cmo":
             raw = self._htf_cmo_full_series(src, period)
         elif name == "stdev":
@@ -2503,8 +2586,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           bar times that align to chart bars → same merge (``provider_htf_ohlcv``).
           Chart-length / no-timestamp provider series stay stubs
           (``provider_ohlcv`` / ``provider_ohlcv_chart_stub``) with unused merge.
-        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom``
-          with bare OHLCV source + const length) on a **coarser** TF → run the
+        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma``
+          with bare OHLCV source + const length; 1-arg ``ta.cci(n)`` uses HTF hlc3) on a **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
         - **Same-symbol + simple OHLCV** otherwise → chart passthrough /
           provider series (``chart_passthrough_htf_stub`` / same-TF eval).
@@ -3214,7 +3297,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
 
     Full chart columns are attached as ``_htf_full_ohlcv`` (same shape Runtime
     uses). TA full-list helpers are bound from the interpret technical mixins
-    so ``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom`` on HTF bars match interpret exactly.
+    so ``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma`` on HTF bars match interpret exactly.
     """
 
     def __init__(
@@ -3245,6 +3328,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         if getattr(self, "_sma", None) is not None:
             return
         from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
+        from pynescript.ast.evaluator.builtins.technical_submodules.moving_averages import MovingAverageIndicators
         from pynescript.ast.evaluator.builtins.technical_submodules.oscillators import OscillatorIndicators
         from pynescript.ast.evaluator.builtins.technical_submodules.volatility import VolatilityIndicators
 
@@ -3252,6 +3336,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         self._sma = TechnicalHelpers._sma.__get__(self, type(self))
         self._ema = TechnicalHelpers._ema.__get__(self, type(self))
         self._rma = TechnicalHelpers._rma.__get__(self, type(self))
+        self._wma = TechnicalHelpers._wma.__get__(self, type(self))
+        self._hma = MovingAverageIndicators._hma.__get__(self, type(self))
         self._atr = VolatilityIndicators._atr.__get__(self, type(self))
         self._cci = OscillatorIndicators._cci.__get__(self, type(self))
         self._roc = OscillatorIndicators._roc.__get__(self, type(self))

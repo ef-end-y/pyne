@@ -220,6 +220,30 @@ plot(ta.cci(close, 3), title="ccci")
         ccci_day5 = sc["series"]["ccci"][5 * 24 : 6 * 24]
         assert any(not _is_na(v) and abs(float(v) - float(ccci_day5[0])) > 1e-6 for v in ccci_day5)
 
+    def test_htf_hma_vwma_cci1_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed hma/vwma/1-arg cci: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.hma(close, 3)), title="hma")
+plot(request.security(syminfo.tickerid, "D", ta.vwma(close, 3)), title="vwma")
+plot(request.security(syminfo.tickerid, "D", ta.cci(3)), title="cci1")
+plot(ta.hma(close, 3), title="chma")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("hma", "vwma", "cci1"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = sc["series"]["hma"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["hma"][-1]) - float(sc["series"]["chma"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
