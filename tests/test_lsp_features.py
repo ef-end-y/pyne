@@ -939,6 +939,107 @@ x = 1
         assert result is not None
         assert result.data == []
 
+    def test_handle_semantic_tokens_range_sma_line(self) -> None:
+        from pynescript.langserver.features.semantic_tokens import handle_semantic_tokens_range
+
+        source = """//@version=5
+indicator("T")
+length = 14
+plot(ta.sma(close, length))
+"""
+        params = lsp.SemanticTokensRangeParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=3, character=0),
+                end=lsp.Position(line=4, character=0),
+            ),
+        )
+        result = handle_semantic_tokens_range(params, source)
+        assert result is not None
+        assert len(result.data) > 0
+        assert len(result.data) % 5 == 0
+
+    def test_handle_semantic_tokens_range_pragma_excludes_ta(self) -> None:
+        from pynescript.langserver.config import semantic_token_types
+        from pynescript.langserver.features.semantic_tokens import handle_semantic_tokens_range
+
+        source = """//@version=5
+indicator("T")
+length = 14
+plot(ta.sma(close, length))
+"""
+        params = lsp.SemanticTokensRangeParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=1, character=0),
+            ),
+        )
+        result = handle_semantic_tokens_range(params, source)
+        assert result is not None
+        assert len(result.data) % 5 == 0
+        ns_index = semantic_token_types().index("namespace")
+        decoded = _decode_semantic_tokens(result.data)
+        assert all(ttype != ns_index for _, _, _, ttype, _ in decoded)
+
+    def test_handle_semantic_tokens_range_empty_unparsed(self) -> None:
+        from pynescript.langserver.features.semantic_tokens import handle_semantic_tokens_range
+
+        params = lsp.SemanticTokensRangeParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=1, character=0),
+            ),
+        )
+        empty = handle_semantic_tokens_range(params, "")
+        missing = handle_semantic_tokens_range(params, None)
+        unparsed = handle_semantic_tokens_range(params, "//@version=5\nplot(ta.")
+        tree_none = handle_semantic_tokens_range(params, "x = 1", tree=None)
+        assert empty is not None and empty.data == []
+        assert missing is not None and missing.data == []
+        assert unparsed is not None and unparsed.data == []
+        assert tree_none is not None and tree_none.data == []
+
+    def test_handle_semantic_tokens_range_is_subsequence_of_full(self) -> None:
+        from pynescript.langserver.features.semantic_tokens import handle_semantic_tokens
+        from pynescript.langserver.features.semantic_tokens import handle_semantic_tokens_range
+
+        source = """//@version=5
+indicator("T")
+length = 14
+plot(ta.sma(close, length))
+"""
+        full_params = lsp.SemanticTokensParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        )
+        range_params = lsp.SemanticTokensRangeParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=3, character=0),
+                end=lsp.Position(line=4, character=0),
+            ),
+        )
+        full = handle_semantic_tokens(full_params, source)
+        clipped = handle_semantic_tokens_range(range_params, source)
+        assert full is not None and clipped is not None
+        full_abs = _decode_semantic_tokens(full.data)
+        range_abs = _decode_semantic_tokens(clipped.data)
+        full_iter = iter(full_abs)
+        for token in range_abs:
+            for candidate in full_iter:
+                if candidate == token:
+                    break
+            else:
+                raise AssertionError(f"range token {token} not a subsequence of full")
+
+    def test_semantic_tokens_range_capability(self) -> None:
+        from pynescript.langserver.config import get_server_capabilities
+
+        caps = get_server_capabilities()
+        assert caps.semantic_tokens_provider is not None
+        assert caps.semantic_tokens_provider.range
+
 
 class TestConvertToV6:
     """Source-level Convert-to-v6 command + code action."""
@@ -2182,11 +2283,26 @@ class TestCapabilities:
         assert caps.rename_provider.prepare_provider is True
         assert caps.semantic_tokens_provider is not None
         assert caps.semantic_tokens_provider.full is True
-        assert caps.semantic_tokens_provider.range is False
+        assert caps.semantic_tokens_provider.range
         assert caps.folding_range_provider is True
         assert caps.selection_range_provider is True
         assert caps.color_provider is True
         assert caps.document_link_provider is True
+
+
+def _decode_semantic_tokens(data: list[int]) -> list[tuple[int, int, int, int, int]]:
+    """Undo LSP delta encoding into absolute (line, col, length, type, mods)."""
+    tokens: list[tuple[int, int, int, int, int]] = []
+    prev_line = 0
+    prev_col = 0
+    for i in range(0, len(data), 5):
+        d_line, d_col, length, ttype, mods = data[i : i + 5]
+        line = prev_line + d_line
+        col = d_col if d_line != 0 else prev_col + d_col
+        tokens.append((line, col, length, ttype, mods))
+        prev_line = line
+        prev_col = col
+    return tokens
 
 
 _FOO_SOURCE = """//@version=6

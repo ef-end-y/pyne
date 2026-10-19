@@ -164,7 +164,7 @@ Engine parity improvements, observability tooling, and documentation refresh.
 
 - **T2 incremental** — `rsi_oversold_overbought`, `zigzag`
 - **HTF allowlist** (D-06) — 1-arg `ta.change(source)` (length defaults to 1) (disk IR v35)
-- **LSP** — `textDocument/documentLink` for http(s) URLs in comments and strings
+- **LSP** — `textDocument/documentLink` for http(s) URLs in comments and strings, `textDocument/semanticTokens/range`
 
 ### 0.6.14 — HTF allowlist, incremental TA, LSP
 

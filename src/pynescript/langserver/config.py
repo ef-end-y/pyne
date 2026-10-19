@@ -99,7 +99,7 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
                 token_types=list(semantic_token_types()),
                 token_modifiers=list(semantic_token_modifiers()),
             ),
-            range=False,
+            range=True,
             full=True,
         ),
     )

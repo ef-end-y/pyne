@@ -36,7 +36,7 @@
 - documentHighlight, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
-- inlayHint, semanticTokens/full, foldingRange, selectionRange
+- inlayHint, semanticTokens/full, semanticTokens/range, foldingRange, selectionRange
 - documentColor / colorPresentation (``#hex`` literals)
 - documentLink (``http(s)`` URLs in comments and string literals)
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
@@ -544,6 +544,19 @@ class PynescriptLanguageServer(LanguageServer):
             result = semantic_tokens_feature.handle_semantic_tokens(params, doc.source, tree=doc.ast)
             doc.feature_cache["semantic_tokens"] = result
             return result
+
+        @self.feature(lsp.TEXT_DOCUMENT_SEMANTIC_TOKENS_RANGE)
+        def text_semantic_tokens_range(
+            params: lsp.SemanticTokensRangeParams,
+        ) -> lsp.SemanticTokens | None:
+            """Handle textDocument/semanticTokens/range request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return semantic_tokens_feature.handle_semantic_tokens_range(params, None)
+            return semantic_tokens_feature.handle_semantic_tokens_range(
+                params, doc.source, tree=doc.ast
+            )
 
     def _schedule_diagnostics(self, uri: str, doc: Any) -> None:
         """Schedule (or re-schedule) a debounced parse+lint+publish for *uri*."""

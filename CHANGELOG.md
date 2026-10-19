@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Added
+
+- **LSP semantic tokens range.** `textDocument/semanticTokens/range` returns the same token legend as `/full`, clipped to the requested range. Empty or unparsed documents return an empty `data` array. Advertised via `semanticTokensProvider.range`.
+
 ## [0.6.17] — 2026-10-19
 
 ### Fixed
