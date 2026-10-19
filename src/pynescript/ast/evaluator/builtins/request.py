@@ -158,7 +158,7 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
     "kama/rising/falling/swma/ao/vwap/cum "
-    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range on coarser TF "
+    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -190,7 +190,7 @@ class HtfSimpleTaExpr:
 
     name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum
     source: str | None  # OHLCV field; None for atr/wpr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
-    length: int  # swma stores 4; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum store 0 (cumulative)
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum store 0 (cumulative)
     extra: int | None = None  # 1-arg/2-arg ao: fast; 3-arg linreg: offset; else None
 
 
@@ -239,7 +239,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       ``(source, length, offset)`` with a non-negative int offset stored in
       ``extra``. ``ta.cci`` is 2-arg
       ``(source, length)`` or 1-arg ``(length)`` (hlc3). ``ta.change`` is the
-      2-arg form (not ``close[n]`` history offset). ``ta.kama`` is the 2-arg
+      2-arg form (not ``close[n]`` history offset) or 1-arg source (length
+      defaults to 1). ``ta.kama`` is the 2-arg
       form (Kaufman fast=2, slow=30). ``ta.swma`` is 1-arg source (fixed
       4-period).
     - ``ta.atr(14)`` — length-only form (uses HTF high/low/close).
@@ -260,17 +261,20 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       ``length`` is 0. 2-arg anchor / 3-arg bands stay unmatched.
     - ``ta.cum(close)`` — 1-arg source Name. Running sum on unique HTF bars.
       ``length`` is 0.
+    - ``ta.change(close)`` — 1-arg source Name. Length defaults to 1
+      (``src - src[1]`` on unique HTF bars). Nested ``ta.change(ta.sma(...))``
+      stays unmatched.
 
     Nested calls (``ta.sma(ta.ema(...), n)`` / ``ta.highest(ta.sma(...), n)`` /
     ``ta.median(ta.sma(...), n)`` / ``ta.mode(ta.sma(...), n)`` /
     ``ta.cog(ta.sma(...), n)`` / ``ta.highestbars(ta.sma(...), n)`` /
     ``ta.kama(ta.sma(...), n)`` / ``ta.rising(ta.sma(...), n)`` /
     ``ta.swma(ta.sma(...))`` / ``ta.vwap(ta.sma(...))`` /
-    ``ta.cum(ta.sma(...))`` /
+    ``ta.cum(ta.sma(...))`` / ``ta.change(ta.sma(...))`` /
     ``ta.linreg(ta.sma(...), n, offset)``), multi-arg
     atr, 4-arg ``ta.cci`` / ``ta.wpr``, 1-arg ``ta.median`` /
     ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
-    ``ta.percentrank`` / ``ta.change`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
+    ``ta.percentrank`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
     1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``,
     variables as length, and non-ta
@@ -330,6 +334,15 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if src is None:
             return None
         return HtfSimpleTaExpr("swma", src, 4)
+
+    if fname == "change" and len(arg_nodes) == 1:
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        if src is None:
+            return None
+        return HtfSimpleTaExpr("change", src, 1)
 
     if fname == "ao":
         if not arg_nodes:
@@ -3512,7 +3525,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           ``ta.ao(fast, slow)`` uses HTF hl2 at those periods;
           3-arg ``ta.linreg(source, n, offset)`` honors ``extra`` as offset;
           2-arg ``ta.kama`` uses Kaufman fast=2, slow=30;
-          1-arg ``ta.cum(source)`` is the running sum on unique HTF bars) on a
+          1-arg ``ta.cum(source)`` is the running sum on unique HTF bars;
+          1-arg ``ta.change(source)`` defaults length to 1) on a
           **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
         - **Same-symbol + simple OHLCV** otherwise → chart passthrough /
@@ -4228,8 +4242,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     / ``mode`` / ``percentrank`` / ``change`` / ``cog`` / ``highestbars`` /
     ``lowestbars`` / ``kama`` / ``rising`` / ``falling`` / ``swma`` / ``ao`` /
     ``vwap`` / ``cum`` and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` /
-    ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` on HTF bars match
-    interpret exactly.
+    ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` / ``ta.change`` on HTF
+    bars match interpret exactly.
     """
 
     def __init__(

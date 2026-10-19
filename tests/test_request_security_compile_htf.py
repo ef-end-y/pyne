@@ -492,6 +492,26 @@ plot(ta.ao(3), title="cao1")
         assert abs(float(sc["series"]["cum"][-1]) - float(sc["series"]["ccum"][-1])) > 1e-6
         assert abs(float(sc["series"]["ao1"][-1]) - float(sc["series"]["cao1"][-1])) > 1e-6
 
+    def test_htf_change1_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 1-arg ta.change(close): compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.change(close)), title="chg1")
+plot(ta.change(close), title="cchg1")
+"""
+        si, sc = _run_both(src, bars)
+        _assert_series_match(si, sc, "chg1")
+        finite = [x for x in sc["series"]["chg1"][2 * 24 :] if not _is_na(x)]
+        assert len(finite) > 0
+        assert math.isfinite(float(finite[-1]))
+        day5 = sc["series"]["chg1"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["chg1"][-1]) - float(sc["series"]["cchg1"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -579,6 +599,7 @@ plot(request.security(syminfo.tickerid, "60", ta.vwap(ta.sma(close, 5))), title=
 plot(request.security(syminfo.tickerid, "60", ta.vwap(close, 1)), title="vwap2")
 plot(request.security(syminfo.tickerid, "60", ta.vwap(hlc3, 1, 1)), title="vwap3")
 plot(request.security(syminfo.tickerid, "60", ta.cum(ta.sma(close, 5))), title="cumn")
+plot(request.security(syminfo.tickerid, "60", ta.change(ta.sma(close, 5))), title="chgn")
 """
         si, sc = _run_both(src, bars)
         assert all(_is_na(x) for x in sc["series"]["cci1"])
@@ -588,6 +609,7 @@ plot(request.security(syminfo.tickerid, "60", ta.cum(ta.sma(close, 5))), title="
         assert all(_is_na(x) for x in sc["series"]["vwap2"])
         assert all(_is_na(x) for x in sc["series"]["vwap3"])
         assert all(_is_na(x) for x in sc["series"]["cumn"])
+        assert all(_is_na(x) for x in sc["series"]["chgn"])
         _assert_series_match(si, sc, "cci1")
         _assert_series_match(si, sc, "cci4")
         _assert_series_match(si, sc, "wpr4")
