@@ -5,6 +5,10 @@
 - **LSP documentColor for `color.from_gradient`.** `textDocument/documentColor` reports `color.from_gradient(value, min, max, color1, color2)` as a 0–1 RGBA `ColorInformation` when all five args are literals (numeric value/min/max plus named `color.*` / `#hex` token / quoted hex). Interpolation matches interpret `color.from_gradient` (RGBA lerp, clamp to `[min, max]`, equal min/max → color1). Existing hex / named / `color.rgb` / `color.new` / `color()` paths are unchanged.
 - **Bar-mode incremental `ta.rsi_oversold_overbought` (T2).** Last-sample kernel matches full recompute: last RSI sample vs two int levels → `{is_oversold, is_overbought, rsi}` (`False` / `rsi: None` while the series is empty or the last sample is `na`). Oversold is `rsi < oversold`; overbought is `rsi > overbought`.
 
+### Fixed
+
+- **`request.security` resamples allowlisted `ta.cum(source)` / 1-arg `ta.ao(fast)` on HTF (D-06).** Same-symbol `ta.cum(close)` (running sum on unique HTF bars; `na` as 0) / `ta.ao(5)` (HTF hl2, SMA fast − SMA 34) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*` stay `na`. Disk IR cache v34.
+
 ## [0.6.14] — 2026-10-19
 
 ### Added

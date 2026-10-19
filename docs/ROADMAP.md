@@ -104,7 +104,7 @@ Compile-mode `request.security` matches interpret on allowlisted HTF resample. L
 
 ### 0.6.14 — HTF allowlist, incremental TA, LSP
 
-Allowlisted HTF `ta.*` resample expanded through `vwap` / `ao` / `linreg` offset (disk IR v33). Incremental TA covers `sma_weighted`, `stoch_smooth`, `rsi_divergence`, pattern kernels, `ema_cross_signal`. LSP folding, selectionRange, documentColor, W001/W002/C002 QuickFixes. GitHub Release notes come from `CHANGELOG.md`.
+Allowlisted HTF `ta.*` resample expanded through `vwap` / `ao` / `linreg` offset / `ta.cum` / 1-arg `ta.ao(fast)` (disk IR v34). Incremental TA covers `sma_weighted`, `stoch_smooth`, `rsi_divergence`, pattern kernels, `ema_cross_signal`. LSP folding, selectionRange, documentColor, W001/W002/C002 QuickFixes. GitHub Release notes come from `CHANGELOG.md`.
 
 ---
 

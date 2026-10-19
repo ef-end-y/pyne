@@ -472,8 +472,9 @@ plot(ta.atr(3), title="catr")
         ``ta.mode`` / ``ta.percentrank`` / ``ta.change`` / ``ta.cog`` /
         ``ta.highestbars`` / ``ta.lowestbars`` (2-arg and 1-arg) / 2-arg
         ``ta.kama`` / ``ta.rising`` / ``ta.falling`` / ``ta.swma`` / ``ta.ao()`` /
-        2-arg ``ta.ao(fast, slow)`` / 3-arg ``ta.linreg(source, n, offset)`` /
-        0-arg ``ta.vwap()`` / 1-arg ``ta.vwap(source)``
+        1-arg ``ta.ao(fast)`` / 2-arg ``ta.ao(fast, slow)`` /
+        3-arg ``ta.linreg(source, n, offset)`` /
+        0-arg ``ta.vwap()`` / 1-arg ``ta.vwap(source)`` / 1-arg ``ta.cum(source)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap`` stay na.
         """
         from backend.runtime import Runtime
@@ -487,6 +488,7 @@ plot(request.security(syminfo.tickerid, "60", ta.wpr(high, low, close, 5)), titl
 plot(request.security(syminfo.tickerid, "60", ta.kama(close, 5, 2, 30)), title="kama4")
 plot(request.security(syminfo.tickerid, "60", ta.kama(close, 5, 2)), title="kama3")
 plot(request.security(syminfo.tickerid, "60", ta.vwap(ta.sma(close, 5))), title="vwapn")
+plot(request.security(syminfo.tickerid, "60", ta.cum(ta.sma(close, 5))), title="cumn")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -611,9 +613,17 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.ao()"))
         assert m is not None and m.name == "ao" and m.source == "hl2" and m.length == 0
         assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.ao(5)"))
+        assert m is not None and m.name == "ao" and m.source == "hl2" and m.length == 34
+        assert m.extra == 5
         m = match_htf_simple_ta_ast(_expr("ta.ao(5, 34)"))
         assert m is not None and m.name == "ao" and m.source == "hl2" and m.length == 34
         assert m.extra == 5
+        m = match_htf_simple_ta_ast(_expr("ta.cum(close)"))
+        assert m is not None and m.name == "cum" and m.source == "close" and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.cum(hl2)"))
+        assert m is not None and m.name == "cum" and m.source == "hl2" and m.length == 0
         m = match_htf_simple_ta_ast(_expr("ta.range(14)"))
         assert m is not None and m.name == "range" and m.source is None and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.vwap()"))
@@ -633,7 +643,9 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.lowest(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.swma(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.swma(close, 4)")) is None
-        assert match_htf_simple_ta_ast(_expr("ta.ao(5)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cum(ta.sma(close, 5))")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cum(close, 1)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.ao(close)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.median(ta.sma(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.dev(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.variance(ta.sma(close, 5), 14)")) is None
@@ -1436,6 +1448,68 @@ plot(ta.vwap(close), title="cv1")
         assert abs(float(hv0[-1]) - float(hv1[-1])) > 1e-6
         assert abs(float(hv0[-1]) - float(out["series"]["cv0"][-1])) > 1e-6
         assert abs(float(hv1[-1]) - float(out["series"]["cv1"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_cum_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily running ta.cum(close)."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.cum(close)), title="hcum")
+plot(ta.cum(close), title="ccum")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hcum = out["series"]["hcum"]
+        daily_closes = [float(bars[24 * (d + 1) - 1]["close"]) for d in range(7)]
+        # Cumulative from unique bar 0; first completed HTF close at chart 24.
+        assert all(_is_na(x) for x in hcum[1:24])
+        day5 = hcum[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        expect = sum(daily_closes)
+        assert abs(float(hcum[-1]) - expect) < 1e-9
+        assert abs(float(hcum[-1]) - float(out["series"]["ccum"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_ao1_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily ta.ao(3) (fast=3, slow=34)."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 40)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.ao(3)), title="hao")
+plot(ta.ao(3), title="cao")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hao = out["series"]["hao"]
+        daily_hl2: list[float] = []
+        for d in range(39):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            hi = max(float(b["high"]) for b in chunk)
+            lo = min(float(b["low"]) for b in chunk)
+            daily_hl2.append((hi + lo) * 0.5)
+        # SMA(34) first output at unique index 33 (during day 34).
+        assert all(_is_na(x) for x in hao[1:34 * 24])
+        day36 = hao[36 * 24 : 37 * 24]
+        assert all(not _is_na(x) for x in day36)
+        ref = float(day36[0])
+        for v in day36:
+            assert abs(float(v) - ref) < 1e-9
+        expect_fast = sum(daily_hl2[-3:]) / 3.0
+        expect_slow = sum(daily_hl2[-34:]) / 34.0
+        assert abs(float(hao[-1]) - (expect_fast - expect_slow)) < 1e-9
+        assert abs(float(hao[-1]) - float(out["series"]["cao"][-1])) > 1e-6
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

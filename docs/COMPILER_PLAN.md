@@ -104,7 +104,7 @@ Compile-mode `request.security` resamples the same allowlisted HTF shapes as int
 
 ### 0.6.14 — HTF allowlist expansion
 
-Allowlisted HTF `ta.*` resample through `vwap` / `ao(fast, slow)` / 3-arg `linreg` (disk IR v33).
+Allowlisted HTF `ta.*` resample through `vwap` / `ao(fast, slow)` / 3-arg `linreg` / `ta.cum` / 1-arg `ta.ao(fast)` (disk IR v34).
 
 ---
 

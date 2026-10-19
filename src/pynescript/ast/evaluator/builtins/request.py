@@ -137,6 +137,7 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "swma",
         "ao",
         "vwap",
+        "cum",
     }
 )
 
@@ -156,7 +157,7 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap "
+    "kama/rising/falling/swma/ao/vwap/cum "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -187,10 +188,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum
     source: str | None  # OHLCV field; None for atr/wpr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
-    length: int  # swma stores 4; 0-arg ao stores 0 (SMA 5−34 defaults); 2-arg ao stores slow; vwap stores 0 (cumulative)
-    extra: int | None = None  # 2-arg ao: fast; 3-arg linreg: offset; else None
+    length: int  # swma stores 4; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum store 0 (cumulative)
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 3-arg linreg: offset; else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -250,23 +251,28 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.lowestbars(14)`` — length-only form (HTF low).
     - ``ta.range(14)`` — length-only form (HTF high − HTF low over n unique bars).
     - ``ta.ao()`` — 0-arg (HTF hl2, SMA 5 − SMA 34). ``length`` is stored as 0.
+    - ``ta.ao(5)`` — one positive int literal = fast; slow defaults to 34.
+      ``source="hl2"``, ``length`` is 34, ``extra`` is fast.
     - ``ta.ao(5, 34)`` — two positive int literals; ``source="hl2"``,
       ``length`` is slow, ``extra`` is fast.
     - ``ta.vwap()`` — 0-arg (HTF hlc3, cumulative). ``length`` is stored as 0.
     - ``ta.vwap(close)`` — 1-arg source Name (unique-bar HTF volume).
       ``length`` is 0. 2-arg anchor / 3-arg bands stay unmatched.
+    - ``ta.cum(close)`` — 1-arg source Name. Running sum on unique HTF bars.
+      ``length`` is 0.
 
     Nested calls (``ta.sma(ta.ema(...), n)`` / ``ta.highest(ta.sma(...), n)`` /
     ``ta.median(ta.sma(...), n)`` / ``ta.mode(ta.sma(...), n)`` /
     ``ta.cog(ta.sma(...), n)`` / ``ta.highestbars(ta.sma(...), n)`` /
     ``ta.kama(ta.sma(...), n)`` / ``ta.rising(ta.sma(...), n)`` /
     ``ta.swma(ta.sma(...))`` / ``ta.vwap(ta.sma(...))`` /
+    ``ta.cum(ta.sma(...))`` /
     ``ta.linreg(ta.sma(...), n, offset)``), multi-arg
     atr, 4-arg ``ta.cci`` / ``ta.wpr``, 1-arg ``ta.median`` /
     ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
     ``ta.percentrank`` / ``ta.change`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
-    1-arg ``ta.rising`` / ``ta.falling``, 1-arg ``ta.ao`` / 2-arg ``ta.swma``,
-    2-arg / 3-arg ``ta.vwap``,
+    1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
+    2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -328,6 +334,9 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     if fname == "ao":
         if not arg_nodes:
             return HtfSimpleTaExpr("ao", "hl2", 0)
+        if len(arg_nodes) == 1:
+            fast = _const_positive_int(arg_nodes[0].value)
+            return HtfSimpleTaExpr("ao", "hl2", 34, extra=fast) if fast else None
         if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (fast, slow)
             return None
         fast = _const_positive_int(arg_nodes[0].value)
@@ -335,6 +344,17 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if fast is None or slow is None:
             return None
         return HtfSimpleTaExpr("ao", "hl2", slow, extra=fast)
+
+    if fname == "cum":
+        if len(arg_nodes) != 1:
+            return None
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        if src is None:
+            return None
+        return HtfSimpleTaExpr("cum", src, 0)
 
     if fname == "vwap":
         if not arg_nodes:
@@ -2040,7 +2060,11 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
 
     @staticmethod
     def _htf_ao_periods(expr: HtfSimpleTaExpr) -> tuple[int, int]:
-        """Fast/slow SMA lengths for HTF ``ta.ao`` (defaults 5 / 34)."""
+        """Fast/slow SMA lengths for HTF ``ta.ao`` (defaults 5 / 34).
+
+        0-arg stores ``length=0`` (defaults). 1-arg stores ``length=34`` and
+        ``extra=fast``. 2-arg stores ``length=slow`` and ``extra=fast``.
+        """
         extra = expr.extra
         length = int(expr.length)
         if extra is not None and length > 0:
@@ -2140,6 +2164,29 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             cum_v += v
             last = (cum_pv / cum_v) if cum_v else p
             out[i] = last
+        return out
+
+    @staticmethod
+    def _htf_cum_full_series(src: list[float | None]) -> list[float | None]:
+        """Running sum on unique HTF bars matching interpret ``ta.cum``.
+
+        ``na`` / IEEE NaN contribute 0 (same as ``_cumsum`` / ``_cum_inc_update``).
+        Empty source yields an empty list; a pure-na prefix still emits 0.0.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0:
+            return out
+        total = 0.0
+        for i, value in enumerate(src):
+            if value is not None:
+                try:
+                    fv = float(value)
+                except (TypeError, ValueError):
+                    fv = 0.0
+                if fv == fv:
+                    total += fv
+            out[i] = total
         return out
 
     @staticmethod
@@ -2461,6 +2508,10 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             src = self._htf_source_series(unique, field)
             vol = self._htf_source_series(unique, "volume")
             return self._htf_vwap_full_series(src, vol)
+        if name == "cum":
+            field = expr.source or "close"
+            src = self._htf_source_series(unique, field)
+            return self._htf_cum_full_series(src)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -2775,7 +2826,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                     src.append(None if v != v else v)
             fast, slow = self._htf_ao_periods(expression)
             return _last_of(self._htf_ao_from_hl2(src, fast, slow) if src else None)
-        if period <= 0 and name != "vwap":
+        if period <= 0 and name not in ("vwap", "cum"):
             return na
         if name in ("atr", "wpr") or (name == "range" and expression.source is None):
             highs = self._series_chrono_values("high")
@@ -2883,6 +2934,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         elif name == "vwap":
             vol = self._series_chrono_values("volume")
             raw = self._htf_vwap_full_series(src, vol)
+        elif name == "cum":
+            raw = self._htf_cum_full_series(src)
         elif name == "rsi":
             cleaned: list[float | None] = []
             for v in src:
@@ -3449,15 +3502,17 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           bar times that align to chart bars → same merge (``provider_htf_ohlcv``).
           Chart-length / no-timestamp provider series stay stubs
           (``provider_ohlcv`` / ``provider_ohlcv_chart_stub``) with unused merge.
-        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/kama/rising/falling/swma/ao``
+        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/kama/rising/falling/swma/ao/vwap/cum``
           with bare OHLCV source + const length; 1-arg ``ta.cci(n)`` uses HTF hlc3;
           1-arg ``ta.wpr(n)`` uses HTF high/low/close; 1-arg ``ta.highest(n)`` /
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
           high / low; 1-arg ``ta.range(n)`` is HTF high−low; 1-arg ``ta.swma``
           is fixed 4-period; 0-arg ``ta.ao()`` is SMA(hl2,5)−SMA(hl2,34);
-          2-arg ``ta.ao(fast, slow)`` uses HTF hl2 at those periods;
+          1-arg ``ta.ao(fast)`` uses HTF hl2 with slow=34; 2-arg
+          ``ta.ao(fast, slow)`` uses HTF hl2 at those periods;
           3-arg ``ta.linreg(source, n, offset)`` honors ``extra`` as offset;
-          2-arg ``ta.kama`` uses Kaufman fast=2, slow=30) on a
+          2-arg ``ta.kama`` uses Kaufman fast=2, slow=30;
+          1-arg ``ta.cum(source)`` is the running sum on unique HTF bars) on a
           **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
         - **Same-symbol + simple OHLCV** otherwise → chart passthrough /
@@ -4172,7 +4227,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     / ``highest`` / ``lowest`` / ``range`` / ``median`` / ``dev`` / ``variance``
     / ``mode`` / ``percentrank`` / ``change`` / ``cog`` / ``highestbars`` /
     ``lowestbars`` / ``kama`` / ``rising`` / ``falling`` / ``swma`` / ``ao`` /
-    ``vwap`` and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` /
+    ``vwap`` / ``cum`` and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` /
     ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` on HTF bars match
     interpret exactly.
     """
@@ -4227,6 +4282,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         self._highestbars = TechnicalHelpers._highestbars.__get__(self, type(self))
         self._lowestbars = TechnicalHelpers._lowestbars.__get__(self, type(self))
         self._swma = TechnicalHelpers._swma.__get__(self, type(self))
+        self._cumsum = BasicIndicators._cumsum.__get__(self, type(self))
         self._rising = TechnicalHelpers._rising.__get__(self, type(self))
         self._falling = TechnicalHelpers._falling.__get__(self, type(self))
         self._atr = VolatilityIndicators._atr.__get__(self, type(self))
@@ -4416,6 +4472,8 @@ def compile_htf_security_value(  # noqa: PLR0913
                 extra = int(offset)
         elif name == "vwap":
             src = field_s or "hlc3"
+        elif name == "cum":
+            src = field_s or "close"
         else:
             src = field_s or "close"
             if name == "linreg" and offset:
