@@ -845,11 +845,20 @@ class BasicIndicators(TechnicalHelpers):
         return weighted_sum / sum(weights)
 
     def _builtin_ta_zigzag(self, args: list[Any]) -> tuple[float, float, int]:
-        """Zigzag pattern detector (returns high, low, direction)."""
+        """Zigzag pattern detector (returns high, low, direction).
+
+        Bar-mode incremental last sample uses ``_zigzag_inc_update``.
+        """
         if len(args) != BINARY:
             self._error("ta.zigzag takes source series and percent threshold")
 
-        series = self._expect_list(args[0], "ta.zigzag takes source series and percent threshold")
+        if self._use_incremental_ta():
+            return self._zigzag_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                args[1],
+            )
+
+        series = self._as_series(args[0])
         threshold = args[1] if isinstance(args[1], (int, float)) else 5.0
 
         if len(series) < 2:

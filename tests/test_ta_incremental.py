@@ -7776,3 +7776,258 @@ plot(t.is_overbought ? 1 : 0, "ob2")
     assert r_off["series"]["ob"][20] == pytest.approx(1.0)
     assert r_on["series"]["rsi"][19] == pytest.approx(20.0)
     assert r_on["series"]["rsi"][20] == pytest.approx(85.0)
+
+
+# ---------------------------------------------------------------------------
+# T2: zigzag incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _assert_zigzag_close(
+    got: list[tuple[Any, Any, Any]],
+    exp: list[tuple[Any, Any, Any]],
+) -> None:
+    assert len(got) == len(exp)
+    for i, (g, e) in enumerate(zip(got, exp, strict=True)):
+        assert len(g) == 3 and len(e) == 3, f"bar {i}: {g} vs {e}"
+        for gv, ev in zip(g, e, strict=True):
+            _assert_num_close(gv, ev, i=i)
+
+
+def _bar_walk_full_zigzag(
+    src: list[Any],
+    threshold: float,
+) -> list[tuple[Any, Any, Any]]:
+    ev = _FullTA()
+    out: list[tuple[Any, Any, Any]] = []
+    for i in range(len(src)):
+        out.append(ev._builtin_ta_zigzag([src[: i + 1], threshold]))
+    return out
+
+
+def _bar_walk_inc_zigzag(
+    src: list[Any],
+    threshold: float,
+) -> list[tuple[Any, Any, Any]]:
+    ev = _IncTA()
+    out: list[tuple[Any, Any, Any]] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._zigzag_inc_update(src[: i + 1], threshold))
+    return out
+
+
+def _bar_walk_inc_zigzag_last_sample(
+    src: list[Any],
+    threshold: float,
+) -> list[tuple[Any, Any, Any]]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[tuple[Any, Any, Any]] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._zigzag_inc_update(src[i], threshold))
+    return out
+
+
+def _zigzag_off(val: tuple[Any, Any, Any]) -> bool:
+    h, lo, d = val
+    return (
+        isinstance(h, float)
+        and math.isnan(h)
+        and isinstance(lo, float)
+        and math.isnan(lo)
+        and d == 0
+    )
+
+
+def test_incremental_zigzag_matches_full() -> None:
+    src = _series(120)
+    got = _bar_walk_inc_zigzag(src, 5.0)
+    exp = _bar_walk_full_zigzag(src, 5.0)
+    _assert_zigzag_close(got, exp)
+    last = _bar_walk_inc_zigzag_last_sample(src, 5.0)
+    _assert_zigzag_close(last, exp)
+
+
+def test_incremental_zigzag_warmup() -> None:
+    """Fewer than 2 numeric samples is (nan, nan, 0), matching full."""
+    got = _bar_walk_inc_zigzag([100.0], 5.0)
+    exp = _bar_walk_full_zigzag([100.0], 5.0)
+    _assert_zigzag_close(got, exp)
+    assert _zigzag_off(got[0])
+    assert _zigzag_off(exp[0])
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert _zigzag_off(ev._zigzag_inc_update([], 5.0))
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert _zigzag_off(ev._zigzag_inc_update(None, 5.0))
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_zigzag([None], 5.0)
+    exp_na = _bar_walk_full_zigzag([None], 5.0)
+    _assert_zigzag_close(got_na, exp_na)
+    assert _zigzag_off(got_na[0])
+
+
+def test_incremental_zigzag_direction_up() -> None:
+    """Last numeric is the pair high → direction 1 when percent ≤ threshold."""
+    src = [100.0, 101.0]
+    got = _bar_walk_inc_zigzag(src, 5.0)
+    exp = _bar_walk_full_zigzag(src, 5.0)
+    _assert_zigzag_close(got, exp)
+    assert _zigzag_off(got[0])
+    assert got[-1][0] == pytest.approx(101.0)
+    assert got[-1][1] == pytest.approx(100.0)
+    assert got[-1][2] == 1
+    assert exp[-1][2] == 1
+
+
+def test_incremental_zigzag_direction_down() -> None:
+    """Last numeric is the pair low → direction -1 when percent ≤ threshold."""
+    src = [101.0, 100.0]
+    got = _bar_walk_inc_zigzag(src, 5.0)
+    exp = _bar_walk_full_zigzag(src, 5.0)
+    _assert_zigzag_close(got, exp)
+    assert got[-1][0] == pytest.approx(101.0)
+    assert got[-1][1] == pytest.approx(100.0)
+    assert got[-1][2] == -1
+    assert exp[-1][2] == -1
+
+
+def test_incremental_zigzag_threshold_forces_up() -> None:
+    """percent_change > threshold forces direction 1 even on a down pair."""
+    src = [110.0, 100.0]
+    got = _bar_walk_inc_zigzag(src, 5.0)
+    exp = _bar_walk_full_zigzag(src, 5.0)
+    _assert_zigzag_close(got, exp)
+    assert got[-1][2] == 1
+    assert exp[-1][2] == 1
+
+    got_lo = _bar_walk_inc_zigzag(src, 50.0)
+    exp_lo = _bar_walk_full_zigzag(src, 50.0)
+    _assert_zigzag_close(got_lo, exp_lo)
+    assert got_lo[-1][2] == -1
+    assert exp_lo[-1][2] == -1
+
+
+def test_incremental_zigzag_na_skips() -> None:
+    """None samples are skipped; last 2 numeric values drive the tuple."""
+    src: list[float | None] = [100.0, None, 110.0]
+    got = _bar_walk_inc_zigzag(src, 5.0)
+    exp = _bar_walk_full_zigzag(src, 5.0)
+    _assert_zigzag_close(got, exp)
+    assert _zigzag_off(got[0])
+    assert _zigzag_off(got[1])
+    assert got[-1][0] == pytest.approx(110.0)
+    assert got[-1][1] == pytest.approx(100.0)
+    assert got[-1][2] == 1
+
+
+def test_incremental_zigzag_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._zigzag_inc_update(src[: i + 1], 5.0)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_zigzag_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    src = _series(30)
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_zigzag([src[: i + 1], 5.0])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_zigzag_two_call_sites_independent() -> None:
+    src = _series(80)
+    ev = _IncTA()
+    a_out: list[tuple[Any, Any, Any]] = []
+    b_out: list[tuple[Any, Any, Any]] = []
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._zigzag_inc_update(prefix, 5.0))
+        b_out.append(ev._zigzag_inc_update(prefix, 0.01))
+    _assert_zigzag_close(a_out, _bar_walk_full_zigzag(src, 5.0))
+    _assert_zigzag_close(b_out, _bar_walk_full_zigzag(src, 0.01))
+
+
+def test_runtime_zigzag_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Small down move (~1%): threshold 5 keeps direction -1; 0.5 forces 1.
+    bars[19] = {
+        "open": 100.0,
+        "high": 101.0,
+        "low": 99.0,
+        "close": 100.0,
+        "volume": 1019,
+        "time": 1_700_000_000 + 19 * 86_400,
+    }
+    bars[20] = {
+        "open": 100.0,
+        "high": 100.5,
+        "low": 98.5,
+        "close": 99.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    src = """//@version=5
+indicator("zigzag")
+[h, l, d] = ta.zigzag(close, 5)
+[h2, l2, d2] = ta.zigzag(close, 0.5)
+plot(h, "h")
+plot(l, "l")
+plot(d, "d")
+plot(d2, "d2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"h", "l", "d", "d2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+    assert r_on["series"]["h"][20] == pytest.approx(100.0)
+    assert r_on["series"]["l"][20] == pytest.approx(99.0)
+    assert r_on["series"]["d"][20] == pytest.approx(-1.0)
+    assert r_off["series"]["d"][20] == pytest.approx(-1.0)
+    assert r_on["series"]["d2"][20] == pytest.approx(1.0)
+    assert r_off["series"]["d2"][20] == pytest.approx(1.0)

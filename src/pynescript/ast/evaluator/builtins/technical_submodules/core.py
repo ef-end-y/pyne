@@ -1600,6 +1600,50 @@ class TechnicalHelpers:
             "rsi": rsi_current,
         }
 
+    def _zigzag_inc_update(
+        self,
+        source: Any,
+        threshold: Any,
+    ) -> tuple[float, float, int]:
+        """Incremental zigzag matching full ``ta.zigzag`` last sample.
+
+        Last 2 numeric (non-``None``) samples → ``(recent_high, recent_low,
+        direction)``. ``(nan, nan, 0)`` while fewer than 2 numeric samples.
+        Direction is ``1`` if the last numeric is the pair high else ``-1``;
+        percent change above the threshold forces ``1``. One call-site slot
+        every bar, including warmup / na.
+        """
+        slot = self._ta_next_slot()
+        off: tuple[float, float, int] = (math.nan, math.nan, 0)
+        key = ("zigzag", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"w": deque(maxlen=2), "value": off}
+            bucket[key] = st
+        x = self._series_last(source)
+        w: deque[Any] = st["w"]
+        if x is not None:
+            w.append(x)
+        if len(w) < 2:
+            st["value"] = off
+            return off
+        th = threshold if isinstance(threshold, (int, float)) else 5.0
+        pair = [w[0], w[1]]
+        recent_high = max(pair)
+        recent_low = min(pair)
+        percent_change = (
+            (recent_high - recent_low) / recent_low * 100 if recent_low else 0
+        )
+        direction = 1 if recent_high == pair[-1] else -1
+        val = (
+            recent_high,
+            recent_low,
+            1 if percent_change > th else direction,
+        )
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

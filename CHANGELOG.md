@@ -5,6 +5,7 @@
 - **LSP document links.** `textDocument/documentLink` reports `http://` / `https://` URLs in comments (`//`, `/* */`, hash `# …`) and string literals as `DocumentLink` ranges whose `target` is the URL. Empty or unparsed documents return `[]`. Advertised via `documentLinkProvider`.
 - **LSP documentColor for `color.from_gradient`.** `textDocument/documentColor` reports `color.from_gradient(value, min, max, color1, color2)` as a 0–1 RGBA `ColorInformation` when all five args are literals (numeric value/min/max plus named `color.*` / `#hex` token / quoted hex). Interpolation matches interpret `color.from_gradient` (RGBA lerp, clamp to `[min, max]`, equal min/max → color1). Existing hex / named / `color.rgb` / `color.new` / `color()` paths are unchanged.
 - **Bar-mode incremental `ta.rsi_oversold_overbought` (T2).** Last-sample kernel matches full recompute: last RSI sample vs two int levels → `{is_oversold, is_overbought, rsi}` (`False` / `rsi: None` while the series is empty or the last sample is `na`). Oversold is `rsi < oversold`; overbought is `rsi > overbought`.
+- **Bar-mode incremental `ta.zigzag` (T2).** Last-sample kernel matches full recompute: last 2 numeric samples → `(recent_high, recent_low, direction)` (`nan`/`nan`/0 while fewer than 2 numeric samples). Direction is `1` if the last numeric is the pair high else `-1`; percent change above the threshold forces `1`.
 
 ### Fixed
 
