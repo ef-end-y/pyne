@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T03:03:27Z
+  at: 2026-10-19T03:12:55Z
 sources:
   - id: tree
     resource: "tests"
@@ -29,6 +29,7 @@ okf_lock: generated
 * `test_bgcolor_plotshape_export.py` — test_bgcolor_export_kind_and_color_series, test_drawing_registry_merge_visual_series_wrapper, test_materialize_bgcolor_default_titles_from_drawings, test_materialize_plotshape_from_compile_drawings, test_plot_meta_kind_plot_compat, test_plotchar_export, test_plotshape_export_bool_series_and_style, test_titled_bgcolor_compile_matches_interpret, test_uniquify_series_title_matches_runtime
 * `test_builtins.py` — TestChartPointFunctions, TestIntegratedPhase5Features, TestLoggingFunctions, TestPhase5EdgeCases, TestPolylineFunctions, TestTickerFunctions
 * `test_builtins_coverage.py` — TestColorFunctions, TestMatrixBuiltins, TestMatrixCore, TestNameResolution, TestNumericBuiltins, TestStringBuiltins, TestStudyHelpers, TestTechnicalAlias, TestTickerFunctions, TestTransformer
+* `test_changelog_release_notes.py` — test_build_release_notes_puts_changelog_before_install, test_cli_writes_out, test_extract_em_dash_dated_heading, test_extract_hyphen_dated_heading, test_missing_version_explains_unreleased_move, test_normalize_version_strips_v_prefix, test_unreleased_is_not_a_release_section
 * `test_cli.py` — pine_file, runner, test_alias_dump, test_check_directory, test_check_fail, test_check_fail_verbose, test_check_missing_file, test_check_ok, test_check_ok_verbose, test_check_stdin, test_check_stdin_quiet_bad, test_compile
 * `test_cli_util_coverage.py` — bad_file, get_provider_default_mock, pine_file, runner, test_alias_help, test_alphavantage_missing_dependency, test_alphavantage_stub_client, test_bad_flag, test_bind_ta_stubs, test_broker_insufficient_balance_and_sell_with_position, test_broker_market_and_limit_fills, test_broker_run_with_finite_feed
 * `test_collections.py` — TestArrayEdgeCorrectness, TestMapEvaluatorIntegration, TestMatrixEvaluatorIntegration, TestRound8SoftNaAndV6Indices

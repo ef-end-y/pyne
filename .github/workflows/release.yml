@@ -521,76 +521,24 @@ jobs:
             echo "warning: no CLI/LSP platform binaries staged; release will be package+VSIX(+docker) only" >&2
           fi
 
+      - name: Extract CHANGELOG.md for release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/changelog_release_notes.py \
+            --version "${{ steps.version.outputs.version }}" \
+            --changelog CHANGELOG.md \
+            --out release-notes.md
+          test -s release-notes.md
+          head -c 400 release-notes.md
+
       - name: Create release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', github.event.inputs.version) || github.ref_name }}
           name: "pyne v${{ steps.version.outputs.version }}"
-          body: |
-            ## PYNE v${{ steps.version.outputs.version }}
-
-            **PYNE** release (import/CLIs: `pynescript` / `pynescript-lsp`;
-            PyPI distribution: **`hoox-pyne`**).
-
-            ### Install (Python package / CLI)
-            ```bash
-            pip install "hoox-pyne==${{ steps.version.outputs.version }}"
-            # with LSP:
-            pip install "hoox-pyne[lsp]==${{ steps.version.outputs.version }}"
-            # with Numba compile path:
-            pip install "hoox-pyne[compile]==${{ steps.version.outputs.version }}"
-            pynescript --help
-            pynescript info
-            ```
-
-            Wheel/sdist are attached to this release if PyPI is not yet available:
-            ```bash
-            pip install ./hoox_pyne-*.whl
-            ```
-
-            ### Standalone CLI binaries
-            - `pynescript-cli-linux-x86_64` — Linux CLI
-            - `pynescript-cli-windows-x86_64.exe` — Windows CLI
-            - `pynescript-cli-macos-arm64` — macOS ARM CLI
-
-            ```bash
-            chmod +x pynescript-cli-linux-x86_64
-            sudo mv pynescript-cli-linux-x86_64 /usr/local/bin/pynescript
-            pynescript check script.pine
-            ```
-
-            ### CLI Docker image
-            ```bash
-            # from attached tarball
-            gunzip -c pynescript-cli-image.tar.gz | docker load
-            docker run --rm -v "$PWD:/work" -w /work pynescript-cli:latest check script.pine
-
-            # or build locally
-            docker buildx bake cli
-            # make docker-cli ARGS="check script.pine"
-            ```
-
-            ### Language Server binaries
-            - `pynescript-lsp-linux-x86_64` — Linux LSP
-            - `pynescript-lsp-windows-x86_64.exe` — Windows LSP
-            - `pynescript-lsp-macos-arm64` — macOS ARM LSP
-            - `pyne-vscode-*.vsix` — VS Code / Open VSX extension (`hoox-sh.pyne`)
-
-            ### VS Code
-            1. Download `pyne-vscode-*.vsix` (or install from the Marketplace)
-            2. `code --install-extension pyne-vscode-*.vsix`
-            3. Language server: `pip install "hoox-pyne[lsp]"` or the standalone binary
-
-            ### Standalone LSP
-            ```bash
-            chmod +x pynescript-lsp-linux-x86_64
-            sudo mv pynescript-lsp-linux-x86_64 /usr/local/bin/pynescript-lsp
-            pynescript-lsp --help
-            ```
-
-            See [CHANGELOG.md](https://github.com/hoox-sh/pyne/blob/main/CHANGELOG.md) for full notes.
-
+          body_path: release-notes.md
           draft: false
           prerelease: false
           # Staging step only copies files that exist; glob must match at least one.
