@@ -7065,3 +7065,218 @@ plot(h.gap_type, "htype")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: inside_bar_pattern incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _inside_hl(n: int = 120) -> tuple[list[float], list[float]]:
+    """Synthetic high/low with a known inside bar and a known outside bar."""
+    highs, lows, _ = _ohlc(n)
+    highs = list(highs)
+    lows = list(lows)
+    # Bar 2 is strictly inside bar 1 (fits n=30 warmup walks).
+    highs[1] = 110.0
+    lows[1] = 90.0
+    highs[2] = 105.0
+    lows[2] = 95.0
+    # Bar 5 is outside bar 4.
+    highs[4] = 110.0
+    lows[4] = 90.0
+    highs[5] = 115.0
+    lows[5] = 85.0
+    return highs, lows
+
+
+def _bar_walk_full_inside_bar(
+    highs: list[Any],
+    lows: list[Any],
+) -> list[bool]:
+    ev = _FullTA()
+    out: list[bool] = []
+    for i in range(len(highs)):
+        out.append(
+            bool(ev._builtin_ta_inside_bar_pattern([highs[: i + 1], lows[: i + 1]]))
+        )
+    return out
+
+
+def _bar_walk_inc_inside_bar(
+    highs: list[Any],
+    lows: list[Any],
+) -> list[bool]:
+    ev = _IncTA()
+    out: list[bool] = []
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        out.append(bool(ev._inside_bar_pattern_inc_update(highs[: i + 1], lows[: i + 1])))
+    return out
+
+
+def test_incremental_inside_bar_pattern_matches_full() -> None:
+    highs, lows = _inside_hl(120)
+    assert _bar_walk_inc_inside_bar(highs, lows) == _bar_walk_full_inside_bar(
+        highs, lows
+    )
+
+
+def test_incremental_inside_bar_pattern_warmup() -> None:
+    """Fewer than 2 bars is False, matching full recompute."""
+    highs = [105.0]
+    lows = [95.0]
+    got = _bar_walk_inc_inside_bar(highs, lows)
+    exp = _bar_walk_full_inside_bar(highs, lows)
+    assert got == [False]
+    assert exp == [False]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._inside_bar_pattern_inc_update([], []) is False
+    assert ev._ta_call_i == 1
+
+
+def test_incremental_inside_bar_pattern_inside() -> None:
+    """curr_high < prev_high and curr_low > prev_low → True."""
+    highs = [105.0, 104.0]
+    lows = [95.0, 96.0]
+    got = _bar_walk_inc_inside_bar(highs, lows)
+    exp = _bar_walk_full_inside_bar(highs, lows)
+    assert got == exp
+    assert got[0] is False
+    assert got[-1] is True
+    assert exp[-1] is True
+
+
+def test_incremental_inside_bar_pattern_not_inside() -> None:
+    """Outside / equal-range bars are False (strict < / >)."""
+    outside_h = [105.0, 106.0]
+    outside_l = [95.0, 94.0]
+    got_out = _bar_walk_inc_inside_bar(outside_h, outside_l)
+    exp_out = _bar_walk_full_inside_bar(outside_h, outside_l)
+    assert got_out == exp_out
+    assert got_out[-1] is False
+    assert exp_out[-1] is False
+
+    equal_h = [105.0, 105.0]
+    equal_l = [95.0, 95.0]
+    got_eq = _bar_walk_inc_inside_bar(equal_h, equal_l)
+    exp_eq = _bar_walk_full_inside_bar(equal_h, equal_l)
+    assert got_eq == exp_eq
+    assert got_eq[-1] is False
+    assert exp_eq[-1] is False
+
+
+def test_incremental_inside_bar_pattern_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup."""
+    highs, lows = _inside_hl(40)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._inside_bar_pattern_inc_update(highs[: i + 1], lows[: i + 1])
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_inside_bar_pattern_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    highs, lows = _inside_hl(30)
+    ev = _IncTA()
+    for i in range(len(highs)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_inside_bar_pattern([highs[: i + 1], lows[: i + 1]])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_inside_bar_pattern_two_call_sites_independent() -> None:
+    a_h, a_l = _inside_hl(80)
+    b_h, b_l = _ohlc(80, seed=140.0)[:2]
+    ev = _IncTA()
+    a_out: list[bool] = []
+    b_out: list[bool] = []
+    for i in range(len(a_h)):
+        ev._ta_call_i = 0
+        a_out.append(bool(ev._inside_bar_pattern_inc_update(a_h[: i + 1], a_l[: i + 1])))
+        b_out.append(bool(ev._inside_bar_pattern_inc_update(b_h[: i + 1], b_l[: i + 1])))
+    assert a_out == _bar_walk_full_inside_bar(a_h, a_l)
+    assert b_out == _bar_walk_full_inside_bar(b_h, b_l)
+
+
+def test_runtime_inside_bar_pattern_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    # Inject a strict inside bar (bar 20 inside bar 19) and an outside bar.
+    bars[19] = {
+        "open": 100.0,
+        "high": 110.0,
+        "low": 90.0,
+        "close": 100.0,
+        "volume": 1019,
+        "time": 1_700_000_000 + 19 * 86_400,
+    }
+    bars[20] = {
+        "open": 100.0,
+        "high": 105.0,
+        "low": 95.0,
+        "close": 101.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    bars[39] = {
+        "open": 100.0,
+        "high": 110.0,
+        "low": 90.0,
+        "close": 100.0,
+        "volume": 1039,
+        "time": 1_700_000_000 + 39 * 86_400,
+    }
+    bars[40] = {
+        "open": 100.0,
+        "high": 115.0,
+        "low": 85.0,
+        "close": 102.0,
+        "volume": 1040,
+        "time": 1_700_000_000 + 40 * 86_400,
+    }
+    src = """//@version=5
+indicator("inside bar")
+ib = ta.inside_bar_pattern(high, low)
+plot(ib ? 1 : 0, "ib")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"ib"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+    # Injected inside bar must fire on both hosts.
+    assert r_on["series"]["ib"][20] == pytest.approx(1.0)
+    assert r_off["series"]["ib"][20] == pytest.approx(1.0)
+    assert r_on["series"]["ib"][40] == pytest.approx(0.0)

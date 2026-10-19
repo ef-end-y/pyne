@@ -1469,6 +1469,43 @@ class TechnicalHelpers:
             "gap_percent": gap_percent,
         }
 
+    def _inside_bar_pattern_inc_update(
+        self,
+        highs: Any,
+        lows: Any,
+    ) -> bool:
+        """Incremental inside-bar matching full ``ta.inside_bar_pattern``.
+
+        Last 2 highs/lows: ``curr_high < prev_high and curr_low > prev_low``.
+        ``False`` while shorter than 2 bars. Non-numeric samples coerce to
+        0.0 (same as the full recompute). One call-site slot every bar,
+        including warmup.
+        """
+        slot = self._ta_next_slot()
+        key = ("inside_bar_pattern", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"prev_h": None, "prev_l": None, "count": 0, "value": False}
+            bucket[key] = st
+        h = self._series_last(highs)
+        lo = self._series_last(lows)
+        curr_h = h if isinstance(h, (int, float)) else 0.0
+        curr_l = lo if isinstance(lo, (int, float)) else 0.0
+        st["count"] = int(st["count"]) + 1
+        prev_h = st["prev_h"]
+        prev_l = st["prev_l"]
+        if int(st["count"]) < 2 or prev_h is None or prev_l is None:
+            st["prev_h"] = curr_h
+            st["prev_l"] = curr_l
+            st["value"] = False
+            return False
+        val = curr_h < prev_h and curr_l > prev_l
+        st["prev_h"] = curr_h
+        st["prev_l"] = curr_l
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

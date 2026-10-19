@@ -350,8 +350,14 @@ class AdvancedIndicators(TechnicalHelpers):
             msg = "ta.inside_bar_pattern() requires 2 arguments"
             self._error(msg)
 
-        high_list = args[0] if isinstance(args[0], list) else [args[0]]
-        low_list = args[1] if isinstance(args[1], list) else [args[1]]
+        if self._use_incremental_ta():
+            return self._inside_bar_pattern_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+            )
+
+        high_list = self._as_series(args[0])
+        low_list = self._as_series(args[1])
 
         if len(high_list) < BINARY or len(low_list) < BINARY:
             return False
