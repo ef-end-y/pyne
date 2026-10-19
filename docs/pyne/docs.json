@@ -141,6 +141,7 @@
               "lsp/features/semantic-tokens",
               "lsp/features/inlay-hints",
               "lsp/features/folding",
+              "lsp/features/selection-range",
               "lsp/builtin-metadata",
               "lsp/vscode-extension",
               "lsp/clients"

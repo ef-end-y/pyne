@@ -36,7 +36,7 @@
 - documentHighlight, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
-- inlayHint, semanticTokens/full, foldingRange
+- inlayHint, semanticTokens/full, foldingRange, selectionRange
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
 
 Advertised capabilities come from :func:`pynescript.langserver.config.get_server_capabilities`
@@ -70,6 +70,7 @@ from pynescript.langserver.features import hover as hover_feature
 from pynescript.langserver.features import inlay_hints as inlay_hints_feature
 from pynescript.langserver.features import references as references_feature
 from pynescript.langserver.features import rename as rename_feature
+from pynescript.langserver.features import selection_range as selection_range_feature
 from pynescript.langserver.features import semantic_tokens as semantic_tokens_feature
 from pynescript.langserver.features import signature_help as signature_help_feature
 from pynescript.langserver.features import symbols as symbols_feature
@@ -469,6 +470,17 @@ class PynescriptLanguageServer(LanguageServer):
             result = folding_feature.handle_folding_range(params, doc.source, tree=doc.ast)
             doc.feature_cache["folding_range"] = result
             return result
+
+        @self.feature(lsp.TEXT_DOCUMENT_SELECTION_RANGE)
+        def text_selection_range(
+            params: lsp.SelectionRangeParams,
+        ) -> list[lsp.SelectionRange]:
+            """Handle textDocument/selectionRange request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return selection_range_feature.handle_selection_range(params, None)
+            return selection_range_feature.handle_selection_range(params, doc.source, tree=doc.ast)
 
         @self.feature(lsp.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL)
         def text_semantic_tokens(

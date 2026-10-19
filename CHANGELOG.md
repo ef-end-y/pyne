@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP selection ranges.** `textDocument/selectionRange` expands from the identifier (or smallest AST node) under the cursor to the enclosing statement, then enclosing `if`/`for`/`while`/`switch`/`once` blocks and `FunctionDef`/`TypeDef`/`EnumDef`. Empty or unparsed documents, or no node at the position, return `[]`. Advertised via `selectionRangeProvider`.
 - **LSP folding ranges.** `textDocument/foldingRange` for `if`/`for`/`while`/`switch`/`once` blocks, `FunctionDef`/`TypeDef`/`EnumDef`, and `//#region`/`//#endregion` (plus `# region` hash comments). Empty or unparsed documents return `[]`. Advertised via `foldingRangeProvider`.
 - **LSP W002 QuickFix.** `textDocument/codeAction` replaces an old `//@version=N` (N < 5) with `//@version=6` on the existing pragma line (does not insert a second pragma). v5 still gets Convert-to-v6 `RefactorRewrite` only.
 - **LSP W001 QuickFix.** `textDocument/codeAction` inserts `//@version=6` at the document start when the version pragma is missing. Advertised as `QuickFix` alongside Convert-to-v6 `RefactorRewrite`.

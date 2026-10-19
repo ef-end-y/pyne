@@ -36,6 +36,7 @@ from pynescript.langserver.features.hover import handle_hover
 from pynescript.langserver.features.references import handle_references
 from pynescript.langserver.features.rename import handle_prepare_rename
 from pynescript.langserver.features.rename import handle_rename
+from pynescript.langserver.features.selection_range import handle_selection_range
 from pynescript.langserver.features.signature_help import handle_signature_help
 from pynescript.langserver.features.symbols import handle_document_symbols
 from pynescript.langserver.providers.builtin_metadata import get_builtin
@@ -1319,6 +1320,167 @@ class TestFoldingRangeHandler:
         assert all(r.kind != lsp.FoldingRangeKind.Region for r in result)
 
 
+_SEL_SOURCE = """//@version=6
+indicator("T")
+foo = close
+if bar_index > 0
+    plot(foo)
+    if close > 0
+        x = foo + 1
+for i = 0 to 10
+    s = i
+while bar_index < 3
+    n = 1
+switch close
+    0 => 0
+    => 1
+once bar_index == 0
+    z = 1
+f() =>
+    a = 1
+    a
+type Point
+    float px
+enum Side
+    buy
+"""
+
+
+def _sel_params(source: str, *prefixes: str) -> lsp.SelectionRangeParams:
+    return lsp.SelectionRangeParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        positions=[_position_after(source, p) for p in prefixes],
+    )
+
+
+def _flatten_sel(sr: lsp.SelectionRange) -> list[lsp.Range]:
+    out: list[lsp.Range] = []
+    cur: lsp.SelectionRange | None = sr
+    while cur is not None:
+        out.append(cur.range)
+        cur = cur.parent
+    return out
+
+
+def _slice_range(source: str, rng: lsp.Range) -> str:
+    lines = source.split("\n")
+    if rng.start.line == rng.end.line:
+        return lines[rng.start.line][rng.start.character : rng.end.character]
+    parts = [lines[rng.start.line][rng.start.character :]]
+    for i in range(rng.start.line + 1, rng.end.line):
+        parts.append(lines[i])
+    if rng.end.line < len(lines):
+        parts.append(lines[rng.end.line][: rng.end.character])
+    return "\n".join(parts)
+
+
+def _assert_sel_nested(ranges: list[lsp.Range]) -> None:
+    assert ranges
+    for i in range(len(ranges) - 1):
+        inner, outer = ranges[i], ranges[i + 1]
+        assert (outer.start.line, outer.start.character) <= (inner.start.line, inner.start.character)
+        assert (inner.end.line, inner.end.character) <= (outer.end.line, outer.end.character)
+
+
+class TestSelectionRangeHandler:
+    """Test textDocument/selectionRange for idents, statements, and blocks."""
+
+    def test_handle_selection_range_empty_and_unparsed(self) -> None:
+        """Empty source, parse failure, and no node under the cursor return []."""
+        params = _sel_params(_SEL_SOURCE, "foo")
+        assert handle_selection_range(params, "") == []
+        assert handle_selection_range(params, None) == []
+        assert handle_selection_range(params, "this is not valid pine @#$") == []
+        assert handle_selection_range(params, "x = 1", tree=None) == []
+        pragma = _sel_params(_SEL_SOURCE)
+        pragma.positions = [lsp.Position(line=0, character=0)]
+        assert handle_selection_range(pragma, _SEL_SOURCE) == []
+
+    def test_handle_selection_range_ident_then_statement(self) -> None:
+        """Top-level ident expands to the enclosing assignment."""
+        result = handle_selection_range(_sel_params(_SEL_SOURCE, "foo"), _SEL_SOURCE)
+        assert len(result) == 1
+        chain = _flatten_sel(result[0])
+        _assert_sel_nested(chain)
+        assert _slice_range(_SEL_SOURCE, chain[0]) == "foo"
+        assert any("foo = close" in _slice_range(_SEL_SOURCE, r) for r in chain)
+
+    def test_handle_selection_range_nested_if_blocks(self) -> None:
+        """Ident inside nested if: ident → statement → inner If → outer If."""
+        result = handle_selection_range(_sel_params(_SEL_SOURCE, "x = "), _SEL_SOURCE)
+        assert len(result) == 1
+        chain = _flatten_sel(result[0])
+        _assert_sel_nested(chain)
+        assert _slice_range(_SEL_SOURCE, chain[0]) == "foo"
+        texts = [_slice_range(_SEL_SOURCE, r) for r in chain]
+        assert any("x = foo + 1" in t for t in texts)
+        assert any("if close > 0" in t for t in texts)
+        assert any("if bar_index > 0" in t for t in texts)
+        assert texts[-1].startswith("if bar_index") or "if bar_index > 0" in texts[-1]
+
+    def test_handle_selection_range_for_while_switch_once(self) -> None:
+        """Idents in for/while/switch/once expand through the enclosing block."""
+        cases = (
+            ("    s", "s", "for i = 0 to 10"),
+            ("    n", "n", "while bar_index < 3"),
+            ("switch ", "close", "switch close"),
+            ("    z", "z", "once bar_index == 0"),
+        )
+        for prefix, ident, header in cases:
+            result = handle_selection_range(_sel_params(_SEL_SOURCE, prefix), _SEL_SOURCE)
+            assert len(result) == 1, header
+            chain = _flatten_sel(result[0])
+            _assert_sel_nested(chain)
+            assert _slice_range(_SEL_SOURCE, chain[0]) == ident
+            texts = [_slice_range(_SEL_SOURCE, r) for r in chain]
+            assert any(header in t for t in texts), (header, texts)
+
+    def test_handle_selection_range_function_type_enum(self) -> None:
+        """Idents in FunctionDef / TypeDef / EnumDef expand to that block."""
+        cases = (
+            ("    a", "a", "f() =>"),
+            ("float ", "px", "type Point"),
+            ("    buy", "buy", "enum Side"),
+        )
+        for prefix, ident, header in cases:
+            result = handle_selection_range(_sel_params(_SEL_SOURCE, prefix), _SEL_SOURCE)
+            assert len(result) == 1, header
+            chain = _flatten_sel(result[0])
+            _assert_sel_nested(chain)
+            assert _slice_range(_SEL_SOURCE, chain[0]) == ident
+            texts = [_slice_range(_SEL_SOURCE, r) for r in chain]
+            assert any(header in t for t in texts), (header, texts)
+
+    def test_handle_selection_range_smallest_node_without_ident(self) -> None:
+        """Cursor on a literal still expands from the smallest AST node."""
+        result = handle_selection_range(_sel_params(_SEL_SOURCE, "foo + "), _SEL_SOURCE)
+        assert len(result) == 1
+        chain = _flatten_sel(result[0])
+        _assert_sel_nested(chain)
+        assert _slice_range(_SEL_SOURCE, chain[0]) == "1"
+        texts = [_slice_range(_SEL_SOURCE, r) for r in chain]
+        assert any("x = foo + 1" in t for t in texts)
+        assert any("if close > 0" in t for t in texts)
+
+    def test_handle_selection_range_multiple_positions(self) -> None:
+        """One SelectionRange per requested position."""
+        result = handle_selection_range(_sel_params(_SEL_SOURCE, "foo", "    a"), _SEL_SOURCE)
+        assert len(result) == 2
+        assert _slice_range(_SEL_SOURCE, _flatten_sel(result[0])[0]) == "foo"
+        assert _slice_range(_SEL_SOURCE, _flatten_sel(result[1])[0]) == "a"
+
+    def test_handle_selection_range_reuses_tree(self) -> None:
+        """Passing a pre-parsed tree must not require re-parse of source."""
+        from pynescript.ast.helper import parse
+
+        tree = parse(_SEL_SOURCE, filename="file:///test.pine")
+        result = handle_selection_range(_sel_params(_SEL_SOURCE, "x = "), source=None, tree=tree)
+        assert len(result) == 1
+        chain = _flatten_sel(result[0])
+        _assert_sel_nested(chain)
+        assert chain[0].start.line == _line_of(_SEL_SOURCE, "x = foo + 1")
+
+
 class TestCapabilities:
     """Advertised capabilities must match implemented handlers only."""
 
@@ -1345,6 +1507,7 @@ class TestCapabilities:
         assert caps.semantic_tokens_provider.full is True
         assert caps.semantic_tokens_provider.range is False
         assert caps.folding_range_provider is True
+        assert caps.selection_range_provider is True
 
 
 _FOO_SOURCE = """//@version=6

@@ -78,6 +78,7 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
         document_formatting_provider=True,
         document_range_formatting_provider=True,
         folding_range_provider=True,
+        selection_range_provider=True,
         code_action_provider=lsp.CodeActionOptions(
             code_action_kinds=[
                 lsp.CodeActionKind.QuickFix,

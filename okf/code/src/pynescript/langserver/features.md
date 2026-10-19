@@ -30,6 +30,7 @@ okf_lock: generated
 * `inlay_hints.py` — handle_inlay_hints
 * `references.py` — ReferencesFinder, handle_references
 * `rename.py` — handle_prepare_rename, handle_rename
+* `selection_range.py` — handle_selection_range
 * `semantic_tokens.py` — handle_semantic_tokens
 * `signature_help.py` — handle_signature_help
 * `symbols.py` — DocumentSymbolCollector, handle_document_symbols
