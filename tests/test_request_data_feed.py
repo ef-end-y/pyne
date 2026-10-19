@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change + 1-arg wpr/highest/lowest on HTF."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars + 1-arg wpr/highest/lowest/highestbars/lowestbars on HTF."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -469,7 +469,8 @@ plot(ta.atr(3), title="catr")
         ``ta.hma`` / ``ta.vwma`` / ``ta.dema`` / ``ta.tema`` / 1-arg ``ta.wpr(n)`` /
         ``ta.highest`` / ``ta.lowest`` (2-arg and 1-arg) / ``ta.range`` /
         ``ta.median`` / ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
-        ``ta.percentrank`` / ``ta.change``
+        ``ta.percentrank`` / ``ta.change`` / ``ta.cog`` / ``ta.highestbars`` /
+        ``ta.lowestbars`` (2-arg and 1-arg)
         are allowlisted.
         """
         from backend.runtime import Runtime
@@ -575,6 +576,16 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "percentrank" and m.source == "hlc3" and m.length == 10
         m = match_htf_simple_ta_ast(_expr("ta.change(hl2, 20)"))
         assert m is not None and m.name == "change" and m.source == "hl2" and m.length == 20
+        m = match_htf_simple_ta_ast(_expr("ta.cog(close, 14)"))
+        assert m is not None and m.name == "cog" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.highestbars(close, 14)"))
+        assert m is not None and m.name == "highestbars" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.lowestbars(close, 14)"))
+        assert m is not None and m.name == "lowestbars" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.highestbars(14)"))
+        assert m is not None and m.name == "highestbars" and m.source == "high" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.lowestbars(14)"))
+        assert m is not None and m.name == "lowestbars" and m.source == "low" and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
@@ -593,6 +604,10 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.mode(14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.percentrank(14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.change(14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cog(ta.sma(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.highestbars(ta.sma(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.lowestbars(ta.ema(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cog(14)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
 
     def test_htf_cmo_stdev_linreg_hourly_to_daily_last_completed(self) -> None:
@@ -1032,6 +1047,84 @@ plot(ta.change(close, 3), title="cchg")
         assert abs(float(hchg[-1]) - float(out["series"]["cchg"][-1])) > 1e-6
         cpr_day5 = out["series"]["cpr"][5 * 24 : 6 * 24]
         assert any(not _is_na(v) and abs(float(v) - float(cpr_day5[0])) > 1e-6 for v in cpr_day5)
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_cog_highestbars_lowestbars_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily cog/highestbars/lowestbars."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.cog(close, 3)), title="hcog")
+plot(request.security(syminfo.tickerid, "D", ta.highestbars(close, 3)), title="hhb")
+plot(request.security(syminfo.tickerid, "D", ta.lowestbars(close, 3)), title="hlb")
+plot(request.security(syminfo.tickerid, "D", ta.highestbars(3)), title="hhb1")
+plot(request.security(syminfo.tickerid, "D", ta.lowestbars(3)), title="hlb1")
+plot(ta.cog(close, 3), title="ccog")
+plot(ta.highestbars(close, 3), title="chb")
+plot(ta.lowestbars(close, 3), title="clb")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hcog = out["series"]["hcog"]
+        hhb = out["series"]["hhb"]
+        hlb = out["series"]["hlb"]
+        hhb1 = out["series"]["hhb1"]
+        hlb1 = out["series"]["hlb1"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes: list[float] = []
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+
+        def _bars_offset(window: list[float], *, highest: bool) -> int:
+            best_i = 0
+            best_v = window[0]
+            for i, v in enumerate(window):
+                if (highest and v > best_v) or (not highest and v < best_v):
+                    best_v = v
+                    best_i = i
+            return -(len(window) - 1 - best_i)
+
+        # cog/highestbars/lowestbars(3) need 3 HTF samples.
+        assert all(_is_na(x) for x in hcog[1:72])
+        assert all(_is_na(x) for x in hhb[1:72])
+        assert all(_is_na(x) for x in hlb[1:72])
+        assert all(_is_na(x) for x in hhb1[1:72])
+        assert all(_is_na(x) for x in hlb1[1:72])
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = hcog[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        win3 = daily_closes[-3:]
+        num = sum((i + 1) * val for i, val in enumerate(reversed(win3)))
+        den = sum(win3)
+        expect_cog = -num / den
+        expect_hb = _bars_offset(win3, highest=True)
+        expect_lb = _bars_offset(win3, highest=False)
+        expect_hb1 = _bars_offset(daily_highs[-3:], highest=True)
+        expect_lb1 = _bars_offset(daily_lows[-3:], highest=False)
+        assert abs(float(hcog[-1]) - expect_cog) < 1e-9
+        assert abs(float(hhb[-1]) - expect_hb) < 1e-9
+        assert abs(float(hlb[-1]) - expect_lb) < 1e-9
+        assert abs(float(hhb1[-1]) - expect_hb1) < 1e-9
+        assert abs(float(hlb1[-1]) - expect_lb1) < 1e-9
+        # Not chart-TF passthrough. Last-sample highestbars of this walk can
+        # match a 3-bar chart window (both 0 on a rising tail); HTF is stepwise.
+        assert abs(float(hcog[-1]) - float(out["series"]["ccog"][-1])) > 1e-6
+        chb_day5 = out["series"]["chb"][5 * 24 : 6 * 24]
+        assert any(not _is_na(v) and abs(float(v) - float(chb_day5[0])) > 1e-6 for v in chb_day5)
+        clb_day5 = out["series"]["clb"][5 * 24 : 6 * 24]
+        assert any(not _is_na(v) and abs(float(v) - float(clb_day5[0])) > 1e-6 for v in clb_day5)
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
