@@ -3047,9 +3047,9 @@ class TechnicalHelpers:
     ) -> float | None:
         """Pine ``ta.pivothigh`` / ``ta.pivotlow`` on a chronological window.
 
-        Center is ``right_bars`` before the newest sample. Confirmed only when
-        the center is a strict extreme vs both left and right sides (compile
-        ``numba_pivothigh`` / ``numba_pivotlow``).
+        Center is ``right_bars`` before the newest sample. A tie on the left
+        still confirms; the right side must be a strict extreme (same rule as
+        compile ``numba_pivothigh`` / ``numba_pivotlow``).
         """
         need = left_bars + right_bars + 1
         if len(window) < need:
@@ -3066,10 +3066,11 @@ class TechnicalHelpers:
             other = self._finite_or_none(window[j])
             if other is None:
                 continue
+            left_side = j < center_i
             if is_high:
-                if other >= val:
+                if (other > val) if left_side else (other >= val):
                     return None
-            elif other <= val:
+            elif (other < val) if left_side else (other <= val):
                 return None
         return val
 
