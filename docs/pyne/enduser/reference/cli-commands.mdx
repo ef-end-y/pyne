@@ -51,6 +51,7 @@ The language server is a **separate** console script (`pyne-lsp`; alias `pynescr
 | `data` | | Fetch market bars |
 | `runner` | | Hosted scripts on the Pro API (`deploy` / `tick` / `list`) |
 | `info` | `ls` | Version + optional extras |
+| `mcp` | | Stdio MCP server (`pyne mcp`) and client JSON (`pyne mcp config`) |
 
 ```bash
 pyne --help
@@ -331,7 +332,29 @@ Full HTTP contract: [hosted runner](/pyne/docs/api/endpoints/runner).
 | --- | --- | --- |
 | option | `--json` | Machine-readable payload |
 
-Prints package version, Python, platform, and whether `numba` / `rich` are available.
+Prints package version, Python, platform, and whether `numba` / `rich` / `mcp` are available.
+
+---
+
+### `pyne mcp`
+
+Stdio Model Context Protocol server. Requires `pip install "hoox-pyne[mcp]"` to serve.
+
+| Kind | Name | Description |
+| --- | --- | --- |
+| (no args) | | Serve MCP on stdio (`pyne-mcp`) |
+| subcommand | `config` | Print `mcpServers.pyne` JSON |
+| option | `--module` | `config` only: `python -m pynescript.mcp` |
+
+```bash
+pip install "hoox-pyne[mcp]"
+pyne mcp config
+pyne mcp
+pyne-mcp
+python -m pynescript.mcp
+```
+
+Tools, resources, prompts: [MCP tools](/pyne/docs/enduser/reference/mcp-tools). Guide: [MCP (agents)](/pyne/docs/enduser/guides/mcp).
 
 ---
 
@@ -350,6 +373,7 @@ python -m pynescript.langserver
 | --- | --- |
 | CLI group | `src/pynescript/__main__.py` |
 | Entry | `pyproject.toml` → `pyne` / `pynescript` = `pynescript.__main__:cli` |
+| MCP | `src/pynescript/mcp/` · `pyne-mcp` |
 | parse/dump/unparse | `src/pynescript/ast/helper.py` |
 | lint | `src/pynescript/ast/linter.py` |
 | compile / prewarm | `src/pynescript/compiler/` |
@@ -378,6 +402,7 @@ python -m pynescript.langserver
 ## See also
 
 - [CLI guide](/pyne/docs/enduser/guides/cli)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)
 - [Runtime modes](/pyne/docs/enduser/reference/modes)
 - [Installation](/pyne/docs/enduser/getting-started/installation)
 - [Compiler overview](/pyne/docs/runtime/compiler/overview)

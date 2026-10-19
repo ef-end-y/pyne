@@ -41,10 +41,12 @@ Commands
 - ``data`` — fetch market bars (mock / Yahoo / …)
 - ``download-builtins`` — fetch TradingView builtin Pine templates
 - ``info`` — version and optional extras (numba, rich, …)
+- ``mcp`` — stdio MCP server (``pyne mcp``) and client JSON (``pyne mcp config``)
 
 The Language Server is a **separate** console script (``pyne-lsp`` /
 ``pynescript-lsp``), not a subcommand of this group. See
 :mod:`pynescript.langserver.__main__`.
+The MCP server is also ``pyne-mcp`` (``python -m pynescript.mcp``).
 """
 
 from __future__ import annotations
@@ -108,6 +110,8 @@ Examples:
   pyne download-builtins --list
   pyne download-builtins --yes
   pyne info
+  pyne mcp config
+  pyne mcp
 
 \b
 Aliases:  dump -> parse-and-dump  ast -> parse-and-dump  unparse -> parse-and-unparse
@@ -115,6 +119,7 @@ Aliases:  dump -> parse-and-dump  ast -> parse-and-dump  unparse -> parse-and-un
           pynescript remains a compatibility alias of pyne
 
 Language server:  pyne-lsp  (alias: pynescript-lsp; separate entry point, not a subcommand)
+MCP server:       pyne-mcp  (also ``pyne mcp``; extra: pip install 'hoox-pyne[mcp]')
 Docs:             https://hoox.sh/pyne
 """
 
@@ -126,6 +131,14 @@ def _has_rich() -> bool:
         return True
     except ImportError:
         return False
+
+
+def _has_mcp_sdk() -> bool:
+    try:
+        import mcp  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def _console(*, force: bool = False) -> Any | None:
@@ -339,7 +352,9 @@ def info_cmd(as_json: bool) -> None:
             "cli_alias": "pynescript",
             "lsp": "pyne-lsp",
             "lsp_alias": "pynescript-lsp",
+            "mcp": "pyne-mcp",
         },
+        "mcp": _has_mcp_sdk(),
         "docs": "https://hoox.sh/pyne",
     }
 
@@ -361,6 +376,7 @@ def info_cmd(as_json: bool) -> None:
         t.add_row("rich", "yes" if payload["rich"] else "no (plain output)")
         t.add_row("cli", "pyne (alias: pynescript)")
         t.add_row("lsp", "pyne-lsp (alias: pynescript-lsp)")
+        t.add_row("mcp", "pyne-mcp (yes)" if payload["mcp"] else "pyne-mcp (install hoox-pyne[mcp])")
         t.add_row("docs", payload["docs"])
         con.print(t)
     else:
@@ -371,6 +387,7 @@ def info_cmd(as_json: bool) -> None:
         _echo(f"rich:     {'yes' if payload['rich'] else 'no'}")
         _echo("cli:      pyne (alias: pynescript)")
         _echo("lsp:      pyne-lsp (alias: pynescript-lsp)")
+        _echo("mcp:      pyne-mcp" + ("" if payload["mcp"] else " (install hoox-pyne[mcp])"))
         _echo(f"docs:     {payload['docs']}")
 
 
@@ -1385,6 +1402,47 @@ def download_builtins_cmd(
 
 
 cli.add_command(runner_group)
+
+
+@cli.group(
+    "mcp",
+    invoke_without_command=True,
+    short_help="MCP server (stdio) and client config JSON.",
+)
+@click.pass_context
+def mcp_group(ctx: click.Context) -> None:
+    """Run the PYNE MCP server over stdio, or print client JSON.
+
+    Requires ``pip install 'hoox-pyne[mcp]'`` to serve. ``pyne mcp config``
+    always prints JSON (no extra needed).
+
+    \b
+    Examples:
+      pyne mcp config
+      pyne mcp config --module
+      pyne mcp
+    """
+    if ctx.invoked_subcommand is None:
+        try:
+            from pynescript.mcp.server import run_stdio
+
+            run_stdio()
+        except ImportError as exc:
+            raise click.ClickException(str(exc)) from exc
+
+
+@mcp_group.command("config", short_help="Print MCP client JSON for Cursor / Claude / Inspector.")
+@click.option(
+    "--module",
+    "use_module",
+    is_flag=True,
+    help="Use python -m pynescript.mcp instead of the pyne-mcp console script.",
+)
+def mcp_config_cmd(use_module: bool) -> None:
+    """Print an ``mcpServers.pyne`` snippet (no secrets)."""
+    from pynescript.mcp.server import client_config
+
+    click.echo(json.dumps(client_config(module=use_module), indent=2))
 
 
 if __name__ == "__main__":

@@ -86,6 +86,7 @@ def test_root_help(runner: CliRunner) -> None:
     assert "info" in out
     assert "download-builtins" in out
     assert "runner" in out
+    assert "mcp" in out
     assert "pyne check" in out
     assert "pynescript remains a compatibility alias" in out
     # Windows GH runners default to cp1252; Click --help must not use → / —.
@@ -278,6 +279,8 @@ def test_info_json_shape(runner: CliRunner) -> None:
     assert payload["entry_points"]["cli_alias"] == "pynescript"
     assert payload["entry_points"]["lsp"] == "pyne-lsp"
     assert payload["entry_points"]["lsp_alias"] == "pynescript-lsp"
+    assert payload["entry_points"]["mcp"] == "pyne-mcp"
+    assert isinstance(payload["mcp"], bool)
     assert "hoox.sh" in payload["docs"]
 
 
@@ -293,6 +296,23 @@ def test_info_alias_ls(runner: CliRunner) -> None:
     r = runner.invoke(cli, ["ls", "--json"])
     assert r.exit_code == 0
     assert json.loads(r.output)["name"] == "pynescript"
+
+
+def test_mcp_config_json(runner: CliRunner) -> None:
+    r = runner.invoke(cli, ["mcp", "config"])
+    assert r.exit_code == 0, r.output
+    payload = json.loads(r.output)
+    assert payload["mcpServers"]["pyne"]["command"] == "pyne-mcp"
+    r2 = runner.invoke(cli, ["mcp", "config", "--module"])
+    assert r2.exit_code == 0
+    payload2 = json.loads(r2.output)
+    assert payload2["mcpServers"]["pyne"]["args"] == ["-m", "pynescript.mcp"]
+
+
+def test_mcp_help(runner: CliRunner) -> None:
+    r = runner.invoke(cli, ["mcp", "--help"])
+    assert r.exit_code == 0
+    assert "config" in r.output
 
 
 # ---------------------------------------------------------------------------

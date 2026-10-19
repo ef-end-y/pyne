@@ -28,6 +28,7 @@ pip install hoox-pyne
 pip install "hoox-pyne[lsp]"       # language server
 pip install "hoox-pyne[compile]"   # Numba path
 pip install "hoox-pyne[data]"      # ccxt market data
+pip install "hoox-pyne[mcp]"       # MCP server (pyne-mcp / pyne mcp)
 ```
 
 Do **not** install plain `pyne`/`PyNE` (unrelated package) or the upstream PyPI project named `pynescript` (elbakramer) for this stack.

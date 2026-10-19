@@ -19,7 +19,7 @@
 
 ---
 title: "Installation"
-description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, LSP, compile, data, and Pro API extras."
+description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, LSP, compile, data, Pro API, and MCP extras."
 ---
 
 # Installation
@@ -39,6 +39,7 @@ pip install "hoox-pyne[lsp]"       # language server
 pip install "hoox-pyne[compile]"   # Numba compile path
 pip install "hoox-pyne[data]"      # ccxt market data
 pip install "hoox-pyne[pro]"       # Flask Pro API stack
+pip install "hoox-pyne[mcp]"       # MCP server (pyne-mcp / pyne mcp)
 ```
 
 ## Conceptual model
@@ -55,10 +56,12 @@ flowchart LR
   EXTRA_COMPILE["extra: compile"] --> NUMBA[numba path]
   EXTRA_DATA["extra: data"] --> CCXT[ccxt providers]
   EXTRA_PRO["extra: pro"] --> API[Flask Pro API]
+  EXTRA_MCP["extra: mcp"] --> MCP[pyne-mcp]
   CORE --> EXTRA_LSP
   CORE --> EXTRA_COMPILE
   CORE --> EXTRA_DATA
   CORE --> EXTRA_PRO
+  CORE --> EXTRA_MCP
 ```
 
 | Install flavor | What you get | When |
@@ -68,6 +71,7 @@ flowchart LR
 | `pip install "hoox-pyne[compile]"` | + numpy / numba | `compile` / `prewarm` / `run` Numba modes |
 | `pip install "hoox-pyne[data]"` | + ccxt | Exchange data providers |
 | `pip install "hoox-pyne[pro]"` | + Flask Pro API stack | Self-hosted `/run` |
+| `pip install "hoox-pyne[mcp]"` | + `pyne-mcp` / `pyne mcp` | LLM hosts (Cursor, Claude, Inspector) |
 | `pip install -e ".[dev-lsp]"` | Editable + LSP test harness | Contributing to LSP |
 | Docker CLI image | Full CLI image | CI gates / isolated runs |
 | Hatch env | Matrix tests, lint, docs | Full monorepo workflow |

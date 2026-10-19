@@ -56,6 +56,7 @@ flowchart LR
 | `data` | `pynescript.util.data.get_provider` |
 | `runner` | HTTP client for Flask `/scripts` + `/cron/run` (`PYNE_RUNNER`) |
 | `info` | version + optional extras |
+| `mcp` | `pynescript.mcp` stdio server ([MCP](/pyne/docs/enduser/guides/mcp)) |
 
 ## Interface surface
 
@@ -81,8 +82,9 @@ pyne <command> --help
 | `data SYMBOL` | symbol + provider opts | table / json / csv |
 | `runner …` | file / id | hosted deploy + tick ([runner](/pyne/docs/api/endpoints/runner)) |
 | `info` | — | version + extras |
+| `mcp` | — | stdio MCP server; `pyne mcp config` prints client JSON |
 
-**Not** part of this Click group: language server — use **`pyne-lsp`** (alias `pynescript-lsp`).
+**Not** part of this Click group: language server — use **`pyne-lsp`** (alias `pynescript-lsp`). MCP also has console script **`pyne-mcp`**.
 
 ## Install options
 
@@ -90,6 +92,7 @@ pyne <command> --help
 | --- | --- |
 | `pip install hoox-pyne` | Default desk / CI use |
 | `pip install "hoox-pyne[compile]"` | Need Numba `compile` / `run` modes |
+| `pip install "hoox-pyne[mcp]"` | MCP server (`pyne-mcp` / `pyne mcp`) |
 | GitHub Release binary `pynescript-cli-*` | No Python install |
 | Docker `pynescript-cli` | Isolated CI / one-shot checks |
 

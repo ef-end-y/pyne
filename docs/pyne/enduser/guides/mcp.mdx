@@ -1,0 +1,117 @@
+# Copyright (C) 2024-2026 jango_blockchained
+#
+# This file is part of pynescript.
+#
+# pynescript is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# pynescript is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with pynescript.  If not, see <https://www.gnu.org/licenses/>.
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+title: "MCP (agents)"
+description: "Run the PYNE Model Context Protocol server so agents can parse, lint, convert, compile, and execute Pine Script™ in-process."
+---
+
+# MCP (agents)
+
+## Abstract
+
+The **PYNE MCP server** exposes the Pine toolchain to LLM hosts (Cursor, Claude, Inspector, Grok) over stdio. Tools call the same library APIs as the `pyne` CLI and `pynescript.runtime.Runtime` — they do not shell out. Install `hoox-pyne[mcp]`, then point the client at `pyne-mcp` (or `pyne mcp`). Tool names are prefixed `pyne_` so they never collide with AXIS `axis_*` / `app_*`.
+
+## Conceptual model
+
+```mermaid
+flowchart LR
+  A[MCP host] -->|stdio JSON-RPC| S[pyne-mcp]
+  S --> O[pynescript.mcp.ops]
+  O --> AST[parse / lint / convert]
+  O --> RT[Runtime.run / compile]
+  O --> LSP[hover / complete / builtins]
+```
+
+| Surface | Role |
+| --- | --- |
+| PYNE MCP | Language + runtime: parse, lint, convert, compile, execute, builtins |
+| AXIS MCP | Chart PWA + Worker APIs (`POST /mcp`, optional tab bridge) |
+| `pyne-lsp` | Editor language server (separate stdio process) |
+
+Clients may enable PYNE MCP and AXIS MCP together.
+
+## Interface surface
+
+```bash
+pip install "hoox-pyne[mcp]"
+pyne mcp config          # print mcpServers JSON
+pyne mcp                 # stdio (blocks)
+pyne-mcp                 # same as pyne mcp
+python -m pynescript.mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "pyne": {
+      "command": "pyne-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+`pyne mcp config --module` uses `python -m pynescript.mcp` instead of the console script.
+
+Every tool returns `{ "ok": true, ... }` or `{ "ok": false, "error", "kind", "line?", "column?" }`. Pine syntax errors are tool results, not protocol failures. Prefer `source=` (pasted script) over `path=`. Plot series are truncated (last N samples). Default data provider is `mock`. Runner tools use `PYNE_API_URL` / `ADMIN_TOKEN` and hit the network.
+
+Catalog: [MCP tools](/pyne/docs/enduser/reference/mcp-tools).
+
+## Internals (repo paths)
+
+- `src/pynescript/mcp/server.py` — `MCPServer`, tool registration
+- `src/pynescript/mcp/ops/` — library-backed operations
+- Extra: `[mcp]` in `pyproject.toml` (`mcp>=2.0,<3`, `lsprotocol`)
+- Entry: `pyne-mcp = pynescript.mcp.__main__:main`
+
+## Invariants & edge cases
+
+- No disk writes (`format` / `convert` return source).
+- `pyne_run` is the CLI compile + synthetic bars path. `pyne_execute` is `Runtime.run` (interpret / compile / auto, caller OHLCV, timeout).
+- `pyne_download_builtins` **lists** pine-facade templates; it does not write files.
+- Hover / complete / signature reuse LSP handlers; they need `lsprotocol` (pulled in by `[mcp]`).
+
+## Worked examples
+
+```text
+User: lint this script and run 50 bars
+Agent: pyne_lint({source}) → pyne_run({source, bars: 50})
+```
+
+```text
+User: what does ta.sma take?
+Agent: pyne_builtin({name: "ta.sma"})
+```
+
+## Failure modes
+
+| Symptom | Cause |
+| --- | --- |
+| `MCP extra missing` | `pip install "hoox-pyne[mcp]"` |
+| `ok: false`, `kind: parse` | Syntax error; `line` / `column` set when known |
+| `kind: network` | Runner / non-mock `pyne_data` / facade list |
+| Large plot dumps | Raise `sample` only as needed (max 64) |
+
+## See also
+
+- [MCP tools](/pyne/docs/enduser/reference/mcp-tools)
+- [CLI guide](/pyne/docs/enduser/guides/cli)
+- [Library API](/pyne/docs/enduser/guides/library-api)
+- [AXIS MCP](/axis/docs/enduser/guides/mcp)

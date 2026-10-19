@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Installation"
-description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, LSP, compile, data, and Pro API extras."
+description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, LSP, compile, data, Pro API, and MCP extras."
 resource: "docs/pyne/enduser/getting-started/installation.mdx"
 tags: [doc, docs, enduser, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-19T17:27:04Z
 sources:
   - id: tree
     resource: "docs/pyne/enduser/getting-started/installation.mdx"

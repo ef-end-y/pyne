@@ -62,6 +62,11 @@ compile = [
   "numpy>=1.26.0",
   "numba>=0.59.0",
 ]
+# MCP server (stdio). Language hover/complete reuse lsprotocol types.
+mcp = [
+  "mcp>=2.0,<3",
+  "lsprotocol>=2024.0.0",
+]
 # Pro API stack (Flask + compile path + optional Redis key store)
 pro = [
   "flask>=3.0.0",
@@ -89,6 +94,7 @@ Changelog = "https://github.com/hoox-sh/pyne/blob/main/CHANGELOG.md"
 # Preferred console names (product brand). Import package remains ``pynescript``.
 pyne = "pynescript.__main__:cli"
 pyne-lsp = "pynescript.langserver.__main__:main"
+pyne-mcp = "pynescript.mcp.__main__:main"
 # Backward-compatible aliases (same callables).
 pynescript = "pynescript.__main__:cli"
 pynescript-lsp = "pynescript.langserver.__main__:main"
@@ -137,6 +143,7 @@ dependencies = [
   "pytest-lsp>=0.1.0",
   "numpy>=1.26.0",
   "numba>=0.59.0",
+  "mcp>=2.0,<3",
 ]
 [tool.hatch.envs.test.scripts]
 test = [
@@ -248,6 +255,7 @@ required-imports = ["from __future__ import annotations"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["ARG001", "C901", "F841", "PLR0912", "PLR2004", "S101", "T201", "TID252", "PLC0415"]
 "src/pynescript/__main__.py" = ["ARG001", "EM101", "PLR0913", "B904", "PLC0415"]
+"src/pynescript/mcp/**" = ["PLC0415", "PLR0913", "PLR0917", "FBT001", "FBT002", "C901", "PLR0911", "PLR2004", "S110"]
 "src/pynescript/util/runner_cli.py" = ["FBT001", "PLR0913", "PLR0917", "EM101", "EM102", "C901", "S310"]
 "src/pynescript/util/pine_convert.py" = ["C901", "PLR0912", "PLR0915"]
 "src/pynescript/util/data.py" = ["DTZ005", "B904", "PLC0415"]

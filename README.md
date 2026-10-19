@@ -2,7 +2,7 @@
 
 **Independent open toolchain for the Pine Script™ language** — formal grammar, algebraic AST, dual-engine bar-loop runtime, language server, and HTTP evaluation surface. Part of the [HOOX](https://hoox.sh) open trading stack.
 
-**0.6.14** · PyPI [`hoox-pyne`](https://pypi.org/project/hoox-pyne/) · import `pynescript` · CLIs `pyne` · `pyne-lsp` (aliases: `pynescript` · `pynescript-lsp`)
+**0.6.14** · PyPI [`hoox-pyne`](https://pypi.org/project/hoox-pyne/) · import `pynescript` · CLIs `pyne` · `pyne-lsp` · `pyne-mcp` (aliases: `pynescript` · `pynescript-lsp`)
 
 <div align="center">
 
@@ -97,8 +97,9 @@ Not a claim of TradingView® platform parity. Intentional demos are classified s
 
 | Surface | Role |
 |---------|------|
-| **CLI** (`pyne`, alias `pynescript`) | Check, format, lint, compile, run, data fetch, prewarm |
+| **CLI** (`pyne`, alias `pynescript`) | Check, format, lint, compile, run, data fetch, prewarm, MCP |
 | **LSP** (`pyne-lsp`) | Diagnostics, completion (~800+ builtins), hover, navigation, semantic tokens, formatting |
+| **MCP** (`pyne-mcp`) | Agent tools for parse / lint / convert / compile / `Runtime.run` / builtins ([docs](https://hoox.sh/pyne/docs/enduser/guides/mcp)) |
 | **VS Code extension** | First-class `.pyne` / `.pine` (and related) associations |
 | **Pro API** | HTTP evaluate, batch run, chart preview, quick backtest |
 | **Editors** | Configurations for Neovim, Zed, Emacs (see `clients/`) |
@@ -112,6 +113,7 @@ pip install "hoox-pyne[lsp]"          # language server
 pip install "hoox-pyne[compile]"      # Numba compile path
 pip install "hoox-pyne[data]"         # market data providers
 pip install "hoox-pyne[pro]"          # Flask Pro API stack
+pip install "hoox-pyne[mcp]"          # MCP server (pyne-mcp / pyne mcp)
 
 # Development install from a clone
 git clone https://github.com/hoox-sh/pyne.git
