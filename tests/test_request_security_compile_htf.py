@@ -370,6 +370,30 @@ plot(ta.highestbars(close, 3), title="chb")
         chb_day5 = sc["series"]["chb"][5 * 24 : 6 * 24]
         assert any(not _is_na(v) and abs(float(v) - float(chb_day5[0])) > 1e-6 for v in chb_day5)
 
+    def test_htf_kama_rising_falling_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed kama/rising/falling: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.kama(close, 3)), title="kama")
+plot(request.security(syminfo.tickerid, "D", ta.rising(close, 3)), title="ris")
+plot(request.security(syminfo.tickerid, "D", ta.falling(close, 3)), title="fal")
+plot(ta.kama(close, 3), title="ckama")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("kama", "ris", "fal"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = sc["series"]["kama"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["kama"][-1]) - float(sc["series"]["ckama"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""

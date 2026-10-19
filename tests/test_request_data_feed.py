@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars + 1-arg wpr/highest/lowest/highestbars/lowestbars on HTF."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/kama/rising/falling + 1-arg wpr/highest/lowest/highestbars/lowestbars on HTF."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -470,7 +470,8 @@ plot(ta.atr(3), title="catr")
         ``ta.highest`` / ``ta.lowest`` (2-arg and 1-arg) / ``ta.range`` /
         ``ta.median`` / ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
         ``ta.percentrank`` / ``ta.change`` / ``ta.cog`` / ``ta.highestbars`` /
-        ``ta.lowestbars`` (2-arg and 1-arg)
+        ``ta.lowestbars`` (2-arg and 1-arg) / 2-arg ``ta.kama`` / ``ta.rising`` /
+        ``ta.falling``
         are allowlisted.
         """
         from backend.runtime import Runtime
@@ -481,11 +482,15 @@ indicator("t")
 plot(request.security(syminfo.tickerid, "60", ta.sma(ta.ema(close, 3), 3)), title="nested")
 plot(request.security(syminfo.tickerid, "60", ta.cci(high, low, close, 5)), title="cci4")
 plot(request.security(syminfo.tickerid, "60", ta.wpr(high, low, close, 5)), title="wpr4")
+plot(request.security(syminfo.tickerid, "60", ta.kama(close, 5, 2, 30)), title="kama4")
+plot(request.security(syminfo.tickerid, "60", ta.kama(close, 5, 2)), title="kama3")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
         assert all(_is_na(x) for x in out["series"]["cci4"])
         assert all(_is_na(x) for x in out["series"]["wpr4"])
+        assert all(_is_na(x) for x in out["series"]["kama4"])
+        assert all(_is_na(x) for x in out["series"]["kama3"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -586,11 +591,18 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "highestbars" and m.source == "high" and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.lowestbars(14)"))
         assert m is not None and m.name == "lowestbars" and m.source == "low" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.kama(close, 14)"))
+        assert m is not None and m.name == "kama" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.rising(close, 3)"))
+        assert m is not None and m.name == "rising" and m.source == "close" and m.length == 3
+        m = match_htf_simple_ta_ast(_expr("ta.falling(hl2, 5)"))
+        assert m is not None and m.name == "falling" and m.source == "hl2" and m.length == 5
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.kama(close, 14, 2, 30)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.kama(close, 14, 2)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.highest(ta.sma(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.lowest(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.range(14)")) is None
@@ -608,6 +620,11 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.highestbars(ta.sma(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.lowestbars(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cog(14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.kama(ta.sma(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.rising(ta.sma(close, 5), 3)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.falling(ta.ema(close, 5), 3)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.rising(14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.falling(14)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
 
     def test_htf_cmo_stdev_linreg_hourly_to_daily_last_completed(self) -> None:
@@ -1125,6 +1142,84 @@ plot(ta.lowestbars(close, 3), title="clb")
         assert any(not _is_na(v) and abs(float(v) - float(chb_day5[0])) > 1e-6 for v in chb_day5)
         clb_day5 = out["series"]["clb"][5 * 24 : 6 * 24]
         assert any(not _is_na(v) and abs(float(v) - float(clb_day5[0])) > 1e-6 for v in clb_day5)
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_kama_rising_falling_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily kama/rising/falling."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.kama(close, 3)), title="hkama")
+plot(request.security(syminfo.tickerid, "D", ta.rising(close, 3)), title="hris")
+plot(request.security(syminfo.tickerid, "D", ta.falling(close, 3)), title="hfal")
+plot(ta.kama(close, 3), title="ckama")
+plot(ta.rising(close, 3), title="cris")
+plot(ta.falling(close, 3), title="cfal")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hkama = out["series"]["hkama"]
+        hris = out["series"]["hris"]
+        hfal = out["series"]["hfal"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes = [float(bars[24 * (d + 1) - 1]["close"]) for d in range(7)]
+
+        def _kama_last(series: list[float], length: int, fast: int = 2, slow: int = 30) -> float:
+            kama = series[length - 1]
+            for i in range(length, len(series)):
+                change = abs(series[i] - series[i - length])
+                volatility = sum(abs(series[i - j] - series[i - j - 1]) for j in range(length))
+                if volatility != 0:
+                    efficiency = change / volatility
+                    fastest = 2.0 / (fast + 1.0)
+                    slowest = 2.0 / (slow + 1.0)
+                    smoothing = efficiency * (fastest - slowest) + slowest
+                    sc = smoothing * smoothing
+                else:
+                    sc = (2.0 / (slow + 1.0)) ** 2
+                kama = kama + sc * (series[i] - kama)
+            return kama
+
+        def _steps(series: list[float], period: int, *, rising: bool) -> float:
+            if period < 1 or len(series) < period + 1:
+                return 0.0
+            for idx in range(1, period + 1):
+                a, b = series[-idx], series[-idx - 1]
+                if rising and a <= b:
+                    return 0.0
+                if not rising and a >= b:
+                    return 0.0
+            return 1.0
+
+        # kama(3)/rising(3)/falling(3) need 4 HTF samples (first output at index 3).
+        assert all(_is_na(x) for x in hkama[1:96])
+        assert all(_is_na(x) for x in hris[1:96])
+        assert all(_is_na(x) for x in hfal[1:96])
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = hkama[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        expect_kama = _kama_last(daily_closes, 3)
+        expect_ris = _steps(daily_closes, 3, rising=True)
+        expect_fal = _steps(daily_closes, 3, rising=False)
+        assert abs(float(hkama[-1]) - expect_kama) < 1e-9
+        assert abs(float(hris[-1]) - expect_ris) < 1e-9
+        assert abs(float(hfal[-1]) - expect_fal) < 1e-9
+        # Not chart-TF passthrough (hourly rising(3) never holds; daily closes do).
+        # Falling is 0 on both (uptrend); HTF is still stepwise in the bucket.
+        assert abs(float(hkama[-1]) - float(out["series"]["ckama"][-1])) > 1e-6
+        assert abs(float(hris[-1]) - float(out["series"]["cris"][-1])) > 1e-6
+        day5_fal = hfal[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_fal)
+        fal_ref = float(day5_fal[0])
+        for v in day5_fal:
+            assert abs(float(v) - fal_ref) < 1e-9
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

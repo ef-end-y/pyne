@@ -131,6 +131,9 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "cog",
         "highestbars",
         "lowestbars",
+        "kama",
+        "rising",
+        "falling",
     }
 )
 
@@ -149,7 +152,8 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "Provider/feed OHLCV that is already coarser than the chart and carries bar times "
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
-    "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars "
+    "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
+    "kama/rising/falling "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -180,7 +184,7 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling
     source: str | None  # OHLCV field; None for atr/wpr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars is high/low
     length: int
 
@@ -212,12 +216,14 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       ``ta.mom`` / ``ta.hma`` / ``ta.vwma`` / ``ta.dema`` / ``ta.tema`` /
       ``ta.highest`` / ``ta.lowest`` / ``ta.range`` / ``ta.median`` / ``ta.dev``
       / ``ta.variance`` / ``ta.mode`` / ``ta.percentrank`` / ``ta.change`` /
-      ``ta.cog`` / ``ta.highestbars`` / ``ta.lowestbars`` —
+      ``ta.cog`` / ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.kama`` /
+      ``ta.rising`` / ``ta.falling`` —
       source is a bare OHLCV name (``close``, ``open``, ``high``, ``low``,
       ``volume``, ``hl2``, …); length is a positive integer literal.
       ``ta.linreg`` is the 2-arg form (offset 0). ``ta.cci`` is 2-arg
       ``(source, length)`` or 1-arg ``(length)`` (hlc3). ``ta.change`` is the
-      2-arg form (not ``close[n]`` history offset).
+      2-arg form (not ``close[n]`` history offset). ``ta.kama`` is the 2-arg
+      form (Kaufman fast=2, slow=30).
     - ``ta.atr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
@@ -228,12 +234,13 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
 
     Nested calls (``ta.sma(ta.ema(...), n)`` / ``ta.highest(ta.sma(...), n)`` /
     ``ta.median(ta.sma(...), n)`` / ``ta.mode(ta.sma(...), n)`` /
-    ``ta.cog(ta.sma(...), n)`` / ``ta.highestbars(ta.sma(...), n)``), multi-arg
+    ``ta.cog(ta.sma(...), n)`` / ``ta.highestbars(ta.sma(...), n)`` /
+    ``ta.kama(ta.sma(...), n)`` / ``ta.rising(ta.sma(...), n)``), multi-arg
     atr, 3-arg linreg, 4-arg ``ta.cci`` / ``ta.wpr``, 1-arg ``ta.range`` /
     ``ta.median`` / ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
     ``ta.percentrank`` / ``ta.change`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
-    variables as length, and non-ta callees return ``None`` (existing
-    complex-na path).
+    1-arg ``ta.rising`` / ``ta.falling``, variables as length, and non-ta
+    callees return ``None`` (existing complex-na path).
     """
     if type(expr_ast) is not ast_mod.Call:
         return None
@@ -275,7 +282,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         length = _const_positive_int(arg_nodes[0].value)
         return HtfSimpleTaExpr("lowestbars", "low", length) if length else None
 
-    # sma / ema / rsi / wma / rma / cmo / stdev / linreg / cci / roc / mom / hma / vwma / dema / tema / highest / lowest / range / median / dev / variance / mode / percentrank / change / cog / highestbars / lowestbars: (source, length)
+    # sma / ema / rsi / wma / rma / cmo / stdev / linreg / cci / roc / mom / hma / vwma / dema / tema / highest / lowest / range / median / dev / variance / mode / percentrank / change / cog / highestbars / lowestbars / kama / rising / falling: (source, length)
     if len(arg_nodes) != 2:  # noqa: PLR2004 - fixed allowlist arity
         return None
     src_node = arg_nodes[0].value
@@ -1785,6 +1792,113 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
+    def _htf_kama_full_series(src: list[float | None], period: int) -> list[float | None]:
+        """Full-list KAMA with Kaufman defaults (fast=2, slow=30) on unique HTF bars.
+
+        No full-list ``_kama`` helper exists. Matches interpret
+        ``_builtin_ta_kama`` 2-arg form / ``_kama_inc_update``: seed at index
+        ``period-1`` (not emitted); first output at index ``period``. 3/4-arg
+        kama is not allowlisted.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period < 1 or period >= n:
+            return out
+        seed = src[period - 1]
+        if seed is None:
+            return out
+        try:
+            kama = float(seed)
+        except (TypeError, ValueError):
+            return out
+        if kama != kama:
+            return out
+        fast = 2.0
+        slow = 30.0
+        for i in range(period, n):
+            cur = src[i]
+            old = src[i - period]
+            if cur is None or old is None:
+                continue
+            try:
+                x = float(cur)
+                oldest = float(old)
+            except (TypeError, ValueError):
+                continue
+            if x != x or oldest != oldest:
+                continue
+            volatility = 0.0
+            ok = True
+            for j in range(period):
+                a = src[i - j]
+                b = src[i - j - 1]
+                if a is None or b is None:
+                    ok = False
+                    break
+                try:
+                    fa = float(a)
+                    fb = float(b)
+                except (TypeError, ValueError):
+                    ok = False
+                    break
+                if fa != fa or fb != fb:
+                    ok = False
+                    break
+                volatility += abs(fa - fb)
+            if not ok:
+                continue
+            if volatility != 0.0:
+                efficiency = abs(x - oldest) / volatility
+                fastest = 2.0 / (fast + 1.0)
+                slowest = 2.0 / (slow + 1.0)
+                smoothing = efficiency * (fastest - slowest) + slowest
+                sc = smoothing * smoothing
+            else:
+                sc = (2.0 / (slow + 1.0)) ** 2
+            kama = kama + sc * (x - kama)
+            out[i] = None if kama != kama else kama
+        return out
+
+    def _htf_rising_full_series(self, src: list[float | None], period: int) -> list[float | None]:
+        """Full-list rising via interpret ``_rising`` on unique HTF windows."""
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        rising_fn = getattr(self, "_rising", None)
+        if not callable(rising_fn):
+            return out
+        # ``period`` pairwise steps need ``period+1`` samples.
+        for i in range(period, n):
+            window = src[i - period : i + 1]
+            try:
+                v = rising_fn(window, period)
+                fv = float(v) if v is not None else float("nan")
+            except (TypeError, ValueError):
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
+    def _htf_falling_full_series(self, src: list[float | None], period: int) -> list[float | None]:
+        """Full-list falling via interpret ``_falling`` on unique HTF windows."""
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        falling_fn = getattr(self, "_falling", None)
+        if not callable(falling_fn):
+            return out
+        for i in range(period, n):
+            window = src[i - period : i + 1]
+            try:
+                v = falling_fn(window, period)
+                fv = float(v) if v is not None else float("nan")
+            except (TypeError, ValueError):
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
+    @staticmethod
     def _htf_finite_window(window: list[float | None]) -> list[float] | None:
         """Strict finite window, or None if any slot is missing/non-numeric."""
         vals: list[float] = []
@@ -2166,6 +2280,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             "cog",
             "highestbars",
             "lowestbars",
+            "kama",
+            "rising",
+            "falling",
         ):
             field = expr.source or "close"
             src = self._htf_source_series(unique, field)
@@ -2235,6 +2352,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 return self._htf_highestbars_full_series(src, period)
             if name == "lowestbars":
                 return self._htf_lowestbars_full_series(src, period)
+            if name == "kama":
+                return self._htf_kama_full_series(src, period)
+            if name == "rising":
+                return self._htf_rising_full_series(src, period)
+            if name == "falling":
+                return self._htf_falling_full_series(src, period)
             return self._htf_rsi_full_series(src, period)
 
         # atr / wpr: length-only; uses HTF high/low/close.
@@ -2506,6 +2629,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             raw = self._htf_highestbars_full_series(src, period)
         elif name == "lowestbars":
             raw = self._htf_lowestbars_full_series(src, period)
+        elif name == "kama":
+            raw = self._htf_kama_full_series(src, period)
+        elif name == "rising":
+            raw = self._htf_rising_full_series(src, period)
+        elif name == "falling":
+            raw = self._htf_falling_full_series(src, period)
         elif name == "rsi":
             cleaned: list[float | None] = []
             for v in src:
@@ -3072,11 +3201,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           bar times that align to chart bars → same merge (``provider_htf_ohlcv``).
           Chart-length / no-timestamp provider series stay stubs
           (``provider_ohlcv`` / ``provider_ohlcv_chart_stub``) with unused merge.
-        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars``
+        - **Same-symbol + allowlisted simple ta.*** (``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/kama/rising/falling``
           with bare OHLCV source + const length; 1-arg ``ta.cci(n)`` uses HTF hlc3;
           1-arg ``ta.wpr(n)`` uses HTF high/low/close; 1-arg ``ta.highest(n)`` /
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
-          high / low) on a **coarser** TF → run the
+          high / low; 2-arg ``ta.kama`` uses Kaufman fast=2, slow=30) on a
+          **coarser** TF → run the
           interpret TA helper on resampled HTF bars (``htf_simple_ta_resample``).
         - **Same-symbol + simple OHLCV** otherwise → chart passthrough /
           provider series (``chart_passthrough_htf_stub`` / same-TF eval).
@@ -3789,7 +3919,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     so ``ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema``
     / ``highest`` / ``lowest`` / ``range`` / ``median`` / ``dev`` / ``variance``
     / ``mode`` / ``percentrank`` / ``change`` / ``cog`` / ``highestbars`` /
-    ``lowestbars``
+    ``lowestbars`` / ``kama`` / ``rising`` / ``falling``
     and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` / ``ta.highestbars`` /
     ``ta.lowestbars`` on HTF bars match interpret exactly.
     """
@@ -3843,6 +3973,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         self._change = TechnicalHelpers._change.__get__(self, type(self))
         self._highestbars = TechnicalHelpers._highestbars.__get__(self, type(self))
         self._lowestbars = TechnicalHelpers._lowestbars.__get__(self, type(self))
+        self._rising = TechnicalHelpers._rising.__get__(self, type(self))
+        self._falling = TechnicalHelpers._falling.__get__(self, type(self))
         self._atr = VolatilityIndicators._atr.__get__(self, type(self))
         self._cci = OscillatorIndicators._cci.__get__(self, type(self))
         self._roc = OscillatorIndicators._roc.__get__(self, type(self))
