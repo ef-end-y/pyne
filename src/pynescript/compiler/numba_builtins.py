@@ -844,7 +844,14 @@ def _numba_pivothigh_jit(arr, left, right, i):
     for j in range(c - left, c + right + 1):
         if j == c:
             continue
-        if arr[j] >= val:
+        other = arr[j]
+        if np.isnan(other):
+            continue
+        # Tie on the left still confirms; the right side must be strictly lower.
+        if j < c:
+            if other > val:
+                return np.nan
+        elif other >= val:
             return np.nan
     return val
 
@@ -886,7 +893,14 @@ def _numba_pivotlow_jit(arr, left, right, i):
     for j in range(c - left, c + right + 1):
         if j == c:
             continue
-        if arr[j] <= val:
+        other = arr[j]
+        if np.isnan(other):
+            continue
+        # Tie on the left still confirms; the right side must be strictly higher.
+        if j < c:
+            if other < val:
+                return np.nan
+        elif other <= val:
             return np.nan
     return val
 

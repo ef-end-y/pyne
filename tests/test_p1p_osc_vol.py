@@ -379,3 +379,36 @@ plot(ta.pivotlow(close, 2, 2), "pl")
     assert math.isclose(float(pl_c[11]), 0.0, abs_tol=_ATOL)
     _assert_finite_match(ph_i, ph_c, key="ph")
     _assert_finite_match(pl_i, pl_c, key="pl")
+
+
+def test_pivot_left_tie_interp_compile() -> None:
+    """A tie on the left confirms; a tie on the right does not. Both engines."""
+    src = """
+//@version=6
+indicator("pivot_left_tie")
+plot(ta.pivothigh(high, 2, 2), "ph")
+plot(ta.pivotlow(low, 2, 2), "pl")
+"""
+    highs = [5.0, 5.0, 7.0, 7.0, 6.0, 5.0]
+    lows = [5.0, 5.0, 3.0, 3.0, 4.0, 5.0]
+    bars = []
+    for i, (h, lo) in enumerate(zip(highs, lows)):
+        bars.append(
+            {
+                "open": lo,
+                "high": h,
+                "low": lo,
+                "close": lo,
+                "time": 1_000_000 + i * 86_400_000,
+                "volume": 1000.0,
+            }
+        )
+    interp, compiled = _run_dual(src, bars)
+    if compiled is None:
+        pytest.skip("numba compile path unavailable")
+    for series in (interp["series"], compiled["series"]):
+        ph, pl = series["ph"], series["pl"]
+        assert _is_na(ph[4])
+        assert math.isclose(float(ph[5]), 7.0, abs_tol=_ATOL)
+        assert _is_na(pl[4])
+        assert math.isclose(float(pl[5]), 3.0, abs_tol=_ATOL)

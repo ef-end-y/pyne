@@ -353,6 +353,14 @@ def test_pivothigh_pivotlow():
     assert nb.numba_pivotlow(trough, 1, 1, 3) == pytest.approx(1.0)
     assert np.isnan(nb.numba_pivotlow(trough, 1, 1, 1))
     assert np.isnan(nb.numba_pivothigh(arr, None, 1, 2))
+    # Left tie confirms; a tie or a stricter neighbour on the right does not.
+    tied_high = f64([5, 5, 7, 7, 6, 5])
+    assert nb.numba_pivothigh(tied_high, 2, 2, 5) == pytest.approx(7.0)
+    assert np.isnan(nb.numba_pivothigh(tied_high, 2, 2, 4))
+    assert np.isnan(nb.numba_pivothigh(f64([8, 5, 7, 6, 5]), 2, 2, 4))
+    tied_low = f64([5, 5, 3, 3, 4, 5])
+    assert nb.numba_pivotlow(tied_low, 2, 2, 5) == pytest.approx(3.0)
+    assert np.isnan(nb.numba_pivotlow(tied_low, 2, 2, 4))
 
 
 def test_sma_inc_matches_batch():
