@@ -20,11 +20,20 @@
 """Document colors — ``textDocument/documentColor`` and ``colorPresentation``.
 
 Public handlers: :func:`handle_document_color` and
-:func:`handle_color_presentation`. Color literals are lexer ``COLOR`` tokens
-(``#rgb`` / ``#rrggbb`` / ``#rrggbbaa``) stored as :class:`~pynescript.ast.node.Constant`
-with ``kind="#"``. Each becomes a 0-1 RGBA :class:`~lsprotocol.types.ColorInformation`.
-``colorPresentation`` rewrites the hex at that range (``#rrggbb``, or
-``#rrggbbaa`` when alpha != 1). Empty source or parse failure returns ``[]``.
+:func:`handle_color_presentation`. Reported swatches:
+
+- lexer ``COLOR`` tokens (``#rgb`` / ``#rrggbb`` / ``#rrggbbaa``) as
+  :class:`~pynescript.ast.node.Constant` with ``kind="#"``
+- named ``color.*`` constants (``color.red``, …) as :class:`~pynescript.ast.node.Attribute`
+  on ``Name("color")``
+- ``color.rgb(r, g, b[, transp])`` with numeric literals (Pine transp 0-100,
+  0 = opaque)
+
+Each becomes a 0-1 RGBA :class:`~lsprotocol.types.ColorInformation`.
+``colorPresentation`` rewrites the range as ``#rrggbb`` (or ``#rrggbbaa`` when
+alpha != 1), including when the original text was a ``color.*`` name. Empty
+source or parse failure returns ``[]``. Quoted ``"#rrggbb"`` strings are not
+reported (``title="#ff00ff"`` is not a color).
 """
 
 from __future__ import annotations
@@ -37,6 +46,7 @@ from typing import Any
 from lsprotocol import types as lsp
 
 from pynescript.ast import node as ast
+from pynescript.ast.evaluator.builtins.color import _NAMED_COLORS
 from pynescript.ast.helper import parse
 from pynescript.ast.helper import walk
 
@@ -48,6 +58,12 @@ _HEX_RGB_LEN = 3
 _HEX_RRGGBB_LEN = 6
 _OPAQUE_ALPHA = 255
 _CHANNEL_MAX = 255.0
+_TRANSP_MAX = 100.0
+_COLOR_NS = "color"
+_RGB_ATTR = "rgb"
+_RGB_POS = ("red", "green", "blue", "transp")
+_RGB_ALIASES = {"r": "red", "g": "green", "b": "blue", "t": "transp"}
+_RGB_KEYS = frozenset(_RGB_POS)
 
 
 def handle_document_color(
@@ -65,7 +81,8 @@ def handle_document_color(
             Omit (default ``...``) to parse from *source*.
 
     Returns:
-        Color information for each hex literal (possibly empty). Never ``None``.
+        Color information for each hex literal, ``color.*`` name, and literal
+        ``color.rgb`` call (possibly empty). Never ``None``.
     """
     if tree is ...:
         if not source:
@@ -92,9 +109,9 @@ def handle_color_presentation(
 ) -> list[lsp.ColorPresentation]:
     """Handle textDocument/colorPresentation request.
 
-    Rewrites the hex at *params.range*. Opaque colors use ``#rrggbb``;
-    otherwise ``#rrggbbaa``. *source* is unused (the client already supplied
-    the color and range).
+    Rewrites *params.range* as ``#rrggbb`` (opaque) or ``#rrggbbaa``. Named
+    ``color.*`` ranges become hex. *source* is unused (the client already
+    supplied the color and range).
     """
     del source
     hex_str = _color_to_hex(params.color)
@@ -107,19 +124,111 @@ def handle_color_presentation(
 
 
 def _color_info_for_node(node: Any) -> lsp.ColorInformation | None:
-    """Return ColorInformation for a ``kind="#"`` Constant, or ``None``."""
-    if not isinstance(node, ast.Constant) or getattr(node, "kind", None) != "#":
-        return None
-    value = node.value
-    if not isinstance(value, str):
-        return None
-    color = _hex_to_color(value)
+    """Return ColorInformation for a hex / ``color.*`` / ``color.rgb`` node."""
+    color = None
+    if isinstance(node, ast.Constant):
+        color = _hex_constant_color(node)
+    elif isinstance(node, ast.Attribute):
+        color = _named_attr_color(node)
+    elif isinstance(node, ast.Call):
+        color = _rgb_call_color(node)
     if color is None:
         return None
     rng = _node_to_range(node)
     if rng is None:
         return None
     return lsp.ColorInformation(range=rng, color=color)
+
+
+def _hex_constant_color(node: ast.Constant) -> lsp.Color | None:
+    """Parse a ``kind="#"`` hex Constant, or ``None``."""
+    if getattr(node, "kind", None) != "#":
+        return None
+    value = node.value
+    if not isinstance(value, str):
+        return None
+    return _hex_to_color(value)
+
+
+def _named_attr_color(node: ast.Attribute) -> lsp.Color | None:
+    """Parse ``color.red`` / … (Attribute on Name ``color``), or ``None``."""
+    value = node.value
+    if not isinstance(value, ast.Name) or value.id != _COLOR_NS:
+        return None
+    hex_str = _NAMED_COLORS.get(node.attr)
+    if hex_str is None:
+        return None
+    return _hex_to_color(hex_str)
+
+
+def _rgb_call_color(node: ast.Call) -> lsp.Color | None:
+    """Parse ``color.rgb`` with numeric-literal args, or ``None``."""
+    func = node.func
+    if not isinstance(func, ast.Attribute) or func.attr != _RGB_ATTR:
+        return None
+    if not isinstance(func.value, ast.Name) or func.value.id != _COLOR_NS:
+        return None
+    channels = _rgb_literal_channels(node.args)
+    if channels is None:
+        return None
+    r, g, b, a = channels
+    return lsp.Color(
+        red=r / _CHANNEL_MAX,
+        green=g / _CHANNEL_MAX,
+        blue=b / _CHANNEL_MAX,
+        alpha=a / _CHANNEL_MAX,
+    )
+
+
+def _literal_number(node: Any) -> float | None:
+    """Return a numeric Constant as float; reject bool and non-literals."""
+    if not isinstance(node, ast.Constant):
+        return None
+    value = node.value
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value)
+
+
+def _rgb_literal_channels(args: list[Any]) -> tuple[int, int, int, int] | None:
+    """Merge positional/keyword rgb literals to clamped (r, g, b, a) bytes."""
+    values: dict[str, float] = {}
+    pos_i = 0
+    for arg in args:
+        if not isinstance(arg, ast.Arg):
+            return None
+        num = _literal_number(arg.value)
+        if num is None:
+            return None
+        raw_name = arg.name
+        if raw_name:
+            key = _RGB_ALIASES.get(raw_name, raw_name)
+            if key not in _RGB_KEYS:
+                return None
+            values[key] = num
+            continue
+        if pos_i >= len(_RGB_POS):
+            return None
+        values[_RGB_POS[pos_i]] = num
+        pos_i += 1
+    if not {"red", "green", "blue"} <= values.keys():
+        return None
+    r = _clamp_channel(values["red"])
+    g = _clamp_channel(values["green"])
+    b = _clamp_channel(values["blue"])
+    a = _transp_to_alpha_byte(values.get("transp", 0.0))
+    return r, g, b, a
+
+
+def _clamp_channel(value: float) -> int:
+    """Clamp a 0-255 RGB component (Pine ``color.rgb`` / ``Color``)."""
+    return max(0, min(_OPAQUE_ALPHA, int(value)))
+
+
+def _transp_to_alpha_byte(transp: float) -> int:
+    """Convert Pine transparency 0-100 (0 opaque) to an 8-bit alpha."""
+    t = max(0.0, min(_TRANSP_MAX, transp))
+    return round(_CHANNEL_MAX * (1.0 - t / _TRANSP_MAX))
 
 
 def _hex_to_color(value: str) -> lsp.Color | None:

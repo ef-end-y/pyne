@@ -1630,8 +1630,32 @@ def _assert_rgba(color: lsp.Color, r: int, g: int, b: int, a: int = 255) -> None
     assert color.alpha == a / 255.0
 
 
+_COLOR_NAMED_SOURCE = """//@version=6
+indicator("T")
+col = color.red
+plot(close, color=color.green)
+bgcolor(color.gray)
+fill(p1, p2, color=color.fuchsia)
+"""
+
+_COLOR_RGB_SOURCE = """//@version=6
+indicator("T")
+c = color.rgb(255, 0, 0)
+d = color.rgb(33, 150, 243, 95)
+e = color.rgb(10, 20, 30, transp=50)
+f = color.rgb(red=1, green=2, blue=3)
+x = 255
+skip = color.rgb(x, 0, 0)
+nested = color.rgb(color.r(color.blue), 0, 0)
+n = color.new(color.white, 50)
+unk = color.foo
+ch = color.r
+title = "#00ff00"
+"""
+
+
 class TestDocumentColorHandler:
-    """Test textDocument/documentColor and colorPresentation for #hex literals."""
+    """Test textDocument/documentColor and colorPresentation for #hex, color.*, rgb."""
 
     def test_handle_document_color_empty_and_unparsed(self) -> None:
         """Empty source and parse failure return an empty list."""
@@ -1646,21 +1670,63 @@ class TestDocumentColorHandler:
         result = handle_document_color(_color_params(), _COLOR_SOURCE)
         src = _COLOR_SOURCE
         hexes = ("#ff0000", "#00ff00aa", "#2962FF", "#22AB94")
-        assert len(result) == len(hexes)
         found = {_slice_range(src, info.range) for info in result}
-        assert found == set(hexes)
+        assert set(hexes) <= found
         _assert_rgba(_color_at(result, src, "#ff0000"), 0xFF, 0, 0)
         _assert_rgba(_color_at(result, src, "#00ff00aa"), 0, 0xFF, 0, 0xAA)
         _assert_rgba(_color_at(result, src, "#2962FF"), 0x29, 0x62, 0xFF)
         _assert_rgba(_color_at(result, src, "#22AB94"), 0x22, 0xAB, 0x94)
 
-    def test_handle_document_color_skips_strings_and_named(self) -> None:
-        """Quoted hex strings and color.red are not document colors."""
+    def test_handle_document_color_skips_quoted_hex_strings(self) -> None:
+        """Quoted hex strings are not document colors (title= is not a color)."""
         result = handle_document_color(_color_params(), _COLOR_SOURCE)
         texts = [_slice_range(_COLOR_SOURCE, info.range) for info in result]
         assert "#ff00ff" not in texts
-        assert "color.red" not in texts
         assert "red" not in texts
+
+    def test_handle_document_color_named_constants(self) -> None:
+        """color.red / color.green / … Attributes become palette RGBA swatches."""
+        src = _COLOR_NAMED_SOURCE
+        result = handle_document_color(_color_params(), src)
+        found = {_slice_range(src, info.range) for info in result}
+        assert found == {"color.red", "color.green", "color.gray", "color.fuchsia"}
+        _assert_rgba(_color_at(result, src, "color.red"), 0xF2, 0x36, 0x45)
+        _assert_rgba(_color_at(result, src, "color.green"), 0x22, 0xAB, 0x94)
+        _assert_rgba(_color_at(result, src, "color.gray"), 0x78, 0x7B, 0x86)
+        _assert_rgba(_color_at(result, src, "color.fuchsia"), 0xE0, 0x40, 0xFB)
+
+    def test_handle_document_color_hex_source_includes_named(self) -> None:
+        """Mixed hex + color.red source reports both; quoted title hex is skipped."""
+        result = handle_document_color(_color_params(), _COLOR_SOURCE)
+        found = {_slice_range(_COLOR_SOURCE, info.range) for info in result}
+        assert "color.red" in found
+        _assert_rgba(_color_at(result, _COLOR_SOURCE, "color.red"), 0xF2, 0x36, 0x45)
+
+    def test_handle_document_color_rgb_literals(self) -> None:
+        """color.rgb with numeric literals (optional transp 0-100) is a swatch."""
+        src = _COLOR_RGB_SOURCE
+        result = handle_document_color(_color_params(), src)
+        _assert_rgba(_color_at(result, src, "color.rgb(255, 0, 0)"), 255, 0, 0)
+        # transp 95 → alpha = round(255 * (1 - 0.95)) = 13
+        _assert_rgba(_color_at(result, src, "color.rgb(33, 150, 243, 95)"), 33, 150, 243, 13)
+        # transp 50 → alpha = round(255 * 0.5) = 128
+        _assert_rgba(_color_at(result, src, "color.rgb(10, 20, 30, transp=50)"), 10, 20, 30, 128)
+        _assert_rgba(_color_at(result, src, "color.rgb(red=1, green=2, blue=3)"), 1, 2, 3)
+
+    def test_handle_document_color_rgb_skips_non_literals(self) -> None:
+        """Non-literal rgb args, color.new, unknown color.foo, color.r are skipped."""
+        src = _COLOR_RGB_SOURCE
+        result = handle_document_color(_color_params(), src)
+        texts = [_slice_range(src, info.range) for info in result]
+        assert "color.rgb(x, 0, 0)" not in texts
+        assert "color.rgb(color.r(color.blue), 0, 0)" not in texts
+        assert not any(t.startswith("color.new") for t in texts)
+        assert "color.foo" not in texts
+        assert "color.r" not in texts
+        assert "#00ff00" not in texts
+        # nested named constant inside the skipped rgb call is still a swatch
+        assert "color.blue" in texts
+        assert "color.white" in texts
 
     def test_handle_document_color_reuses_tree(self) -> None:
         """Passing a pre-parsed tree must not require re-parse of source."""
@@ -1668,7 +1734,8 @@ class TestDocumentColorHandler:
 
         tree = parse(_COLOR_SOURCE, filename="file:///test.pine")
         result = handle_document_color(_color_params(), source=None, tree=tree)
-        assert len(result) == 4
+        found = {_slice_range(_COLOR_SOURCE, info.range) for info in result}
+        assert found == {"#ff0000", "#00ff00aa", "#2962FF", "#22AB94", "color.red"}
         _assert_rgba(_color_at(result, _COLOR_SOURCE, "#ff0000"), 0xFF, 0, 0)
 
     def test_handle_document_color_rgb_shorthand_on_tree(self) -> None:
@@ -1738,6 +1805,22 @@ class TestDocumentColorHandler:
         assert len(result[0].label) == 9
         assert result[0].text_edit is not None
         assert result[0].text_edit.new_text == result[0].label
+
+    def test_handle_color_presentation_named_rewrites_hex(self) -> None:
+        """Picking a color on a color.* name rewrites the range to #rrggbb."""
+        rng = _range_of_hex(_COLOR_NAMED_SOURCE, "color.red")
+        params = lsp.ColorPresentationParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            color=lsp.Color(red=0xF2 / 255.0, green=0x36 / 255.0, blue=0x45 / 255.0, alpha=1.0),
+            range=rng,
+        )
+        result = handle_color_presentation(params, _COLOR_NAMED_SOURCE)
+        assert len(result) == 1
+        pres = result[0]
+        assert pres.label == "#f23645"
+        assert pres.text_edit is not None
+        assert pres.text_edit.range == rng
+        assert pres.text_edit.new_text == "#f23645"
 
 
 class TestCapabilities:
