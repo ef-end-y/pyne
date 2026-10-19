@@ -204,6 +204,16 @@ class TestBasicRanges:
         assert _Basic._builtin_ta_highestbars(ev, [_trend(), 5]) == 0
         assert _Basic._builtin_ta_lowestbars(ev, [_trend(), 5]) == -4
 
+    def test_range_max_min(self, ev: NodeLiteralEvaluator) -> None:
+        series = _trend()
+        assert _Basic._builtin_ta_range(ev, [series, 5]) == pytest.approx(4.0)
+        assert _Basic._builtin_ta_max(ev, [series, 5]) == pytest.approx(30.0)
+        assert _Basic._builtin_ta_min(ev, [series, 5]) == pytest.approx(26.0)
+        assert _Basic._builtin_ta_max(ev, [series]) == pytest.approx(30.0)
+        assert _Basic._builtin_ta_min(ev, [series]) == pytest.approx(1.0)
+        assert _Basic._builtin_ta_max(ev, [[None, None]]) is None
+        assert _Basic._builtin_ta_min(ev, [[None, None]]) is None
+
     def test_change_mom_stdev(self, ev: NodeLiteralEvaluator) -> None:
         assert _Basic._builtin_ta_change(ev, [_trend()]) == pytest.approx(1.0)
         assert _Basic._builtin_ta_mom(ev, [_trend(), 10]) == pytest.approx(10.0)

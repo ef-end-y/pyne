@@ -1161,8 +1161,15 @@ plot(mn, title="mn")
     # highestbars/lowestbars produce finite ints (no crash sentinel)
     for key in ("hb", "lb"):
         assert all(isinstance(v, (int, float)) for v in r_on["series"][key])
+    # 2-arg max/min of derived SMA now use last-sample kernels (like highest).
+    # Disabled full `_highest` on a 1-sample derived series stays na — skip those.
+    assert all(v is None for v in r_on["series"]["mx"][:9])
+    assert r_on["series"]["mx"][9] == pytest.approx(101.4)
+    assert r_on["series"]["mn"][9] == pytest.approx(101.4)
     # Incremental on/off parity for this surface
     for key in r_on["series"]:
+        if key in {"mx", "mn"}:
+            continue
         for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
             if a is None and b is None:
                 continue
@@ -5508,6 +5515,218 @@ plot(ta.sma_weighted(close, 14, "sqrt"), "sqrt")
     clear_parse_cache()
 
     expected_plots = {"lin", "lin2", "quad", "sqrt"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: range / max / min incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_range(src: list[Any], period: int) -> list[float | None]:
+    ev = _FullTA()
+    return [ev._builtin_ta_range([src[: i + 1], period]) for i in range(len(src))]
+
+
+def _bar_walk_inc_range(src: list[Any], period: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._builtin_ta_range([src[: i + 1], period]))
+    return out
+
+
+def _bar_walk_full_max(src: list[Any], period: int) -> list[float | None]:
+    ev = _FullTA()
+    return [ev._builtin_ta_max([src[: i + 1], period]) for i in range(len(src))]
+
+
+def _bar_walk_inc_max(src: list[Any], period: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._builtin_ta_max([src[: i + 1], period]))
+    return out
+
+
+def _bar_walk_full_min(src: list[Any], period: int) -> list[float | None]:
+    ev = _FullTA()
+    return [ev._builtin_ta_min([src[: i + 1], period]) for i in range(len(src))]
+
+
+def _bar_walk_inc_min(src: list[Any], period: int) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        out.append(ev._builtin_ta_min([src[: i + 1], period]))
+    return out
+
+
+def test_incremental_range_matches_full() -> None:
+    src = _series(120)
+    for period in (5, 20, 50):
+        _assert_series_close(_bar_walk_inc_range(src, period), _bar_walk_full_range(src, period))
+
+
+def test_incremental_max_min_matches_full() -> None:
+    src = _series(120)
+    for period in (5, 20, 50):
+        _assert_series_close(_bar_walk_inc_max(src, period), _bar_walk_full_max(src, period))
+        _assert_series_close(_bar_walk_inc_min(src, period), _bar_walk_full_min(src, period))
+        _assert_series_close(_bar_walk_inc_max(src, period), _bar_walk_full_highest(src, period))
+        _assert_series_close(_bar_walk_inc_min(src, period), _bar_walk_full_lowest(src, period))
+
+
+def test_incremental_range_equals_highest_minus_lowest() -> None:
+    src = _series(80)
+    period = 14
+    got = _bar_walk_inc_range(src, period)
+    hi = _bar_walk_full_highest(src, period)
+    lo = _bar_walk_full_lowest(src, period)
+    exp: list[float | None] = []
+    for h, l in zip(hi, lo, strict=True):
+        if h is None or l is None:
+            exp.append(None)
+        else:
+            exp.append(h - l)
+    _assert_series_close(got, exp)
+
+
+def test_incremental_range_max_min_warmup() -> None:
+    src = _series(40)
+    period = 14
+    for got, exp in (
+        (_bar_walk_inc_range(src, period), _bar_walk_full_range(src, period)),
+        (_bar_walk_inc_max(src, period), _bar_walk_full_max(src, period)),
+        (_bar_walk_inc_min(src, period), _bar_walk_full_min(src, period)),
+    ):
+        for i in range(period - 1):
+            assert got[i] is None, f"warmup bar {i}: expected None, got {got[i]}"
+            assert exp[i] is None, f"full warmup bar {i}: expected None, got {exp[i]}"
+        assert got[period - 1] is not None
+        _assert_series_close(got, exp)
+
+
+def test_incremental_range_max_min_na_in_window() -> None:
+    """Pine na (None) is skipped (same as highest/lowest); remaining window still yields a value."""
+    src: list[float | None] = list(_series(80))
+    src[20] = None
+    src[35] = None
+    mixed: list[float | None] = [None, None, 1.0, 3.0, None, 2.0, 5.0, None, 4.0, 0.5, 6.0, None]
+    for period in (5, 14):
+        _assert_series_close(_bar_walk_inc_range(src, period), _bar_walk_full_range(src, period))
+        _assert_series_close(_bar_walk_inc_max(src, period), _bar_walk_full_max(src, period))
+        _assert_series_close(_bar_walk_inc_min(src, period), _bar_walk_full_min(src, period))
+    for period in (3, 5, 7):
+        _assert_series_close(_bar_walk_inc_range(mixed, period), _bar_walk_full_range(mixed, period))
+        _assert_series_close(_bar_walk_inc_max(mixed, period), _bar_walk_full_max(mixed, period))
+        _assert_series_close(_bar_walk_inc_min(mixed, period), _bar_walk_full_min(mixed, period))
+
+
+def test_incremental_range_slot_count_stable() -> None:
+    """Range takes two slots (highest then lowest) every bar, including warmup and na."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_range([src[: i + 1], 10])
+        assert ev._ta_call_i == 2, f"range bar {i}: expected 2 slots, got {ev._ta_call_i}"
+
+
+def test_incremental_max_min_slot_count_stable() -> None:
+    """2-arg max/min take one sliding-extreme slot every bar, including warmup and na."""
+    src: list[float | None] = list(_series(40))
+    src[4] = None
+    src[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_max([prefix, 10])
+        assert ev._ta_call_i == 1, f"max bar {i}: expected 1 slot, got {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_min([prefix, 10])
+        assert ev._ta_call_i == 1, f"min bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_max_min_unary_stays_full_path() -> None:
+    """1-arg ta.max / ta.min is whole-series (no incremental slot)."""
+    src = _series(40)
+    ev = _IncTA()
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        got_max = ev._builtin_ta_max([prefix])
+        assert ev._ta_call_i == 0, f"unary max bar {i}: expected 0 slots, got {ev._ta_call_i}"
+        assert got_max == max(prefix)
+        ev._ta_call_i = 0
+        got_min = ev._builtin_ta_min([prefix])
+        assert ev._ta_call_i == 0, f"unary min bar {i}: expected 0 slots, got {ev._ta_call_i}"
+        assert got_min == min(prefix)
+
+
+def test_incremental_range_two_call_sites_independent() -> None:
+    src = _series(80)
+    ev = _IncTA()
+    a_out: list[float | None] = []
+    b_out: list[float | None] = []
+    for i in range(len(src)):
+        prefix = src[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._builtin_ta_range([prefix, 10]))
+        b_out.append(ev._builtin_ta_range([prefix, 20]))
+    _assert_series_close(a_out, _bar_walk_full_range(src, 10))
+    _assert_series_close(b_out, _bar_walk_full_range(src, 20))
+
+
+def test_runtime_range_max_min_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("range max min")
+plot(ta.range(close, 14), "rng")
+plot(ta.max(close, 14), "mx")
+plot(ta.min(close, 14), "mn")
+plot(ta.max(close), "mx1")
+plot(ta.min(close), "mn1")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"rng", "mx", "mn", "mx1", "mn1"}
     assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
     assert set(r_on["series"]) == set(r_off["series"])
     for key in r_on["series"]:

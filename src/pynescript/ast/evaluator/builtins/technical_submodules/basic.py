@@ -871,7 +871,14 @@ class BasicIndicators(TechnicalHelpers):
 
     def _builtin_ta_range(self, args: list[Any]) -> float | None:
         """Range = highest - lowest over a period."""
-        series, period = self._expect_series(args, length=2)
+        series, period = self._expect_series(args, length=BINARY, last_sample_ok=True)
+        if self._use_incremental_ta():
+            # Two slots every bar (warmup/na included): highest then lowest.
+            highest = self._highest_inc_update(series, period)
+            lowest = self._lowest_inc_update(series, period)
+            if highest is None or lowest is None:
+                return None
+            return highest - lowest
         return self._range(series, period)
 
     def _builtin_ta_max(self, args: list[Any]) -> float | None:
@@ -879,25 +886,30 @@ class BasicIndicators(TechnicalHelpers):
 
         Also accepts a single series arg (extension methods like
         ``method max(float data) => ta.max(data)``) — returns the max of
-        available history, or the scalar itself.
+        available history, or the scalar itself. 1-arg stays full-path.
         """
-        if len(args) == 1:
+        if len(args) == UNARY:
             series = self._as_series(args[0])
             valid = [v for v in series if v is not None and isinstance(v, (int, float))]
             return max(valid) if valid else None
-        series, period = self._expect_series(args, length=2)
+        series, period = self._expect_series(args, length=BINARY, last_sample_ok=True)
+        if self._use_incremental_ta():
+            return self._highest_inc_update(series, period)
         return self._highest(series, period)
 
     def _builtin_ta_min(self, args: list[Any]) -> float | None:
         """Minimum value over a period (alias for ta.lowest).
 
         Single-arg form mirrors ``ta.max`` (full-history min / scalar).
+        1-arg stays full-path.
         """
-        if len(args) == 1:
+        if len(args) == UNARY:
             series = self._as_series(args[0])
             valid = [v for v in series if v is not None and isinstance(v, (int, float))]
             return min(valid) if valid else None
-        series, period = self._expect_series(args, length=2)
+        series, period = self._expect_series(args, length=BINARY, last_sample_ok=True)
+        if self._use_incremental_ta():
+            return self._lowest_inc_update(series, period)
         return self._lowest(series, period)
 
     def _builtin_ta_cum(self, args: list[Any]) -> float | None:
