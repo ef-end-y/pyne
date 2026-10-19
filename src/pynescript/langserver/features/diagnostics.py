@@ -35,6 +35,7 @@ import re
 from lsprotocol import types as lsp
 
 from pynescript.ast.linter import LintWarning
+from pynescript.langserver.features.formatting import handle_formatting
 
 # Same pattern as ``PineLinter._check_version`` (flexible whitespace).
 _VERSION_PRAGMA_RE = re.compile(r"//\s*@version\s*=\s*\d+")
@@ -180,6 +181,11 @@ def _get_diagnostic_tags(code: str) -> list[lsp.DiagnosticTag] | None:
 def create_quick_fix(warning: LintWarning, uri: str, source: str) -> lsp.CodeAction | None:
     """Create a CodeAction for a lint warning.
 
+    W001 inserts ``//@version=6``. W002 replaces an old pragma. C002 applies
+    the same whole-document edit as
+    :func:`~pynescript.langserver.features.formatting.handle_formatting`
+    (or ``None`` when parse fails or the buffer is already canonical).
+
     Args:
         warning: The lint warning.
         uri: The document URI.
@@ -230,18 +236,27 @@ def create_quick_fix(warning: LintWarning, uri: str, source: str) -> lsp.CodeAct
         )
 
     if warning.code == "C002":
-        line_index = max(0, (warning.line or 1) - 1)
-        line_text = _get_line_text(source, line_index)
-
-        if len(line_text) > 120:
-            return lsp.CodeAction(
-                title="Split long line",
-                kind=lsp.CodeActionKind.Refactor,
-                command=lsp.Command(
-                    title="Format document",
-                    command="editor.action.formatDocument",
-                ),
-            )
+        edits = handle_formatting(
+            lsp.DocumentFormattingParams(
+                text_document=lsp.TextDocumentIdentifier(uri=uri),
+                options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+            ),
+            source,
+        )
+        if not edits:
+            return None
+        return lsp.CodeAction(
+            title="Format document",
+            kind=lsp.CodeActionKind.QuickFix,
+            edit=lsp.WorkspaceEdit(
+                document_changes=[
+                    lsp.TextDocumentEdit(
+                        text_document=lsp.OptionalVersionedTextDocumentIdentifier(uri=uri),
+                        edits=list(edits),
+                    )
+                ]
+            ),
+        )
 
     return None
 

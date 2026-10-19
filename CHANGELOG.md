@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP C002 QuickFix.** `textDocument/codeAction` applies the same whole-document `TextEdit` as `textDocument/formatting` when lint warnings include C002 (line length > 120). Unparsed or unchanged source yields no C002 fix. Advertised as `QuickFix`. Convert-to-v6 / W001 / W002 are unchanged.
 - **LSP selection ranges.** `textDocument/selectionRange` expands from the identifier (or smallest AST node) under the cursor to the enclosing statement, then enclosing `if`/`for`/`while`/`switch`/`once` blocks and `FunctionDef`/`TypeDef`/`EnumDef`. Empty or unparsed documents, or no node at the position, return `[]`. Advertised via `selectionRangeProvider`.
 - **LSP folding ranges.** `textDocument/foldingRange` for `if`/`for`/`while`/`switch`/`once` blocks, `FunctionDef`/`TypeDef`/`EnumDef`, and `//#region`/`//#endregion` (plus `# region` hash comments). Empty or unparsed documents return `[]`. Advertised via `foldingRangeProvider`.
 - **LSP W002 QuickFix.** `textDocument/codeAction` replaces an old `//@version=N` (N < 5) with `//@version=6` on the existing pragma line (does not insert a second pragma). v5 still gets Convert-to-v6 `RefactorRewrite` only.

@@ -19,11 +19,12 @@
 
 """Convert the active Pine document toward v6 (editor command + code action).
 
-``textDocument/codeAction`` also returns version QuickFixes via
+``textDocument/codeAction`` also returns QuickFixes via
 :func:`~pynescript.langserver.features.diagnostics.create_quick_fix`:
 
 - W001 — insert ``//@version=6`` when the pragma is missing
 - W002 — replace an existing ``//@version=N`` (N < 5) with ``//@version=6``
+- C002 — whole-document format edit when lint warnings include a long line
 """
 
 from __future__ import annotations
@@ -82,7 +83,7 @@ def handle_code_action(
     source: str | None,
     warnings: list[LintWarning] | None = None,
 ) -> list[lsp.CodeAction]:
-    """Offer Convert-to-v6, a W001 QuickFix (missing pragma), and W002 (old pragma)."""
+    """Offer Convert-to-v6, W001/W002 version QuickFixes, and C002 format."""
     if not source:
         return []
     declared = detect_version(source)
@@ -128,4 +129,10 @@ def handle_code_action(
         fix = create_quick_fix(w002, uri, source)
         if fix is not None:
             actions.append(fix)
+    if warnings:
+        c002 = next((w for w in warnings if w.code == "C002"), None)
+        if c002 is not None:
+            fix = create_quick_fix(c002, uri, source)
+            if fix is not None:
+                actions.append(fix)
     return actions

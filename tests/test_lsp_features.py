@@ -1084,6 +1084,112 @@ class TestConvertToV6:
         assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
 
 
+_C002_LONG_TITLE = (
+    "This is a very very very very very very very very very very very "
+    "very very very very very very very very very very long line"
+)
+_C002_SRC = (
+    '//@version=6\n'
+    'indicator(  "t"  )\n'
+    f'plot(  ta.sma( close,14 ), title="{_C002_LONG_TITLE}"  )\n'
+)
+
+
+def _code_action_params(uri: str = "file:///t.pine") -> lsp.CodeActionParams:
+    return lsp.CodeActionParams(
+        text_document=lsp.TextDocumentIdentifier(uri=uri),
+        range=lsp.Range(
+            start=lsp.Position(line=2, character=0),
+            end=lsp.Position(line=2, character=1),
+        ),
+        context=lsp.CodeActionContext(diagnostics=[]),
+    )
+
+
+def _format_params(uri: str = "file:///t.pine") -> lsp.DocumentFormattingParams:
+    return lsp.DocumentFormattingParams(
+        text_document=lsp.TextDocumentIdentifier(uri=uri),
+        options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+    )
+
+
+class TestC002QuickFix:
+    """C002 long-line QuickFix applies the same edit as format-document."""
+
+    def test_c002_quickfix_formats_document(self) -> None:
+        from pynescript.ast.linter import lint_script
+
+        src = _C002_SRC
+        warnings = lint_script(src)
+        assert any(w.code == "C002" for w in warnings)
+        expected = handle_formatting(_format_params(), src)
+        assert expected
+
+        actions = handle_code_action(_code_action_params(), src, warnings)
+        quick = [a for a in actions if a.kind == lsp.CodeActionKind.QuickFix]
+        assert len(quick) == 1
+        action = quick[0]
+        assert action.command is None
+        assert action.kind == lsp.CodeActionKind.QuickFix
+        edit = _first_text_edit(action)
+        assert edit.new_text == expected[0].new_text
+        assert edit.range == expected[0].range
+
+    def test_c002_quickfix_not_invented_without_warning(self) -> None:
+        actions = handle_code_action(_code_action_params(), _C002_SRC)
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
+        actions_empty = handle_code_action(_code_action_params(), _C002_SRC, [])
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions_empty)
+
+    def test_c002_quickfix_hidden_when_unchanged(self) -> None:
+        from pynescript.ast.linter import lint_script
+
+        formatted = handle_formatting(_format_params(), _C002_SRC)
+        assert formatted
+        src = formatted[0].new_text
+        assert handle_formatting(_format_params(), src) == []
+        warnings = lint_script(src)
+        assert any(w.code == "C002" for w in warnings)
+        actions = handle_code_action(_code_action_params(), src, warnings)
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
+
+    def test_c002_quickfix_hidden_when_unparsed(self) -> None:
+        from pynescript.ast.linter import lint_script
+
+        src = (
+            '//@version=6\n'
+            'indicator("t"\n'
+            f'plot(ta.sma(close, 14), title="{_C002_LONG_TITLE}")\n'
+        )
+        warnings = lint_script(src)
+        assert any(w.code == "C002" for w in warnings)
+        assert handle_formatting(_format_params(), src) == []
+        actions = handle_code_action(_code_action_params(), src, warnings)
+        assert not any(a.kind == lsp.CodeActionKind.QuickFix for a in actions)
+
+    def test_c002_one_fix_for_multiple_long_lines(self) -> None:
+        from pynescript.ast.linter import lint_script
+
+        src = _C002_SRC + f'plot(close, title="{_C002_LONG_TITLE}")\n'
+        warnings = lint_script(src)
+        assert sum(1 for w in warnings if w.code == "C002") >= 2
+        actions = handle_code_action(_code_action_params(), src, warnings)
+        quick = [a for a in actions if a.kind == lsp.CodeActionKind.QuickFix]
+        assert len(quick) == 1
+
+    def test_c002_does_not_replace_w001_or_convert(self) -> None:
+        from pynescript.ast.linter import lint_script
+
+        src = f'indicator(  "t"  )\nplot(  close, title="{_C002_LONG_TITLE}"  )\n'
+        warnings = lint_script(src)
+        assert any(w.code == "C002" for w in warnings)
+        actions = handle_code_action(_code_action_params(), src, warnings)
+        assert any(a.kind == lsp.CodeActionKind.RefactorRewrite for a in actions)
+        titles = {a.title for a in actions if a.kind == lsp.CodeActionKind.QuickFix}
+        assert "Add @version=6 declaration" in titles
+        assert any("format" in t.lower() for t in titles)
+
+
 def _first_text_edit(action: lsp.CodeAction) -> lsp.TextEdit:
     """Return the first TextEdit on a code action workspace edit."""
     edit = action.edit
