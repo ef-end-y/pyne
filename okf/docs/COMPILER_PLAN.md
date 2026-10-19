@@ -7,7 +7,7 @@ tags: [compiler-plan, doc, docs]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T15:25:55Z
+  at: 2026-10-19T04:22:02Z
 sources:
   - id: tree
     resource: "docs/COMPILER_PLAN.md"
@@ -30,11 +30,12 @@ Repo path `docs/COMPILER_PLAN.md`.
   * Landed Correctness and Host Surface
   * Performance
   * Interpret-to-Compile Parity
-* Recent Releases (0.6.10–0.6.13)
+* Recent Releases (0.6.10–0.6.14)
   * 0.6.10 — Observability and Engine Parity
   * 0.6.11 — Live Plane and Sessions
   * 0.6.12 — Production Hardening
   * 0.6.13 — Dual-host HTF
+  * 0.6.14 — HTF allowlist expansion
 
 # Mentions
 

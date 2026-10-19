@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.6.14] — 2026-10-19
+
 ### Added
 
 - **LSP document colors.** `textDocument/documentColor` reports `#rgb` / `#rrggbb` / `#rrggbbaa` color literals, quoted `"#rrggbb"` / `"#rrggbbaa"` strings, `color.*` named constants (`color.red`, …), `color.rgb(r, g, b[, transp])` with numeric literals, and `color.new(color, transp)` / `color(color, transp)` (Pine alias of `color.new`) when both args are literals (named `color.*`, `#hex` token, or quoted hex) as 0–1 RGBA `ColorInformation`. Pine transparency is 0–100 (0 = opaque). `textDocument/colorPresentation` rewrites the range as `#rrggbb` (or `#rrggbbaa` when alpha ≠ 1), including when the original text was a `color.*` name. Empty or unparsed documents return `[]`. Advertised via `colorProvider`.

@@ -19,7 +19,7 @@
 
 # PYNE Roadmap
 
-**Live package:** `hoox-pyne` **0.6.13**.
+**Live package:** `hoox-pyne` **0.6.14**.
 
 ---
 
@@ -100,7 +100,11 @@ The gevent WebSocket worker (F-30) is now the API default. CXT provider caching 
 
 ### 0.6.13 — Dual-host HTF, LSP, host hardening
 
-Compile-mode `request.security` matches interpret on allowlisted HTF resample (including `dema`/`tema`/`wpr`/`hma`/`vwma` and 1-arg `cci`). LSP advertises signature help, document highlight, rename on open documents, W001 QuickFix, and folding ranges. JSON key-store writes are flock-serialized; webhook POSTs pin to the resolved IP.
+Compile-mode `request.security` matches interpret on allowlisted HTF resample. LSP advertises `textDocument/signatureHelp`. JSON key-store writes are flock-serialized; webhook POSTs pin to the resolved IP.
+
+### 0.6.14 — HTF allowlist, incremental TA, LSP
+
+Allowlisted HTF `ta.*` resample expanded through `vwap` / `ao` / `linreg` offset (disk IR v33). Incremental TA covers `sma_weighted`, `stoch_smooth`, `rsi_divergence`, pattern kernels, `ema_cross_signal`. LSP folding, selectionRange, documentColor, W001/W002/C002 QuickFixes. GitHub Release notes come from `CHANGELOG.md`.
 
 ---
 

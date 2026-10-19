@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "ROADMAP.md"
-description: "Live package: hoox-pyne 0.6.13."
+description: "Live package: hoox-pyne 0.6.14."
 resource: "docs/ROADMAP.md"
 tags: [doc, docs, roadmap]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-18T15:25:55Z
+  at: 2026-10-19T04:22:02Z
 sources:
   - id: tree
     resource: "docs/ROADMAP.md"
@@ -38,6 +38,7 @@ Repo path `docs/ROADMAP.md`.
   * 0.6.11 — Live Plane and Sessions
   * 0.6.12 — Production Hardening
   * 0.6.13 — Dual-host HTF, LSP, host hardening
+  * 0.6.14 — HTF allowlist, incremental TA, LSP
 * What Remains
   * By Design
   * Open Items

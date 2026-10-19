@@ -3630,9 +3630,9 @@ docker buildx bake lsp # LSP image → pynescript-lsp:latest (ENTRYPOINT: pyne-l
 docker buildx bake # default group: api + api-dev
 docker buildx bake all # api + api-dev + lsp + cli
 Multi-platform (amd64 + arm64). Set REGISTRY to push:
-REGISTRY=ghcr.io/hoox-sh/pyne TAG=0.6.13 docker buildx bake release
+REGISTRY=ghcr.io/hoox-sh/pyne TAG=0.6.14 docker buildx bake release
 release group = api-release + cli-release + lsp-release
-→ ghcr.io/hoox-sh/pyne/{api,cli,lsp}:0.6.13
+→ ghcr.io/hoox-sh/pyne/{api,cli,lsp}:0.6.14
 Prefer: make docker-push-ghcr (workflow GHCR on v tags)
 `
 Make wrappers:
@@ -3692,16 +3692,16 @@ Environment variables
 Published image names
 GitHub Container Registry (workflow GHCR, tags v):
 `
-ghcr.io/hoox-sh/pyne/api:0.6.13
-ghcr.io/hoox-sh/pyne/cli:0.6.13
-ghcr.io/hoox-sh/pyne/lsp:0.6.13
+ghcr.io/hoox-sh/pyne/api:0.6.14
+ghcr.io/hoox-sh/pyne/cli:0.6.14
+ghcr.io/hoox-sh/pyne/lsp:0.6.14
 `
 Cloud Build (cloudbuild.yaml, --target api only):
 `
 gcr.io/$PROJECT_ID/pynescript/pynescript-pro-api:$COMMIT_SHA
 gcr.io/$PROJECT_ID/pynescript/pynescript-pro-api:latest
 `
-Substitution _PYNESCRIPT_VERSION in that YAML defaults to 0.6.13, matching about.py.
+Substitution _PYNESCRIPT_VERSION in that YAML defaults to 0.6.14, matching about.py.
 Internals
 Build stages
 1. base-os / base — slim image, non-root appuser; API/LSP base also installs curl + freetype/png
@@ -3802,7 +3802,7 @@ Substitutions (cloudbuild.yaml)
 | _REGION | us-central1 | Deploy region |
 | _REPOSITORY | pynescript | Image path segment |
 | _METADATA_KEY | (optional subst) | Passed to the LSP compile step as CRYPTO_KEY=${_METADATA_KEY} |
-| _PYNESCRIPT_VERSION | "0.6.13" | OCI label. Matches src/pynescript/about.py. |
+| _PYNESCRIPT_VERSION | "0.6.14" | OCI label. Matches src/pynescript/about.py. |
 Build steps
 1. build — docker build with BuildKit; tags $COMMIT_SHA + latest; cache-from latest
 2. push — docker push --all-tags
@@ -3880,10 +3880,10 @@ description: "CI matrices, containers, Nuitka LSP binaries, metadata crypto, Clo
 ---
 DevOps
 Abstract
-PYNE is a multi-surface product: pure-Python library + Click CLI (pyne / alias pynescript), pygls Language Server (pyne-lsp), Flask Pro API, VS Code extension (hoox-sh.pyne 0.4.4; the Python package is 0.6.13), and Docker targets (api / cli / lsp). Edge workers and the AXIS charting PWA are sister repos — not built in this tree.
+PYNE is a multi-surface product: pure-Python library + Click CLI (pyne / alias pynescript), pygls Language Server (pyne-lsp), Flask Pro API, VS Code extension (hoox-sh.pyne 0.4.4; the Python package is 0.6.14), and Docker targets (api / cli / lsp). Edge workers and the AXIS charting PWA are sister repos — not built in this tree.
 This tab documents the operational graph: local loops, GitHub Actions, release tags, Docker images, Nuitka CLI/LSP binaries, Fernet-encrypted LSP metadata, GCP Cloud Build/Run, observability hooks, and security controls.
 Conceptual model
-Invariant: CI green on main is necessary but not sufficient for a full release. Tag v fires Build & Release (binaries + VSIX + GitHub Release), Publish (hoox-pyne from about.py, currently 0.6.13, to PyPI), and GHCR (ghcr.io/hoox-sh/pyne/{api,cli,lsp}). Cloud Build deploys the API image separately.
+Invariant: CI green on main is necessary but not sufficient for a full release. Tag v fires Build & Release (binaries + VSIX + GitHub Release), Publish (hoox-pyne from about.py, currently 0.6.14, to PyPI), and GHCR (ghcr.io/hoox-sh/pyne/{api,cli,lsp}). Cloud Build deploys the API image separately.
 Interface surface
 | Concern | Entry | Doc |
 | --- | --- | --- |
@@ -4020,7 +4020,7 @@ make run # Pro API
 From PyPI (no checkout)
 `bash
 pip install "hoox-pyne[lsp,compile]"
-pyne --version # 0.6.13
+pyne --version # 0.6.14
 `
 Internals
 | Path | Why it matters |
@@ -4567,8 +4567,8 @@ Cut a release
 ensure main is green
 git checkout main && git pull
 bump versions in extension / about as needed
-git tag -a v0.6.13 -m "v0.6.13"
-git push origin v0.6.13
+git tag -a v0.6.14 -m "v0.6.14"
+git push origin v0.6.14
 watch Actions → Build & Release, Publish, GHCR
 `
 Smoke-test a downloaded binary
@@ -4939,7 +4939,7 @@ description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, L
 ---
 Installation
 Abstract
-PYNE is live on PyPI as hoox-pyne (currently 0.6.13). The import package remains pynescript (src-layout under src/pynescript/). Preferred console scripts are pyne / pyne-lsp; legacy pynescript / pynescript-lsp remain installed as aliases.
+PYNE is live on PyPI as hoox-pyne (currently 0.6.14). The import package remains pynescript (src-layout under src/pynescript/). Preferred console scripts are pyne / pyne-lsp; legacy pynescript / pynescript-lsp remain installed as aliases.
 Do not install:
 plain pyne / PyNE from PyPI without the hoox- prefix — unrelated 0.1.0 process-networking library (our wheel is hoox-pyne)
 upstream pynescript (elbakramer) — different project
@@ -5097,7 +5097,7 @@ Conceptual model
 Interface surface
 Assumes:
 ``bash
-pip install hoox-pyne # https://pypi.org/project/hoox-pyne/ · 0.6.13
+pip install hoox-pyne # https://pypi.org/project/hoox-pyne/ · 0.6.14
 optional:
 pip install "hoox-pyne[lsp]" # editors
 pip install "hoox-pyne[compile]" # compile / run / prewarm
@@ -5108,7 +5108,7 @@ pyne info
 pyne check script.pine
 pyne lint script.pine
 aliases still work: pynescript info …
-hoox-pyne 0.6.13 (live on PyPI)
+hoox-pyne 0.6.14 (live on PyPI)
 `
 Sample script in-tree: examples/rsi_strategy.pine. Prefer //@version=6 and .pyne / .pine for new work (.pinev5 remains a supported legacy association).
 Internals (repo paths)
@@ -6694,7 +6694,7 @@ Machine-oriented reference for every command on the preferred pyne Click group
 (pip install hoox-pyne). For workflows see the CLI guide.
 The language server is a separate console script (pyne-lsp; alias pynescript-lsp).
 Version option: pyne --version / -V reports pynescript.about.version
-(e.g. 0.6.13). Global --no-color honors NO_COLOR.
+(e.g. 0.6.14). Global --no-color honors NO_COLOR.
 Command index
 | Command | Aliases | Purpose |
 | --- | --- | --- |
@@ -7003,7 +7003,7 @@ Trademark disclaimer lives on the product index once — not repeated here in fu
 Questions
 What is PYNE vs pynescript vs pyne?
 PYNE — product documentation brand for the open evaluate stack (grammar → AST → runtime → LSP → Pro API → workers).
-hoox-pyne — PyPI distribution name (live, 0.6.13). Install with pip install hoox-pyne. Do not install plain pyne/PyNE from PyPI without the hoox- prefix (unrelated) or the upstream pynescript package (elbakramer).
+hoox-pyne — PyPI distribution name (live, 0.6.14). Install with pip install hoox-pyne. Do not install plain pyne/PyNE from PyPI without the hoox- prefix (unrelated) or the upstream pynescript package (elbakramer).
 pynescript — import package (import pynescript, including pynescript.runtime).
 pyne / pyne-lsp — preferred console scripts; pynescript / pynescript-lsp remain aliases.
 What Python versions are supported?
@@ -7428,7 +7428,7 @@ aliases: pynescript / pynescript-lsp
 The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyodide (via AXIS), and Cloudflare workers. Round-trip fidelity (parse → unparse) and interpretcompile plot parity are first-class invariants — see compatibility. Local open-corpus set01–04 (2026-08-09): parse 99.96%, Runtime interpret 100% excl. intentional demos (set01 249/249). The repository does not ship third-party script corpora.
 TypeScript consumers import PyneTS (@hoox-sh/pynets) — same public names; Python remains the oracle.
 What's new
-hoox-pyne 0.6.13 (live) — dual-host HTF, LSP signature help, host hardening:
+hoox-pyne 0.6.14 (live) — dual-host HTF, LSP signature help, host hardening:
 Compile HTF request.security (D-06) — same-symbol simple OHLCV, close[1], and allowlisted ta.sma/ema/rsi/atr/wma/rma on a coarser TF match interpret (gaps_on / lookahead_on on those paths). Nested ta. and foreign tickers stay na.
 LSP signature help — textDocument/signatureHelp for builtins and user FunctionDef (( / ,).
 JSON key-store atomic save and webhook DNS pin — flock + os.replace; POST connects to the resolved public IP with HTTPS SNI on the original hostname.
@@ -7531,7 +7531,7 @@ pynescript-lsp = "pynescript.langserver.main:main" # alias
 `
 Server class
 PynescriptLanguageServer (server.py):
-Subclasses pygls.lsp.server.LanguageServer with name="Pynescript" and version=version from src/pynescript/about.py (0.6.13).
+Subclasses pygls.lsp.server.LanguageServer with name="Pynescript" and version=version from src/pynescript/about.py (0.6.14).
 Instantiates self.pine_workspace = Workspace().
 Registers handlers in setup_method_handlers() via @self.feature(...).
 Document sync
@@ -7855,7 +7855,7 @@ pyne-lsp
 aliases:
 pynescript-lsp --stdio
 container (stdio):
-docker run --rm -i -v "$PWD:/work" -w /work ghcr.io/hoox-sh/pyne/lsp:0.6.13
+docker run --rm -i -v "$PWD:/work" -w /work ghcr.io/hoox-sh/pyne/lsp:0.6.14
 `
 Point the host’s “external language server” command at that binary. Cursor users can also load the VS Code extension (hoox-sh.pyne) in compatible mode when packaged as VSIX.
 Internals
@@ -8704,7 +8704,7 @@ Vendor sync
 ./scripts/sync_vendor.sh
 npx wrangler deploy
 `
-Skip sync and the edge still runs the last snapshot. That tree disagrees with itself: python_modules/pynescript/about.py says 0.3.8, and pynescript-0.4.4.dist-info says 0.4.4. Live PyPI hoox-pyne is 0.6.13. The worker package itself is 0.6.0. Run ./scripts/sync_vendor.sh before treating the snapshot as current.
+Skip sync and the edge still runs the last snapshot. That tree disagrees with itself: python_modules/pynescript/about.py says 0.3.8, and pynescript-0.4.4.dist-info says 0.4.4. Live PyPI hoox-pyne is 0.6.14. The worker package itself is 0.6.0. Run ./scripts/sync_vendor.sh before treating the snapshot as current.
 Script + 1m cron
 `bash
 export WORKER=https://pyne-worker..workers.dev
@@ -9716,11 +9716,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Compatibility guarantee"
-description: "Grouped map of what PYNE implements for Pine Script v5/v6 — working, partial, residual, and by-design out of scope. hoox-pyne 0.6.13."
+description: "Grouped map of what PYNE implements for Pine Script v5/v6 — working, partial, residual, and by-design out of scope. hoox-pyne 0.6.14."
 ---
 Compatibility guarantee
 Abstract
-PYNE implements Pine Script v5/v6 language core as an inspectable pipeline: parse → AST → bar-loop evaluate. The map below is the product-facing compatibility surface for hoox-pyne 0.6.13. It is not TradingView platform identity (chart host, proprietary data, editor-only UI) and not bit-identical results vs the hosted platform on every script or bar.
+PYNE implements Pine Script v5/v6 language core as an inspectable pipeline: parse → AST → bar-loop evaluate. The map below is the product-facing compatibility surface for hoox-pyne 0.6.14. It is not TradingView platform identity (chart host, proprietary data, editor-only UI) and not bit-identical results vs the hosted platform on every script or bar.
 Name-level dispatch lives in Pine v6 surface (docs/pine_v6_full_surface_inventory.md). Gaps: Missing features.
 Conceptual model
 Legend
@@ -9929,7 +9929,7 @@ Published versions (static snapshot; refresh manually with bun run docs:versions
 Checkouts (this repo vs sisters)
 | Checkout | What you open |
 | --- | --- |
-| hoox-sh/pyne | PYNE SoT (hoox-pyne 0.6.13) |
+| hoox-sh/pyne | PYNE SoT (hoox-pyne 0.6.14) |
 | hoox-sh/pynets | Standalone @hoox-sh/pynets 0.5.0 (JS compile + stream) |
 | hoox-sh/pyne-worker | Python edge /run |
 | hoox-sh/pyne-agent-worker | NL authoring (not in this tree) |
@@ -9996,11 +9996,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Missing features"
-description: "Known gaps and closed Pine Script v6 items — what is implemented, what is partial by design, and what is out of scope. hoox-pyne 0.6.13."
+description: "Known gaps and closed Pine Script v6 items — what is implemented, what is partial by design, and what is out of scope. hoox-pyne 0.6.14."
 ---
 Missing features
 Abstract
-"Missing" in PYNE is a moving frontier. Core v6 support is ~99%+ for core language, with post-launch TV items closed (multiline strings, library export const, footprint mocks, risk enforcement, matrix LA, compile-mode strategy, drawing GC, bottom-panel table fields, square-bracket wrapping) plus open-source corpus parse/Runtime hardening, incremental bar-mode TA, alert engine + L2 webhooks, series caps, warm-compile, pending-fill averaging, timeframe.change (intraday buckets + D/W/M exchange calendar), package Runtime SoT (pynescript.runtime; backend.runtime is a shim), compile object-mode residual recovery (UDF locals, nopython None/unicode, matrix handles, UDT returns, x = switch, drawing copy, int(na), round() extras, import stubs, color type dispatch, nested UDT methods), type-aware intraday risk enforcement on both brokers, intrabar var rollback on realtime ticks, request.security barmerge on HTF resample paths, linter legacy-rule retirements, and drawing export parity (table/box/label/polyline style fields on both hosts). 0.6.10-0.6.13: engine-owned live plane (WS /ws/live), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + PYNE_DATA_DIR, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests. Remaining gaps cluster into optional set0x community-corpus plot parity (P1p official builtins closed), by-design platform differences, and editor-only features.
+"Missing" in PYNE is a moving frontier. Core v6 support is ~99%+ for core language, with post-launch TV items closed (multiline strings, library export const, footprint mocks, risk enforcement, matrix LA, compile-mode strategy, drawing GC, bottom-panel table fields, square-bracket wrapping) plus open-source corpus parse/Runtime hardening, incremental bar-mode TA, alert engine + L2 webhooks, series caps, warm-compile, pending-fill averaging, timeframe.change (intraday buckets + D/W/M exchange calendar), package Runtime SoT (pynescript.runtime; backend.runtime is a shim), compile object-mode residual recovery (UDF locals, nopython None/unicode, matrix handles, UDT returns, x = switch, drawing copy, int(na), round() extras, import stubs, color type dispatch, nested UDT methods), type-aware intraday risk enforcement on both brokers, intrabar var rollback on realtime ticks, request.security barmerge on HTF resample paths, linter legacy-rule retirements, and drawing export parity (table/box/label/polyline style fields on both hosts). 0.6.10-0.6.14: engine-owned live plane (WS /ws/live), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + PYNE_DATA_DIR, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests. Remaining gaps cluster into optional set0x community-corpus plot parity (P1p official builtins closed), by-design platform differences, and editor-only features.
 Authoritative narrative: docs/missing_features.md. Canonical IDs: docs/ROADMAP.md.
 Conceptual model
 Interface surface
@@ -10250,7 +10250,7 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Pine v6 surface inventory"
-description: "Summary of the full Pine Script v6 surface inventory — dispatch counts, namespaces, status schema — with pointer to the large source document. hoox-pyne 0.6.13."
+description: "Summary of the full Pine Script v6 surface inventory — dispatch counts, namespaces, status schema — with pointer to the large source document. hoox-pyne 0.6.14."
 ---
 Pine v6 surface inventory
 Abstract
@@ -10353,11 +10353,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Roadmap"
-description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed. hoox-pyne 0.6.13."
+description: "PYNE forward plan — dual-host residual, runtime residual, plot parity harness; drawing export parity landed. hoox-pyne 0.6.14."
 ---
 Roadmap
 Abstract
-The roadmap is a living prioritization document, not a contract. Source: docs/ROADMAP.md. Core v6 language/builtins are essentially closed. Product warm-compile (H2), series caps (T1), pending-fill (F2), L2 webhooks, corpus Runtime residual (C1), package Runtime SoT (H1 largely done) and drawing export parity have landed (set01–04 parse 99.96%, Runtime interpret 100% excl. intentional demos). 0.6.10–0.6.13: engine-owned live plane (WS /ws/live), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching, live session persistence (SQLite journal), production profile + PYNE_DATA_DIR, Docker prod on VPS, Redis unpublished + opt-in auth. What remains: H1 worker-only extras. P1p official TV builtins are 0 MISMATCH (optional set0x community corpus unmeasured). Incremental TA and Supertrend goldens have landed.
+The roadmap is a living prioritization document, not a contract. Source: docs/ROADMAP.md. Core v6 language/builtins are essentially closed. Product warm-compile (H2), series caps (T1), pending-fill (F2), L2 webhooks, corpus Runtime residual (C1), package Runtime SoT (H1 largely done) and drawing export parity have landed (set01–04 parse 99.96%, Runtime interpret 100% excl. intentional demos). 0.6.10–0.6.14: engine-owned live plane (WS /ws/live), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching, live session persistence (SQLite journal), production profile + PYNE_DATA_DIR, Docker prod on VPS, Redis unpublished + opt-in auth. What remains: H1 worker-only extras. P1p official TV builtins are 0 MISMATCH (optional set0x community corpus unmeasured). Incremental TA and Supertrend goldens have landed.
 Conceptual model
 ``text
 P0 docs honesty → P1 dual-host H1 (package SoT + shims + worker thin wrap)
@@ -10376,7 +10376,7 @@ Status snapshot
 | Strategy events + broker (OCA, commission, risk) | |
 | Numba + object-mode compile | MVP+ (disk IR cache, mode=auto, time_arr, cache recovery; UDT/switch/matrix/drawing/round/color residuals) |
 | Pro API + auth + Docker | (mode default auto; targets api / api-dev / lsp / cli) |
-| PyPI hoox-pyne | live 0.6.13 (pypi.org/project/hoox-pyne); CLIs pyne / pyne-lsp |
+| PyPI hoox-pyne | live 0.6.14 (pypi.org/project/hoox-pyne); CLIs pyne / pyne-lsp |
 | CLI surface (check/format/compile/run/prewarm/…) | + Nuitka binaries + CLI Docker image |
 | Alert engine + L2 webhooks | dual-host export + outbound webhooks |
 | Drawing max__count GC | package + Pro API + AXIS Pyodide |
