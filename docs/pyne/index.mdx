@@ -65,11 +65,11 @@ Release notes: [GitHub releases](https://github.com/hoox-sh/pyne/releases) · [c
 
 | Surface | Role | Start here |
 | --- | --- | --- |
-| **Library + CLI** | Parse, lint, unparse, evaluate. Library `Runtime.run` defaults to **interpret**; `pyne run` is **compile-only** smoke | [End User hub](/pyne/docs/enduser) · [modes](/pyne/docs/enduser/reference/modes) |
+| **Library + CLI** | Parse, lint, unparse, evaluate. Library `Runtime.run` defaults to **interpret**; `pyne execute` is CLI `Runtime.run`; `pyne run` is **compile-only** smoke | [End User hub](/pyne/docs/enduser) · [modes](/pyne/docs/enduser/reference/modes) |
 | **Language core** | Grammar, AST, visitors, type system | [Core](/pyne/docs/core) |
 | **Runtime** | Series caps, builtins, strategy, alerts, compiler parity | [Runtime](/pyne/docs/runtime) |
 | **LSP** | Diagnostics, completion, hover, format (`.pyne` / `.pine`) | [LSP](/pyne/docs/lsp) |
-| **MCP** | Agent tools: parse, lint, convert, compile, `Runtime.run`, builtins | [MCP](/pyne/docs/enduser/guides/mcp) |
+| **MCP** | Stdio `pyne-mcp` plus in-process `pyne mcp call` / `pyne execute` — parse, lint, convert, compile, `Runtime.run`, builtins | [MCP](/pyne/docs/enduser/guides/mcp) |
 | **Pro API** | HTTP `/run` (alerts + L2 webhooks), `/optimize`, preview, backtest | [API](/pyne/docs/api) |
 | **Ops** | CI, Docker, Nuitka, self-host | [DevOps](/pyne/docs/devops) |
 | **PyneTS** | TypeScript / Bun library (`parse` / `unparse` / `Runtime.run`) | [PyneTS](/pyne/docs/pynets) |

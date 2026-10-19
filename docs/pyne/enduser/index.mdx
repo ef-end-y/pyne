@@ -19,12 +19,12 @@
 
 ---
 title: "End User Hub"
-description: "Install PYNE (pip install hoox-pyne). Library default is interpret, pyne run is compile-only, Pro API /run defaults to auto."
+description: "Install PYNE (pip install hoox-pyne). Library default is interpret, pyne run is compile-only, pyne execute is Runtime.run, Pro API /run defaults to auto."
 ---
 
 # End User Hub
 
-This track is for people who **consume** PYNE: parse and reformat Pine Script™, lint before upload, evaluate expressions or full scripts against OHLCV (library default **interpret**, `pyne run` is compile-only, Pro API `/run` defaults to **auto**), export **alerts** (optional L2 webhooks), wire an editor via LSP (`.pyne` / `.pine`), or call the HTTP evaluate contract. Contributor internals (grammar regeneration, AST builder, bar-loop semantics) live under [Core](/pyne/docs/core), [Runtime](/pyne/docs/runtime), and [DevOps](/pyne/docs/devops).
+This track is for people who **consume** PYNE: parse and reformat Pine Script™, lint before upload, evaluate expressions or full scripts against OHLCV (library default **interpret**, `pyne run` is compile-only, `pyne execute` is `Runtime.run`, Pro API `/run` defaults to **auto**), export **alerts** (optional L2 webhooks), wire an editor via LSP (`.pyne` / `.pine`), call MCP tools from the CLI or a stdio host, or call the HTTP evaluate contract. Contributor internals (grammar regeneration, AST builder, bar-loop semantics) live under [Core](/pyne/docs/core), [Runtime](/pyne/docs/runtime), and [DevOps](/pyne/docs/devops).
 
 ## Abstract
 
@@ -98,7 +98,8 @@ New install, first parse, and environment knobs:
 
 Daily workflows against the same pipeline:
 
-- **[CLI](/pyne/docs/enduser/guides/cli)** — `check`, `format`, `lint`, `compile`, `prewarm`, `run`, `optimize`, `data`, …
+- **[CLI](/pyne/docs/enduser/guides/cli)** — `check`, `format`, `lint`, `compile`, `prewarm`, `run`, `execute`, `mcp call`, `optimize`, `data`, …
+- **[MCP (agents)](/pyne/docs/enduser/guides/mcp)** — stdio `pyne-mcp` plus in-process `pyne mcp call` / `pyne execute`.
 - **[Library API](/pyne/docs/enduser/guides/library-api)** — `parse`, `unparse`, `dump`, `walk`, visitors, transformers, linter, `optimize.run_study`.
 - **[Evaluate scripts](/pyne/docs/enduser/guides/evaluate-scripts)** — Expression eval, bar-loop Runtime (library default **interpret**), strategy events, **alerts export**, mock vs live data.
 - **[Editors](/pyne/docs/enduser/guides/editors)** — VS Code (`.pyne` first-class), Neovim, Zed, Emacs, Helix; `clients/` snippets.
@@ -108,7 +109,8 @@ Daily workflows against the same pipeline:
 ### 3. Reference
 
 - **[CLI commands](/pyne/docs/enduser/reference/cli-commands)** — Full option trees for every Click command.
-- **[Modes](/pyne/docs/enduser/reference/modes)** — `interpret` / `compile` / `auto` defaults: library **interpret**, `POST /run` **auto**, `pyne run` **compile-only**.
+- **[Modes](/pyne/docs/enduser/reference/modes)** — `interpret` / `compile` / `auto` defaults: library **interpret**, `POST /run` **auto**, `pyne execute` **auto** (`Runtime.run`), `pyne run` **compile-only**.
+- **[MCP tools](/pyne/docs/enduser/reference/mcp-tools)** — Catalog of `pyne_*` tools, resources, and prompts.
 - **[Glossary](/pyne/docs/enduser/reference/glossary)** — AST, series, bar-loop, Runtime, ASDL, and related terms.
 - **[FAQ](/pyne/docs/enduser/reference/faq)** — Version support, TradingView parity, licensing, AXIS/HOOX boundaries.
 
@@ -127,6 +129,8 @@ Daily workflows against the same pipeline:
 | Bar-loop eval | `from pynescript.runtime import Runtime` (`mode` default **interpret**) | [Evaluate](/pyne/docs/enduser/guides/evaluate-scripts) · [modes](/pyne/docs/enduser/reference/modes) |
 | Incremental interpret | `Runtime.create_session` → `append_bars` / `update_last_bar` (0.6.1) | [Evaluate](/pyne/docs/enduser/guides/evaluate-scripts) |
 | Compile-only smoke | `pyne run script.pine --bars 50` | [CLI](/pyne/docs/enduser/guides/cli) |
+| `Runtime.run` from CLI | `pyne execute script.pine --mode interpret --bars 50` | [CLI](/pyne/docs/enduser/guides/cli) · [MCP](/pyne/docs/enduser/guides/mcp) |
+| Call an MCP tool | `pyne mcp call lint script.pine` | [MCP tools](/pyne/docs/enduser/reference/mcp-tools) |
 | Warm Numba / IR | `pyne prewarm` / `POST /compile/prewarm` | [CLI](/pyne/docs/enduser/guides/cli) |
 | Strategy HPO | `pyne optimize` / `POST /optimize` / `pynescript.optimize.run_study` | [Optimize](/pyne/docs/api/endpoints/optimize) |
 | Alerts + webhooks | `/run` → `alerts[]` / `webhook_url` | [Alerts](/pyne/docs/runtime/alerts) |
@@ -139,8 +143,9 @@ Preferred console scripts (aliases in parentheses) are registered in `pyproject.
 | --- | --- | --- |
 | `pyne` (`pynescript`) | `pynescript.__main__:cli` | Desk CLI (Click group) |
 | `pyne-lsp` (`pynescript-lsp`) | `pynescript.langserver.__main__:main` | Language server (pygls) |
+| `pyne-mcp` | `pynescript.mcp.__main__:main` | Stdio MCP server (`[mcp]` extra; same as `pyne mcp`) |
 
-Do not conflate them: lint and parse live on `pyne`; editor features live on `pyne-lsp`.
+Do not conflate them: lint, parse, and `execute` live on `pyne`; editor features live on `pyne-lsp`; LLM stdio lives on `pyne-mcp`.
 
 ## Internals (repo paths)
 
@@ -148,7 +153,8 @@ Consumer-relevant code only — deeper design is linked from each guide:
 
 | Path | Role |
 | --- | --- |
-| `src/pynescript/__main__.py` | Click CLI: check, format, lint, compile, prewarm, run, optimize, data, info |
+| `src/pynescript/__main__.py` | Click CLI: check, format, lint, compile, prewarm, run, execute, mcp, optimize, data, info |
+| `src/pynescript/mcp/cli.py` | `pyne execute` / `mcp call` (in-process MCP ops) |
 | `src/pynescript/ast/helper.py` | Public `parse`, `unparse`, `dump`, `walk`, `literal_eval` |
 | `src/pynescript/ast/linter.py` | `lint_script` / `PineLinter` |
 | `src/pynescript/ast/evaluator/` | Bar-aware and literal evaluators |

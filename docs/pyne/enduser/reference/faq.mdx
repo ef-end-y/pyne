@@ -106,7 +106,11 @@ Not guaranteed. Broker emulator rules, fill models, request.* data, and some bui
 
 ### Does the CLI evaluate strategies?
 
-`pyne run script.pine --bars 50` compiles and executes on **synthetic** OHLCV. It is **not** `Runtime.run` (no real bars, no `mode`/`libraries`/`timeout_seconds`/`inputs`). For real OHLCV use:
+`pyne run script.pine --bars 50` compiles and executes on **synthetic** OHLCV. It is **not** `Runtime.run` (no real bars, no `mode`/`libraries`/`timeout_seconds`/`inputs`).
+
+`pyne execute script.pine --mode interpret --bars 50` **is** `Runtime.run` (JSON envelope; optional `--ohlcv` rows, `--inputs`, `--timeout`). Same as MCP `pyne_execute`.
+
+For real OHLCV you can also use:
 
 - `from pynescript.runtime import Runtime` — library default `mode` is **interpret**
 - `POST /run` — schema default `mode` is **auto**
@@ -189,13 +193,14 @@ It depends on the surface — this is the usual footgun:
 | --- | --- |
 | `pynescript.runtime.Runtime.run(..., mode=None)` | `PYNE_RUNTIME_MODE` else **interpret** |
 | `POST /run` (body omits `mode`) | **auto** |
+| `pyne execute` | **auto** (`Runtime.run`; pass `--mode`) |
 | `pyne run` | **compile-only** (not `Runtime.run`, no `--mode`) |
 
 See [modes](/pyne/docs/enduser/reference/modes).
 
 ### Is there `Runtime.evaluate`?
 
-No. The host API is **`Runtime.run`**. Python CLI `pyne run` is compile-only smoke and is not `Runtime.run`. PyneTS `pynets run` **does** call `Runtime.run`.
+No. The host API is **`Runtime.run`**. Python CLI `pyne run` is compile-only smoke and is not `Runtime.run`. **`pyne execute`** and PyneTS `pynets run` **do** call `Runtime.run`.
 
 ### What license is pynescript?
 

@@ -28,7 +28,7 @@ pip install hoox-pyne
 pip install "hoox-pyne[lsp]"       # language server
 pip install "hoox-pyne[compile]"   # Numba path
 pip install "hoox-pyne[data]"      # ccxt market data
-pip install "hoox-pyne[mcp]"       # MCP server (pyne-mcp / pyne mcp)
+pip install "hoox-pyne[mcp]"       # stdio MCP server (pyne-mcp); pyne mcp call / pyne execute need no extra
 ```
 
 Do **not** install plain `pyne`/`PyNE` (unrelated package) or the upstream PyPI project named `pynescript` (elbakramer) for this stack.
@@ -44,12 +44,16 @@ PYNE ships a CLI (`pyne`, alias `pynescript`) that mirrors the helper functions 
 - `parse-and-dump` prints a formatted AST for a Pine Script™ input.
 - `parse-and-unparse` round-trips a script to verify formatting stability.
 - `lint` runs the static linter.
+- `run` is compile-only smoke on synthetic OHLCV; `execute` is `Runtime.run` (JSON).
+- `mcp tools` / `mcp call TOOL` run MCP ops in-process (stdio server needs `[mcp]`).
 - `data` fetches sample OHLCV via providers (`mock`, `yahoo`, `ccxt`, …).
 
 
 ```console
 pyne parse-and-dump path/to/script.pyne
 pyne lint path/to/script.pyne
+pyne execute path/to/script.pyne --mode interpret --bars 50
+pyne mcp call lint path/to/script.pyne
 # aliases: pynescript parse-and-dump …
 ```
 

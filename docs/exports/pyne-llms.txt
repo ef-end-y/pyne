@@ -1,6 +1,6 @@
 # PYNE — llms.txt
 # https://llmstxt.org/ — machine-readable project map for LLMs
-# Generated 2026-10-18
+# Generated 2026-10-19
 
 # PYNE
 > Open-source Pine Script evaluation framework
@@ -28,12 +28,14 @@ Grammar-driven parser, ASDL AST, bar-loop evaluator, LSP, Pro API, and edge work
 - [Quick Start](https://hoox.sh/pyne/docs/enduser/getting-started/quick-start)
 - [Configuration](https://hoox.sh/pyne/docs/enduser/getting-started/configuration)
 - [Cli](https://hoox.sh/pyne/docs/enduser/guides/cli)
+- [Mcp](https://hoox.sh/pyne/docs/enduser/guides/mcp)
 - [Library Api](https://hoox.sh/pyne/docs/enduser/guides/library-api)
 - [Evaluate Scripts](https://hoox.sh/pyne/docs/enduser/guides/evaluate-scripts)
 - [Editors](https://hoox.sh/pyne/docs/enduser/guides/editors)
 - [Pro Api Usage](https://hoox.sh/pyne/docs/enduser/guides/pro-api-usage)
 - [Troubleshooting](https://hoox.sh/pyne/docs/enduser/guides/troubleshooting)
 - [Cli Commands](https://hoox.sh/pyne/docs/enduser/reference/cli-commands)
+- [Mcp Tools](https://hoox.sh/pyne/docs/enduser/reference/mcp-tools)
 - [Modes](https://hoox.sh/pyne/docs/enduser/reference/modes)
 - [Glossary](https://hoox.sh/pyne/docs/enduser/reference/glossary)
 - [Faq](https://hoox.sh/pyne/docs/enduser/reference/faq)
@@ -81,6 +83,8 @@ Grammar-driven parser, ASDL AST, bar-loop evaluator, LSP, Pro API, and edge work
 - [Formatting](https://hoox.sh/pyne/docs/lsp/features/formatting)
 - [Semantic Tokens](https://hoox.sh/pyne/docs/lsp/features/semantic-tokens)
 - [Inlay Hints](https://hoox.sh/pyne/docs/lsp/features/inlay-hints)
+- [Folding](https://hoox.sh/pyne/docs/lsp/features/folding)
+- [Selection Range](https://hoox.sh/pyne/docs/lsp/features/selection-range)
 - [Builtin Metadata](https://hoox.sh/pyne/docs/lsp/builtin-metadata)
 - [Vscode Extension](https://hoox.sh/pyne/docs/lsp/vscode-extension)
 - [Clients](https://hoox.sh/pyne/docs/lsp/clients)

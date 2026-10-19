@@ -7,7 +7,7 @@ tags: [doc, docs, enduser, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "docs/pyne/enduser/getting-started/quick-start.mdx"
@@ -35,7 +35,8 @@ Repo path `docs/pyne/enduser/getting-started/quick-start.mdx`.
   * 5. Fetch sample market data (CLI)
   * 6. Optional: local Pro API /run
   * 7. Library bar-loop vs CLI smoke
-  * 8. Optional: start LSP for editors
+  * 8. Optional: MCP tools from the CLI
+  * 9. Optional: start LSP for editors
 * Failure modes
 * See also
 

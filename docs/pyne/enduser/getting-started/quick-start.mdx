@@ -59,7 +59,7 @@ pip install hoox-pyne                 # https://pypi.org/project/hoox-pyne/ · 0
 # pip install "hoox-pyne[lsp]"        # editors
 # pip install "hoox-pyne[compile]"    # compile / run / prewarm
 # pip install "hoox-pyne[data]"       # ccxt providers
-# pip install "hoox-pyne[mcp]"        # pyne-mcp / pyne mcp
+# pip install "hoox-pyne[mcp]"        # stdio pyne-mcp; pyne execute / mcp call need no extra
 ```
 
 ```bash
@@ -211,7 +211,7 @@ Prefer saving stack sources as **`.pyne`** (`.pine` still works).
 
 ### 7. Library bar-loop vs CLI smoke
 
-Library `Runtime.run` defaults to **interpret**. `pyne run` is **compile-only** on synthetic bars and does not accept `--mode`.
+Library `Runtime.run` defaults to **interpret**. `pyne run` is **compile-only** on synthetic bars and does not accept `--mode`. `pyne execute` is the CLI `Runtime.run` path (`--mode interpret|compile|auto`).
 
 ```python
 from pynescript.runtime import Runtime
@@ -232,11 +232,26 @@ print(out.get("mode"), list(out.get("series", {})))
 ```bash
 pip install "hoox-pyne[compile]"
 pyne run examples/rsi_strategy.pine --bars 50
+pyne execute examples/rsi_strategy.pine --mode interpret --bars 50
 ```
 
 See [modes](/pyne/docs/enduser/reference/modes).
 
-### 8. Optional: start LSP for editors
+### 8. Optional: MCP tools from the CLI
+
+`pyne mcp call` and `pyne execute` need no extra. Serving stdio to an LLM host does.
+
+```bash
+pyne mcp tools
+pyne mcp call lint examples/rsi_strategy.pine
+pyne mcp call execute examples/rsi_strategy.pine --arg bars=50 --arg mode=interpret
+# pip install "hoox-pyne[mcp]"
+# pyne mcp config && pyne mcp
+```
+
+See [MCP (agents)](/pyne/docs/enduser/guides/mcp).
+
+### 9. Optional: start LSP for editors
 
 ```bash
 pip install "hoox-pyne[lsp]"
@@ -265,3 +280,4 @@ Wire Neovim / Zed / Emacs using [Editors](/pyne/docs/enduser/guides/editors) and
 - [Evaluate scripts](/pyne/docs/enduser/guides/evaluate-scripts)
 - [Runtime modes](/pyne/docs/enduser/reference/modes)
 - [CLI command reference](/pyne/docs/enduser/reference/cli-commands)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)

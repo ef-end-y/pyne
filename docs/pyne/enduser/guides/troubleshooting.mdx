@@ -156,7 +156,7 @@ Escalate to `Runtime.run` for multi-bar scripts.
 curl -s -X POST http://127.0.0.1:5002/run -H 'Content-Type: application/json' -d '{"script":"//@version=6\nindicator(\"t\")\nplot(close)","data":[{"time":1,"open":1,"high":1,"low":1,"close":1,"volume":1}]}'
 ```
 
-If minimal works but strategy fails: remove `request.*`, drawings, then strategy entries until isolated. Check `mode`; try `"interpret"`. Library `Runtime.run` defaults to **interpret**; `POST /run` defaults to **auto**; `pyne run` is compile-only synthetic smoke — they will not match each other unless you set `mode` explicitly. See [modes](/pyne/docs/enduser/reference/modes).
+If minimal works but strategy fails: remove `request.*`, drawings, then strategy entries until isolated. Check `mode`; try `"interpret"`. Library `Runtime.run` defaults to **interpret**; `POST /run` and `pyne execute` default to **auto**; `pyne run` is compile-only synthetic smoke and is not `Runtime.run` — they will not match each other unless you set `mode` explicitly. See [modes](/pyne/docs/enduser/reference/modes).
 
 ### 8. Schema validation errors
 
@@ -208,7 +208,8 @@ PYNE is independent of TradingView®. Behavioral gaps are expected for edge buil
 | SyntaxError | parse | minimal script + version |
 | Lint CI fail | lint | `--fail-on` level |
 | Empty plots | eval | `plot()` present; enough bars |
-| `pyne run` ≠ `Runtime.run` | modes | CLI is compile-only synthetic; library default is interpret |
+| `pyne run` ≠ `Runtime.run` | modes | `pyne run` is compile-only synthetic; use `pyne execute` for `Runtime.run` (default `auto`); library default is interpret |
+| `MCP extra missing` | extra | `[mcp]` is only for stdio `pyne-mcp`; `pyne execute` / `mcp call` need no extra |
 | `UNKNOWN_FIELDS` + `timeout_seconds` | HTTP | field is valid on `/run` and `/run/batch` (0.3.11+); other extra keys still 400 |
 | 400 UNKNOWN_FIELDS | HTTP | schema |
 | 403 create_key | HTTP | `ADMIN_TOKEN` |
@@ -221,6 +222,7 @@ PYNE is independent of TradingView®. Behavioral gaps are expected for edge buil
 - [Installation](/pyne/docs/enduser/getting-started/installation)
 - [Configuration](/pyne/docs/enduser/getting-started/configuration)
 - [CLI guide](/pyne/docs/enduser/guides/cli)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)
 - [Evaluate scripts](/pyne/docs/enduser/guides/evaluate-scripts)
 - [Pro API usage](/pyne/docs/enduser/guides/pro-api-usage)
 - [Editors](/pyne/docs/enduser/guides/editors)

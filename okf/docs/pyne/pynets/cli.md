@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "PyneTS CLI"
-description: "pynets check / format / run / dump / info — Rich TTY, JSON on pipes. run calls Runtime.run, unlike Python pyne run."
+description: "pynets check / format / run / dump / info — Rich TTY, JSON on pipes. run calls Runtime.run (Python equivalent is pyne execute)."
 resource: "docs/pyne/pynets/cli.mdx"
 tags: [doc, docs, pyne, pynets]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "docs/pyne/pynets/cli.mdx"

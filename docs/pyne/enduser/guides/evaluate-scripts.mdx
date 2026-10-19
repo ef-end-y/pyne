@@ -30,7 +30,7 @@ Evaluation is the second half of the PYNE pipeline: given an AST (or source) and
 
 1. **`literal_eval`** — pure/builtin expressions, optional series context  
 2. **AST evaluator** (`NodeLiteralEvaluator` / full evaluator mixins) — script-shaped evaluation in-process  
-3. **`pynescript.runtime.Runtime`** (package SoT; `backend.runtime` re-exports) or **Pro API `POST /run`** — bar-loop over OHLCV with shared evaluate contract. TypeScript: **`@hoox-sh/pynets` `Runtime.run`** — [PyneTS](/pyne/docs/pynets). Defaults differ by surface — [modes](/pyne/docs/enduser/reference/modes).  
+3. **`pynescript.runtime.Runtime`** (package SoT; `backend.runtime` re-exports), **CLI `pyne execute`**, or **Pro API `POST /run`** — bar-loop over OHLCV with shared evaluate contract. TypeScript: **`@hoox-sh/pynets` `Runtime.run`** — [PyneTS](/pyne/docs/pynets). Defaults differ by surface — [modes](/pyne/docs/enduser/reference/modes).  
 
 This guide stays at the consumer level; series semantics and builtin inventories are under [Runtime](/pyne/docs/runtime).
 
@@ -44,6 +44,8 @@ flowchart TB
   AST --> NE[NodeEvaluator / bar visit]
   OHLCV[OHLCV bars] --> RT[Runtime.run]
   AST --> RT
+  CLIEX["pyne execute / mcp call execute"] --> RT
+  HTTP["POST /run"] --> RT
   RT --> PLOTS[plots / series / plot_meta]
   RT --> EV[strategy events]
   RT --> DR[drawings]
@@ -72,6 +74,7 @@ flowchart TB
 **Defaults differ by surface:**
 
 - Direct `Runtime.run(..., mode=None)` → `PYNE_RUNTIME_MODE` env, else **`interpret`**.
+- CLI `pyne execute` → `--mode` default **`auto`** (same as MCP `pyne_execute`). `pyne run` is compile-only synthetic smoke and does not call `Runtime.run`.
 - Pro API `POST /run` body omit `mode` → schema default **`auto`** (warm compile + fallback).
 
 ```python
@@ -93,7 +96,16 @@ result = runtime.run(
 # on timeout: timed_out + error_kind="runtime" with partial plots
 ```
 
-`timeout_seconds` is accepted on the library host and on `POST /run` / `POST /run/batch` (omit / `null` / `≤ 0` → no budget). `pyne run` does not call `Runtime.run` at all.
+`timeout_seconds` is accepted on the library host, `pyne execute --timeout`, and `POST /run` / `POST /run/batch` (omit / `null` / `≤ 0` → no budget). `pyne run` does not call `Runtime.run` at all.
+
+```bash
+pyne execute script.pine --mode interpret --bars 50
+pyne execute script.pine --ohlcv bars.json --inputs '{"len": 14}' --timeout 12
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
+pyne parity script.pine --bars 24
+```
+
+`pyne execute` prints the same JSON envelope as MCP `pyne_execute` (truncated plots). See [CLI commands](/pyne/docs/enduser/reference/cli-commands) and [MCP (agents)](/pyne/docs/enduser/guides/mcp).
 
 ### Warm compile / prewarm
 
@@ -287,6 +299,7 @@ feed = get_datafeed("ccxtpro", exchange="binance")
 | `src/pynescript/ast/evaluator/builtins/` | `ta.*`, `strategy.*`, arrays, … |
 | `src/pynescript/ast/evaluator/events.py` | Event emission hooks |
 | `src/pynescript/runtime/host.py` | Multi-bar `Runtime.run` SoT (`interpret` / `compile` / `auto`, `timeout_seconds`) plus `InterpretSession` (`create_session` / `append_bars` / `update_last_bar`) |
+| `src/pynescript/mcp/cli.py` | CLI `pyne execute` / `parity` → `Runtime.run` |
 | `src/pynescript/runtime/series.py` | `PineSeries` history model |
 | `backend/runtime.py` / `backend/series.py` | Compat re-exports of package Runtime |
 | `src/pynescript/compiler/` | Transpile + Numba/object bar loops |
@@ -378,6 +391,8 @@ When calling `/run` or Runtime, pass `data_source` / providers so `request.secur
 ## See also
 
 - [Pro API usage](/pyne/docs/enduser/guides/pro-api-usage)
+- [CLI guide](/pyne/docs/enduser/guides/cli)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)
 - [Runtime modes](/pyne/docs/enduser/reference/modes)
 - [Library API](/pyne/docs/enduser/guides/library-api)
 - [Runtime series model](/pyne/docs/runtime/series-and-history)

@@ -19,21 +19,23 @@
 
 ---
 title: "MCP (agents)"
-description: "Run the PYNE Model Context Protocol server so agents can parse, lint, convert, compile, and execute Pine Script™ in-process."
+description: "PYNE MCP: stdio pyne-mcp for LLM hosts, plus in-process pyne mcp call and pyne execute (Runtime.run) with no extra."
 ---
 
 # MCP (agents)
 
 ## Abstract
 
-The **PYNE MCP server** exposes the Pine toolchain to LLM hosts (Cursor, Claude, Inspector, Grok) over stdio. Tools call the same library APIs as the `pyne` CLI and `pynescript.runtime.Runtime` — they do not shell out. Install `hoox-pyne[mcp]`, then point the client at `pyne-mcp` (or `pyne mcp`). Tool names are prefixed `pyne_` so they never collide with AXIS `axis_*` / `app_*`.
+The **PYNE MCP server** exposes the Pine toolchain to LLM hosts (Cursor, Claude, Inspector, Grok) over stdio. The same tools run from the shell with **`pyne mcp call`** and first-class **`pyne execute`** (no MCP SDK). Tools call library APIs in-process — they do not shell out. Stdio serving needs `hoox-pyne[mcp]`; `call` / `execute` / `config` / `tools` do not. Tool names are prefixed `pyne_` so they never collide with AXIS `axis_*` / `app_*`.
 
 ## Conceptual model
 
 ```mermaid
 flowchart LR
   A[MCP host] -->|stdio JSON-RPC| S[pyne-mcp]
+  CLI["pyne mcp call / pyne execute"] --> D[dispatch.call_tool]
   S --> O[pynescript.mcp.ops]
+  D --> O
   O --> AST[parse / lint / convert]
   O --> RT[Runtime.run / compile]
   O --> LSP[hover / complete / builtins]
@@ -112,7 +114,7 @@ Agent: pyne_builtin({name: "ta.sma"})
 
 | Symptom | Cause |
 | --- | --- |
-| `MCP extra missing` | `pip install "hoox-pyne[mcp]"` |
+| `MCP extra missing` | `pip install "hoox-pyne[mcp]"` for stdio. `pyne execute` / `mcp call` run without the extra |
 | `ok: false`, `kind: parse` | Syntax error; `line` / `column` set when known |
 | `kind: network` | Runner / non-mock `pyne_data` / facade list |
 | Large plot dumps | Raise `sample` only as needed (max 64) |

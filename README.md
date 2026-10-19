@@ -2,7 +2,7 @@
 
 **Independent open toolchain for the Pine Script™ language** — formal grammar, algebraic AST, dual-engine bar-loop runtime, language server, and HTTP evaluation surface. Part of the [HOOX](https://hoox.sh) open trading stack.
 
-**0.6.15** · PyPI [`hoox-pyne`](https://pypi.org/project/hoox-pyne/) · import `pynescript` · CLIs `pyne` · `pyne-lsp` · `pyne-mcp` (aliases: `pynescript` · `pynescript-lsp`)
+**0.6.16** · PyPI [`hoox-pyne`](https://pypi.org/project/hoox-pyne/) · import `pynescript` · CLIs `pyne` · `pyne-lsp` · `pyne-mcp` (aliases: `pynescript` · `pynescript-lsp`)
 
 <div align="center">
 
@@ -97,9 +97,9 @@ Not a claim of TradingView® platform parity. Intentional demos are classified s
 
 | Surface | Role |
 |---------|------|
-| **CLI** (`pyne`, alias `pynescript`) | Check, format, lint, compile, run, data fetch, prewarm, MCP |
+| **CLI** (`pyne`, alias `pynescript`) | Check, format, lint, compile, `run` (compile smoke), `execute` (`Runtime.run`), data, prewarm, MCP `call` |
 | **LSP** (`pyne-lsp`) | Diagnostics, completion (~800+ builtins), hover, navigation, semantic tokens, formatting |
-| **MCP** (`pyne-mcp`) | Agent tools for parse / lint / convert / compile / `Runtime.run` / builtins ([docs](https://hoox.sh/pyne/docs/enduser/guides/mcp)) |
+| **MCP** (`pyne-mcp` / `pyne mcp`) | Agent stdio server **and** in-process CLI (`pyne mcp call`, `pyne execute`) — parse / lint / convert / compile / `Runtime.run` / builtins ([docs](https://hoox.sh/pyne/docs/enduser/guides/mcp)) |
 | **VS Code extension** | First-class `.pyne` / `.pine` (and related) associations |
 | **Pro API** | HTTP evaluate, batch run, chart preview, quick backtest |
 | **Editors** | Configurations for Neovim, Zed, Emacs (see `clients/`) |
@@ -113,7 +113,7 @@ pip install "hoox-pyne[lsp]"          # language server
 pip install "hoox-pyne[compile]"      # Numba compile path
 pip install "hoox-pyne[data]"         # market data providers
 pip install "hoox-pyne[pro]"          # Flask Pro API stack
-pip install "hoox-pyne[mcp]"          # MCP server (pyne-mcp / pyne mcp)
+pip install "hoox-pyne[mcp]"          # stdio MCP server (pyne-mcp); pyne mcp call / pyne execute need no extra
 
 # Development install from a clone
 git clone https://github.com/hoox-sh/pyne.git
@@ -127,16 +127,16 @@ Multi-arch (`linux/amd64`, `linux/arm64`) images publish to GitHub Container Reg
 
 ```bash
 # CLI
-docker pull ghcr.io/hoox-sh/pyne/cli:0.6.15
-docker run --rm -v "$PWD:/work" -w /work ghcr.io/hoox-sh/pyne/cli:0.6.15 check script.pine
+docker pull ghcr.io/hoox-sh/pyne/cli:0.6.16
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/hoox-sh/pyne/cli:0.6.16 check script.pine
 
 # Language server (stdio; -i required)
-docker pull ghcr.io/hoox-sh/pyne/lsp:0.6.15
-docker run --rm -i -v "$PWD:/work" -w /work ghcr.io/hoox-sh/pyne/lsp:0.6.15
+docker pull ghcr.io/hoox-sh/pyne/lsp:0.6.16
+docker run --rm -i -v "$PWD:/work" -w /work ghcr.io/hoox-sh/pyne/lsp:0.6.16
 
 # Pro API
-docker pull ghcr.io/hoox-sh/pyne/api:0.6.15
-docker run --rm -p 5002:8080 -e ADMIN_TOKEN=… ghcr.io/hoox-sh/pyne/api:0.6.15
+docker pull ghcr.io/hoox-sh/pyne/api:0.6.16
+docker run --rm -p 5002:8080 -e ADMIN_TOKEN=… ghcr.io/hoox-sh/pyne/api:0.6.16
 ```
 
 Packages: [ghcr.io/hoox-sh/pyne](https://github.com/hoox-sh/pyne/pkgs/container/pyne%2Fcli). Local: `make docker-build-lsp`.
@@ -172,10 +172,13 @@ literal_eval("ta.rsi([100, 102, 101, 103, 105], 9)")
 pyne check script.pine
 pyne format script.pine -w
 pyne lint script.pine
-pyne run script.pine --bars 100
+pyne run script.pine --bars 100                 # compile-only smoke
+pyne execute script.pine --mode interpret --bars 50   # Runtime.run JSON
 pyne compile script.pine --emit
 pyne data AAPL --provider yahoo --period 6mo
 pyne info
+pyne mcp tools
+pyne mcp call lint script.pine
 # aliases still work: pynescript check …
 ```
 
@@ -188,6 +191,20 @@ pyne-lsp
 ```
 
 Editor integration: [PYNE for VS Code](./vscode-extension/); Neovim, Zed, and Emacs configs under [`clients/`](./clients/).
+
+### MCP (agents)
+
+Stdio server for Cursor / Claude / Inspector needs the extra. In-process tool calls do not:
+
+```bash
+pip install "hoox-pyne[mcp]"
+pyne mcp config          # print mcpServers JSON
+pyne mcp                 # stdio (blocks); same as pyne-mcp
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
+pyne execute script.pine --mode interpret --bars 50
+```
+
+Catalog: [MCP tools](https://hoox.sh/pyne/docs/enduser/reference/mcp-tools).
 
 ## Pro API
 
@@ -252,13 +269,16 @@ class Renamer(NodeTransformer):
 | `parse-and-dump <file>` | Print AST (aliases: `dump`, `ast`) |
 | `parse-and-unparse <file>` | Normalize source (alias: `unparse`) |
 | `compile <file>` | Numba host pipeline / emit |
-| `run <file>` | Execute on synthetic (or provided) OHLCV |
-| `runner deploy|tick …` | Deploy / tick hosted scripts on the Pro API (`PYNE_RUNNER`) |
+| `run <file>` | Compile-only smoke on synthetic OHLCV |
+| `execute <file>` | `Runtime.run` JSON (`--mode interpret\|compile\|auto`) |
+| `symbols` / `parity` / `diagnostics` / `builtin` | MCP-backed JSON outline, last-value parity, lint+parse, builtin lookup |
+| `runner deploy\|tick …` | Deploy / tick hosted scripts on the Pro API (`PYNE_RUNNER`) |
 | `prewarm [PATH…]` | Warm compile caches |
 | `data <symbol>` | Fetch market data |
 | `info` | Version and optional extras |
+| `mcp` | Stdio server; `config` / `tools` / `call TOOL` (in-process, no extra) |
 
-Language server entry point: **`pyne-lsp`** (alias **`pynescript-lsp`**; separate console script).
+Language server entry point: **`pyne-lsp`** (alias **`pynescript-lsp`**; separate console script). MCP stdio: **`pyne-mcp`** (also `pyne mcp`).
 
 ## Documentation
 
@@ -267,6 +287,8 @@ Canonical product documentation: **[hoox.sh/pyne/docs](https://hoox.sh/pyne/docs
 | Topic | Link |
 |-------|------|
 | Installation · quick start | [Getting started](https://hoox.sh/pyne/docs/enduser/getting-started/installation) |
+| CLI | [CLI guide](https://hoox.sh/pyne/docs/enduser/guides/cli) · [commands](https://hoox.sh/pyne/docs/enduser/reference/cli-commands) |
+| MCP (agents) | [MCP](https://hoox.sh/pyne/docs/enduser/guides/mcp) · [tools](https://hoox.sh/pyne/docs/enduser/reference/mcp-tools) |
 | Evaluate scripts | [Evaluate guide](https://hoox.sh/pyne/docs/enduser/guides/evaluate-scripts) |
 | Alerts & webhooks | [Runtime alerts](https://hoox.sh/pyne/docs/runtime/alerts) |
 | Compiler & parity | [Compiler](https://hoox.sh/pyne/docs/runtime/compiler/overview) · [Parity](https://hoox.sh/pyne/docs/runtime/compiler/parity) |

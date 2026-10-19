@@ -39,7 +39,7 @@ pip install "hoox-pyne[lsp]"       # language server
 pip install "hoox-pyne[compile]"   # Numba compile path
 pip install "hoox-pyne[data]"      # ccxt market data
 pip install "hoox-pyne[pro]"       # Flask Pro API stack
-pip install "hoox-pyne[mcp]"       # MCP server (pyne-mcp / pyne mcp)
+pip install "hoox-pyne[mcp]"       # stdio MCP server (pyne-mcp); pyne mcp call / pyne execute need no extra
 ```
 
 ## Conceptual model
@@ -56,7 +56,8 @@ flowchart LR
   EXTRA_COMPILE["extra: compile"] --> NUMBA[numba path]
   EXTRA_DATA["extra: data"] --> CCXT[ccxt providers]
   EXTRA_PRO["extra: pro"] --> API[Flask Pro API]
-  EXTRA_MCP["extra: mcp"] --> MCP[pyne-mcp]
+  EXTRA_MCP["extra: mcp"] --> MCP["pyne-mcp stdio"]
+  CORE --> EX["pyne execute / mcp call"]
   CORE --> EXTRA_LSP
   CORE --> EXTRA_COMPILE
   CORE --> EXTRA_DATA
@@ -71,7 +72,7 @@ flowchart LR
 | `pip install "hoox-pyne[compile]"` | + numpy / numba | `compile` / `prewarm` / `run` Numba modes |
 | `pip install "hoox-pyne[data]"` | + ccxt | Exchange data providers |
 | `pip install "hoox-pyne[pro]"` | + Flask Pro API stack | Self-hosted `/run` |
-| `pip install "hoox-pyne[mcp]"` | + `pyne-mcp` / `pyne mcp` | LLM hosts (Cursor, Claude, Inspector) |
+| `pip install "hoox-pyne[mcp]"` | + stdio `pyne-mcp` / `pyne mcp` | LLM hosts (Cursor, Claude, Inspector). `pyne execute` / `pyne mcp call` work without this extra |
 | `pip install -e ".[dev-lsp]"` | Editable + LSP test harness | Contributing to LSP |
 | Docker CLI image | Full CLI image | CI gates / isolated runs |
 | Hatch env | Matrix tests, lint, docs | Full monorepo workflow |
@@ -107,6 +108,7 @@ pip install "hoox-pyne[compile]"
 pip install "hoox-pyne[data]"      # alias: datafeed
 pip install "hoox-pyne[pro]"
 pip install "hoox-pyne[lsp,compile,data]"
+pip install "hoox-pyne[mcp]"       # stdio server only; CLI call/execute are in the core wheel
 ```
 
 ### Source checkout
@@ -133,8 +135,9 @@ docker run --rm -v "$PWD:/work" -w /work pynescript-cli:latest check script.pine
 
 | Command | Purpose |
 | --- | --- |
-| `pyne` | Preferred Click CLI (check, format, lint, compile, prewarm, run, data, info) |
+| `pyne` | Preferred Click CLI (check, format, lint, compile, prewarm, run, execute, mcp call, data, info) |
 | `pyne-lsp` | Preferred language server (requires `[lsp]`) |
+| `pyne-mcp` | Stdio MCP server (requires `[mcp]`; same as `pyne mcp`) |
 | `pynescript` | Alias of `pyne` (same callable) |
 | `pynescript-lsp` | Alias of `pyne-lsp` (same callable) |
 
@@ -184,9 +187,11 @@ PY
 
 pyne check examples/rsi_strategy.pine
 pyne lint examples/rsi_strategy.pine
+pyne execute examples/rsi_strategy.pine --mode interpret --bars 50
 # optional (needs [compile] for Numba):
 # pyne prewarm
 # pyne run examples/rsi_strategy.pine --bars 50
+# stdio MCP (needs [mcp]): pyne mcp config && pyne mcp
 ```
 
 ### Monorepo desk + Pro API
@@ -206,6 +211,7 @@ make run   # Flask on :5002
 | `No module named 'pygls'` | LSP without extra | `pip install "hoox-pyne[lsp]"` |
 | `No module named 'numba'` | compile path without extra | `pip install "hoox-pyne[compile]"` |
 | `No module named 'ccxt'` | data path without extra | `pip install "hoox-pyne[data]"` |
+| `MCP extra missing` | stdio `pyne mcp` / `pyne-mcp` without extra | `pip install "hoox-pyne[mcp]"` (`execute` / `mcp call` work without it) |
 | Wrong package / missing APIs | Installed upstream `pynescript` or plain `pyne` | `pip uninstall pynescript pyne` then `pip install hoox-pyne` |
 | `pyne` / `pynescript` not found | Scripts not on PATH | `python -m pynescript` or fix venv `bin/` |
 
@@ -213,6 +219,7 @@ make run   # Flask on :5002
 
 - [Quick start](/pyne/docs/enduser/getting-started/quick-start)
 - [CLI guide](/pyne/docs/enduser/guides/cli)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)
 - [Editors / LSP](/pyne/docs/enduser/guides/editors)
 - [Release](/pyne/docs/devops/release)
 - [End User hub](/pyne/docs/enduser)

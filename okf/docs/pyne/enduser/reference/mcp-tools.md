@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "MCP Tools"
-description: "Catalog of PYNE MCP tools, resources, and prompts: CLI parity plus structured parse, Runtime.execute, builtins, and LSP-like hover."
+description: "Catalog of PYNE MCP tools, resources, and prompts. Every tool runs from pyne mcp call; execute / symbols / parity / diagnostics / builtin are first-class CLI commands."
 resource: "docs/pyne/enduser/reference/mcp-tools.mdx"
 tags: [doc, docs, enduser, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T17:27:04Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "docs/pyne/enduser/reference/mcp-tools.mdx"

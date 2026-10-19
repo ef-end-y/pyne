@@ -1,3 +1,9 @@
+## [0.6.16] — 2026-10-19
+
+### Fixed
+
+- **Session results ship the evaluated window's bar-time axis (`times`).** The engine's stored series can have gaps (a missed minute), so a client that joined the series by index displaced the plot — the band led the candles by the number of missing bars. The session envelope now carries `times` (the evaluated bars' timestamps) and a delta tick carries the tail's, so the client joins by time. AXIS already consumes it (`meta.engineTimes` → `alignSeriesToTimes`).
+
 ## [0.6.15] — 2026-10-19
 
 ### Added

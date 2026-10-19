@@ -46,6 +46,7 @@ flowchart TB
   LS --> FEAT[diagnostics / format / completion]
   BIN --> CLI[pyne]
   BIN --> LSPBIN[pyne-lsp]
+  BIN --> MCPBIN[pyne-mcp]
 ```
 
 There is no `pynescript.toml` (or similar) for core use. Parse, evaluate, and CLI flags are per-invocation.
@@ -56,20 +57,22 @@ There is no `pynescript.toml` (or similar) for core use. Parse, evaluate, and CL
 
 | Extra | Dependencies | Enables |
 | --- | --- | --- |
-| *(none)* | antlr4-runtime, click, requests, tqdm | CLI + AST + linter + literal_eval + `pynescript.runtime` |
+| *(none)* | antlr4-runtime, click, requests, tqdm | CLI + AST + linter + literal_eval + `pynescript.runtime` + `pyne execute` / `mcp call` |
 | `lsp` | pygls, lsprotocol | `pyne-lsp` (alias `pynescript-lsp`) |
 | `dev-lsp` | pygls, lsprotocol, pytest-lsp | LSP + protocol tests |
 | `data` | ccxt | Exchange historical data |
 | `datafeed` | ccxt | Same as `data` (alias for realtime feed paths) |
 | `compile` | numpy, numba | Compile / run / prewarm Numba path |
 | `pro` | Flask stack (+ redis optional) | Self-hosted Pro API |
+| `mcp` | mcp, lsprotocol | Stdio `pyne-mcp` / `pyne mcp`. `execute` / `mcp call` need no extra |
 
 ### Console scripts
 
 | Name | Entry point | Notes |
 | --- | --- | --- |
-| `pyne` | `pynescript.__main__:cli` | Preferred desk CLI |
+| `pyne` | `pynescript.__main__:cli` | Preferred desk CLI (`execute` / `mcp call` included) |
 | `pyne-lsp` | `pynescript.langserver.__main__:main` | Preferred language server |
+| `pyne-mcp` | `pynescript.mcp.__main__:main` | Stdio MCP server (`[mcp]` extra; same as `pyne mcp`) |
 | `pynescript` | same as `pyne` | Legacy alias |
 | `pynescript-lsp` | same as `pyne-lsp` | Legacy alias |
 
@@ -94,6 +97,8 @@ Per-invocation only (no persistence):
 | `compile` | `--emit`, `-o`, `--time/--no-time` |
 | `prewarm` | `--force`, `--json` |
 | `run` | `--bars` (default 50), `--json`, `-q` — **compile-only** synthetic OHLCV |
+| `execute` | `--mode` (default **auto**), `--bars`, `--ohlcv`, `--inputs`, `--timeout` — `Runtime.run` JSON |
+| `mcp call TOOL` | `--arg KEY=VALUE` / `--json` — in-process MCP ops (no `[mcp]` extra) |
 | `data` | `--provider`, `--period`, `--interval`, `--api-key`, `--secret`, `--exchange`, `--format` |
 
 `lint` has **no** `--fix`. Structural rewrite is `pyne format -w` (parse → unparse).
@@ -124,7 +129,7 @@ Used by `pynescript.runtime.Runtime` (`src/pynescript/runtime/host.py`) and the 
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PYNE_RUNTIME_MODE` | `interpret` | Default when `Runtime.run(..., mode=None)` omits mode (**Pro API schema default is still `auto`**; `pyne run` ignores this — compile-only) |
+| `PYNE_RUNTIME_MODE` | `interpret` | Default when `Runtime.run(..., mode=None)` omits mode (**Pro API schema default is still `auto`**; `pyne execute` `--mode` default is **`auto`**; `pyne run` ignores this — compile-only) |
 | `PYNE_SERIES_CAP` | **on** | Trim append-only host series lists; set `0` / `false` / `off` to disable (oracle / debug) |
 | `PYNE_SERIES_MAX` | unset | Absolute series history depth (overrides default 256 + `max_bars_back`) |
 | `PYNE_TA_INCREMENTAL` | **on** | Bar-mode incremental `ta.*` hot path; set `0` to force full recompute |
@@ -297,6 +302,7 @@ pynescript data EUR/USD --provider alphavantage --api-key "$AV_KEY" --period 3mo
 - [Installation](/pyne/docs/enduser/getting-started/installation)
 - [Pro API usage](/pyne/docs/enduser/guides/pro-api-usage)
 - [Editors](/pyne/docs/enduser/guides/editors)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)
 - [CLI commands](/pyne/docs/enduser/reference/cli-commands)
 - [Runtime modes](/pyne/docs/enduser/reference/modes)
 - [API auth (systems)](/pyne/docs/api/auth-and-keys)

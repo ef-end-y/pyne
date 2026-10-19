@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "CLI Guide"
-description: "Use the pyne Click CLI to check, format, lint, compile, run, optimize, prewarm, fetch data, and more."
+description: "Use the pyne Click CLI to check, format, lint, compile, run, execute (Runtime.run), call MCP tools, optimize, prewarm, and fetch data."
 resource: "docs/pyne/enduser/guides/cli.mdx"
 tags: [doc, docs, enduser, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "docs/pyne/enduser/guides/cli.mdx"
@@ -42,5 +42,6 @@ Repo path `docs/pyne/enduser/guides/cli.mdx`.
 
 * [src/pynescript](/code/src/pynescript.md)
 * [src/pynescript/ast](/code/src/pynescript/ast.md)
+* [src/pynescript/mcp](/code/src/pynescript/mcp.md)
 * [src/pynescript/util](/code/src/pynescript/util.md)
 * [tests](/code/tests.md)

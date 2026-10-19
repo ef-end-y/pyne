@@ -1,5 +1,5 @@
 PYNE CONSOLIDATED DOCUMENTATION — LLM CONTEXT PACK
-Generated: 2026-10-18
+Generated: 2026-10-19
 Source: github.com/hoox-sh/pyne/docs/pyne
 Public: https://hoox.sh/pyne/docs
 Repository: https://github.com/hoox-sh/pyne
@@ -1246,6 +1246,8 @@ Free readiness hook (same rate/concurrency gates). Body optional:
 Caps at 16 sources. Returns has_numba, builtins_warmed, scripts_ok / scripts_failed, prewarm_ms. Does not execute on OHLCV.
 WS /ws/run
 When flask-sock is installed: JSON text frames {type: "run", id, script, data, mode?}. Reply {type: "result", …} or {type: "error"}. Ping/pong supported. Same execute_run_payload as HTTP /run.
+The run frame accepts the same optional fields as POST /run — symbol, mode, data_source, data_options, inputs, profiler, libraries, timeout_seconds, from_bar, to_bar — so published-library imports (import ns/Name/1) work over the WebSocket channel exactly as they do over HTTP.
+The Pro API container must run gunicorn with the gthread (or sync) worker: flask-sock performs the HTTP→WebSocket upgrade itself. The geventwebsocket…GeventWebSocketWorker worker upgrades the same socket a second time, which corrupts the frame stream (clients see close code 1002) while REST keeps working.
 Alert webhooks (L2)
 `bash
 Server default (optional)
@@ -4728,18 +4730,20 @@ Interface surface
 Package extras (pyproject.toml)
 | Extra | Dependencies | Enables |
 | --- | --- | --- |
-| (none) | antlr4-runtime, click, requests, tqdm | CLI + AST + linter + literal_eval + pynescript.runtime |
+| (none) | antlr4-runtime, click, requests, tqdm | CLI + AST + linter + literal_eval + pynescript.runtime + pyne execute / mcp call |
 | lsp | pygls, lsprotocol | pyne-lsp (alias pynescript-lsp) |
 | dev-lsp | pygls, lsprotocol, pytest-lsp | LSP + protocol tests |
 | data | ccxt | Exchange historical data |
 | datafeed | ccxt | Same as data (alias for realtime feed paths) |
 | compile | numpy, numba | Compile / run / prewarm Numba path |
 | pro | Flask stack (+ redis optional) | Self-hosted Pro API |
+| mcp | mcp, lsprotocol | Stdio pyne-mcp / pyne mcp. execute / mcp call need no extra |
 Console scripts
 | Name | Entry point | Notes |
 | --- | --- | --- |
-| pyne | pynescript.main:cli | Preferred desk CLI |
+| pyne | pynescript.main:cli | Preferred desk CLI (execute / mcp call included) |
 | pyne-lsp | pynescript.langserver.main:main | Preferred language server |
+| pyne-mcp | pynescript.mcp.main:main | Stdio MCP server ([mcp] extra; same as pyne mcp) |
 | pynescript | same as pyne | Legacy alias |
 | pynescript-lsp | same as pyne-lsp | Legacy alias |
 Invoke without scripts on PATH:
@@ -4759,6 +4763,8 @@ Per-invocation only (no persistence):
 | compile | --emit, -o, --time/--no-time |
 | prewarm | --force, --json |
 | run | --bars (default 50), --json, -q — compile-only synthetic OHLCV |
+| execute | --mode (default auto), --bars, --ohlcv, --inputs, --timeout — Runtime.run JSON |
+| mcp call TOOL | --arg KEY=VALUE / --json — in-process MCP ops (no [mcp] extra) |
 | data | --provider, --period, --interval, --api-key, --secret, --exchange, --format |
 lint has no --fix. Structural rewrite is pyne format -w (parse → unparse).
 Pro API environment variables
@@ -4780,7 +4786,7 @@ Runtime / evaluate environment variables
 Used by pynescript.runtime.Runtime (src/pynescript/runtime/host.py) and the compiler host. backend.runtime is a compat re-export only.
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| PYNE_RUNTIME_MODE | interpret | Default when Runtime.run(..., mode=None) omits mode (Pro API schema default is still auto; pyne run ignores this — compile-only) |
+| PYNE_RUNTIME_MODE | interpret | Default when Runtime.run(..., mode=None) omits mode (Pro API schema default is still auto; pyne execute --mode default is auto; pyne run ignores this — compile-only) |
 | PYNE_SERIES_CAP | on | Trim append-only host series lists; set 0 / false / off to disable (oracle / debug) |
 | PYNE_SERIES_MAX | unset | Absolute series history depth (overrides default 256 + max_bars_back) |
 | PYNE_TA_INCREMENTAL | on | Bar-mode incremental ta. hot path; set 0 to force full recompute |
@@ -4914,6 +4920,7 @@ See also
 Installation
 Pro API usage
 Editors
+MCP (agents)
 CLI commands
 Runtime modes
 API auth (systems)
@@ -4935,7 +4942,7 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Installation"
-description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, LSP, compile, data, and Pro API extras."
+description: "Install hoox-pyne from PyPI (live) or a source checkout — CLI, LSP, compile, data, Pro API, and MCP extras."
 ---
 Installation
 Abstract
@@ -4949,6 +4956,7 @@ pip install "hoox-pyne[lsp]" # language server
 pip install "hoox-pyne[compile]" # Numba compile path
 pip install "hoox-pyne[data]" # ccxt market data
 pip install "hoox-pyne[pro]" # Flask Pro API stack
+pip install "hoox-pyne[mcp]" # stdio MCP server (pyne-mcp); pyne mcp call / pyne execute need no extra
 `
 Conceptual model
 | Install flavor | What you get | When |
@@ -4958,6 +4966,7 @@ Conceptual model
 | pip install "hoox-pyne[compile]" | + numpy / numba | compile / prewarm / run Numba modes |
 | pip install "hoox-pyne[data]" | + ccxt | Exchange data providers |
 | pip install "hoox-pyne[pro]" | + Flask Pro API stack | Self-hosted /run |
+| pip install "hoox-pyne[mcp]" | + stdio pyne-mcp / pyne mcp | LLM hosts (Cursor, Claude, Inspector). pyne execute / pyne mcp call work without this extra |
 | pip install -e ".[dev-lsp]" | Editable + LSP test harness | Contributing to LSP |
 | Docker CLI image | Full CLI image | CI gates / isolated runs |
 | Hatch env | Matrix tests, lint, docs | Full monorepo workflow |
@@ -4984,6 +4993,7 @@ pip install "hoox-pyne[compile]"
 pip install "hoox-pyne[data]" # alias: datafeed
 pip install "hoox-pyne[pro]"
 pip install "hoox-pyne[lsp,compile,data]"
+pip install "hoox-pyne[mcp]" # stdio server only; CLI call/execute are in the core wheel
 `
 Source checkout
 `bash
@@ -5004,8 +5014,9 @@ docker run --rm -v "$PWD:/work" -w /work pynescript-cli:latest check script.pine
 Console scripts
 | Command | Purpose |
 | --- | --- |
-| pyne | Preferred Click CLI (check, format, lint, compile, prewarm, run, data, info) |
+| pyne | Preferred Click CLI (check, format, lint, compile, prewarm, run, execute, mcp call, data, info) |
 | pyne-lsp | Preferred language server (requires [lsp]) |
+| pyne-mcp | Stdio MCP server (requires [mcp]; same as pyne mcp) |
 | pynescript | Alias of pyne (same callable) |
 | pynescript-lsp | Alias of pyne-lsp (same callable) |
 `bash
@@ -5045,9 +5056,11 @@ print(unparse(parse(src)))
 PY
 pyne check examples/rsi_strategy.pine
 pyne lint examples/rsi_strategy.pine
+pyne execute examples/rsi_strategy.pine --mode interpret --bars 50
 optional (needs [compile] for Numba):
 pyne prewarm
 pyne run examples/rsi_strategy.pine --bars 50
+stdio MCP (needs [mcp]): pyne mcp config && pyne mcp
 `
 Monorepo desk + Pro API
 `bash
@@ -5063,11 +5076,13 @@ Failure modes
 | No module named 'pygls' | LSP without extra | pip install "hoox-pyne[lsp]" |
 | No module named 'numba' | compile path without extra | pip install "hoox-pyne[compile]" |
 | No module named 'ccxt' | data path without extra | pip install "hoox-pyne[data]" |
+| MCP extra missing | stdio pyne mcp / pyne-mcp without extra | pip install "hoox-pyne[mcp]" (execute / mcp call work without it) |
 | Wrong package / missing APIs | Installed upstream pynescript or plain pyne | pip uninstall pynescript pyne then pip install hoox-pyne |
 | pyne / pynescript not found | Scripts not on PATH | python -m pynescript or fix venv bin/` |
 See also
 Quick start
 CLI guide
+MCP (agents)
 Editors / LSP
 Release
 End User hub
@@ -5102,6 +5117,7 @@ optional:
 pip install "hoox-pyne[lsp]" # editors
 pip install "hoox-pyne[compile]" # compile / run / prewarm
 pip install "hoox-pyne[data]" # ccxt providers
+pip install "hoox-pyne[mcp]" # stdio pyne-mcp; pyne execute / mcp call need no extra
 `
 `bash
 pyne info
@@ -5213,7 +5229,7 @@ curl -s -X POST http://127.0.0.1:5002/run \
 Omit mode to use the schema default auto (warm compile when eligible, else interpret). Response may include series, plot_meta, events, drawings, and alerts. See Pro API usage for batch mode, webhooks, free-tier guards, and prewarm.
 Prefer saving stack sources as .pyne (.pine still works).
 7. Library bar-loop vs CLI smoke
-Library Runtime.run defaults to interpret. pyne run is compile-only on synthetic bars and does not accept --mode.
+Library Runtime.run defaults to interpret. pyne run is compile-only on synthetic bars and does not accept --mode. pyne execute is the CLI Runtime.run path (--mode interpret|compile|auto).
 `python
 from pynescript.runtime import Runtime
 ohlcv = [
@@ -5231,9 +5247,20 @@ print(out.get("mode"), list(out.get("series", {})))
 `bash
 pip install "hoox-pyne[compile]"
 pyne run examples/rsi_strategy.pine --bars 50
+pyne execute examples/rsi_strategy.pine --mode interpret --bars 50
 `
 See modes.
-8. Optional: start LSP for editors
+8. Optional: MCP tools from the CLI
+pyne mcp call and pyne execute need no extra. Serving stdio to an LLM host does.
+`bash
+pyne mcp tools
+pyne mcp call lint examples/rsi_strategy.pine
+pyne mcp call execute examples/rsi_strategy.pine --arg bars=50 --arg mode=interpret
+pip install "hoox-pyne[mcp]"
+pyne mcp config && pyne mcp
+`
+See MCP (agents).
+9. Optional: start LSP for editors
 `bash
 pip install "hoox-pyne[lsp]"
 pyne-lsp # stdio; normally launched by the editor
@@ -5256,6 +5283,7 @@ Library API
 Evaluate scripts
 Runtime modes
 CLI command reference
+MCP (agents)
 ---
 FILE: docs/pyne/enduser/guides/cli.mdx
 Copyright (C) 2024-2026 jango_blockchained
@@ -5273,11 +5301,11 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "CLI Guide"
-description: "Use the pyne Click CLI to check, format, lint, compile, run, optimize, prewarm, fetch data, and more."
+description: "Use the pyne Click CLI to check, format, lint, compile, run, execute (Runtime.run), call MCP tools, optimize, prewarm, and fetch data."
 ---
 CLI Guide
 Abstract
-The preferred pyne console script (alias pynescript) is a Click group over the same helpers used by the library API. Install with pip install hoox-pyne (live on PyPI). It is optimized for shell pipelines, CI gates, one-shot inspection, and light compile/run smokes. Full multi-bar evaluation with real OHLCV belongs on the package pynescript.runtime.Runtime or Pro API. Exhaustive flags: CLI commands.
+The preferred pyne console script (alias pynescript) is a Click group over the same helpers used by the library API. Install with pip install hoox-pyne (live on PyPI). It is optimized for shell pipelines, CI gates, one-shot inspection, and light compile/run smokes. pyne execute is Runtime.run (JSON). Full multi-bar evaluation with real OHLCV also lives on the package pynescript.runtime.Runtime or Pro API. Exhaustive flags: CLI commands.
 Conceptual model
 | CLI | Library / subsystem |
 | --- | --- |
@@ -5291,6 +5319,8 @@ Conceptual model
 | data | pynescript.util.data.get_provider |
 | runner | HTTP client for Flask /scripts + /cron/run (PYNE_RUNNER) |
 | info | version + optional extras |
+| execute / symbols / parity / diagnostics / builtin | MCP ops (Runtime.run, outline, last-value parity) |
+| mcp | pynescript.mcp stdio server, tools, in-process call (MCP) |
 Interface surface
 ``bash
 pyne --help
@@ -5309,16 +5339,20 @@ alias: pynescript …
 | compile PATH | file | emit Python or compile-check |
 | prewarm [PATH…] | optional files | warm Numba / IR cache |
 | run PATH | file | synthetic-bar execute |
+| execute PATH | file | Runtime.run JSON (--mode interpret\|compile\|auto) |
+| symbols / parity / diagnostics / builtin | file / name | MCP-backed JSON |
 | optimize PATH | file + --space JSON | strategy hyperparameter search |
 | data SYMBOL | symbol + provider opts | table / json / csv |
 | runner … | file / id | hosted deploy + tick (runner) |
 | info | — | version + extras |
-Not part of this Click group: language server — use pyne-lsp (alias pynescript-lsp).
+| mcp | — | stdio MCP server; config / tools / call TOOL |
+Not part of this Click group: language server — use pyne-lsp (alias pynescript-lsp). MCP also has console script pyne-mcp.
 Install options
 | Method | When |
 | --- | --- |
 | pip install hoox-pyne | Default desk / CI use |
 | pip install "hoox-pyne[compile]" | Need Numba compile / run modes |
+| pip install "hoox-pyne[mcp]" | Stdio MCP server (pyne-mcp / pyne mcp). pyne execute / mcp call need no extra |
 | GitHub Release binary pynescript-cli- | No Python install |
 | Docker pynescript-cli | Isolated CI / one-shot checks |
 `bash
@@ -5334,7 +5368,8 @@ chmod +x pynescript-cli-linux-x86_64
 Internals (repo paths)
 | Path | Role |
 | --- | --- |
-| src/pynescript/main.py | All command implementations |
+| src/pynescript/main.py | Click group; registers mcp + first-class execute/symbols/parity |
+| src/pynescript/mcp/cli.py | pyne mcp group, execute, symbols, parity, diagnostics, builtin |
 | src/pynescript/ast/helper.py | parse, dump, unparse |
 | src/pynescript/ast/linter.py | lint_script |
 | src/pynescript/compiler/ | compile / prewarm / run |
@@ -5398,9 +5433,11 @@ pyne compile script.pine --emit # print generated Python
 pyne prewarm # warm shared Numba kernels
 pyne prewarm script.pine # also compile that source into IR caches
 pyne run script.pine --bars 100 # compile-only execute on synthetic OHLCV
+pyne execute script.pine --mode interpret --bars 50
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
 `
 Compose with library for evaluation
-pyne run is compile-only smoke. Real bars + mode / libraries / timeout_seconds belong on the package Runtime:
+pyne run is compile-only smoke. pyne execute is Runtime.run (JSON; --mode, --ohlcv, --inputs, --timeout). The same ops are pyne mcp call TOOL. Direct library use:
 `bash
 pyne format strat.pine -o /tmp/s.pine
 python - <<'PY'
@@ -5420,6 +5457,7 @@ Failure modes
 | Empty dump / unexpected tree | mode always exec for CLI | expression-only needs library mode="eval"` |
 See also
 CLI commands reference
+MCP (agents)
 Runtime modes
 Library API
 Quick start
@@ -5455,6 +5493,8 @@ Conceptual model
 | Definition / references | Symbol index in document |
 | Document symbols | Outline / breadcrumb |
 | Formatting | Full document + range via unparser path |
+| Folding | if / for / while / switch / once, types, //#region |
+| Code action | Convert-to-v6; W001 QuickFix inserts //@version=6 |
 Builtin metadata is generated (scripts/generate_builtin_metadata.py); encrypted blobs may appear in release builds.
 Interface surface
 Install server
@@ -5653,7 +5693,7 @@ Abstract
 Evaluation is the second half of the PYNE pipeline: given an AST (or source) and market context, produce plots, series, strategy events, and drawings. End users typically choose among three graded tools:
 1. literal_eval — pure/builtin expressions, optional series context
 2. AST evaluator (NodeLiteralEvaluator / full evaluator mixins) — script-shaped evaluation in-process
-3. pynescript.runtime.Runtime (package SoT; backend.runtime re-exports) or Pro API POST /run — bar-loop over OHLCV with shared evaluate contract. TypeScript: @hoox-sh/pynets Runtime.run — PyneTS. Defaults differ by surface — modes.
+3. pynescript.runtime.Runtime (package SoT; backend.runtime re-exports), CLI pyne execute, or Pro API POST /run — bar-loop over OHLCV with shared evaluate contract. TypeScript: @hoox-sh/pynets Runtime.run — PyneTS. Defaults differ by surface — modes.
 This guide stays at the consumer level; series semantics and builtin inventories are under Runtime.
 Conceptual model
 | Mode | Bar loop | Strategy | Typical use |
@@ -5672,6 +5712,7 @@ pynescript.runtime.Runtime.run accepts a mode argument that selects how the bar 
 | auto | Try compile first; on eligibility failure, compile error, or compiled runtime error, fall back to interpret. |
 Defaults differ by surface:
 Direct Runtime.run(..., mode=None) → PYNE_RUNTIME_MODE env, else interpret.
+CLI pyne execute → --mode default auto (same as MCP pyne_execute). pyne run is compile-only synthetic smoke and does not call Runtime.run.
 Pro API POST /run body omit mode → schema default auto (warm compile + fallback).
 ``python
 from pynescript.runtime import Runtime
@@ -5690,7 +5731,14 @@ result["mode"] / result.get("auto_backend") → "compile" | "interpret"
 on fallback: result.get("compile_fallback_reason")
 on timeout: timed_out + error_kind="runtime" with partial plots
 `
-timeout_seconds is accepted on the library host and on POST /run / POST /run/batch (omit / null / ≤ 0 → no budget). pyne run does not call Runtime.run at all.
+timeout_seconds is accepted on the library host, pyne execute --timeout, and POST /run / POST /run/batch (omit / null / ≤ 0 → no budget). pyne run does not call Runtime.run at all.
+`bash
+pyne execute script.pine --mode interpret --bars 50
+pyne execute script.pine --ohlcv bars.json --inputs '{"len": 14}' --timeout 12
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
+pyne parity script.pine --bars 24
+`
+pyne execute prints the same JSON envelope as MCP pyne_execute (truncated plots). See CLI commands and MCP (agents).
 Warm compile / prewarm
 Product hosts cache compiled IR (in-process LRU + optional disk under PYNE_COMPILE_CACHE_DIR). Pro API defaults mode=auto and can warm Numba builtins once per worker (PYNE_COMPILE_PREWARM, POST /compile/prewarm, or pyne prewarm [PATH…]). First-hit latency still pays JIT when cold; subsequent runs of the same source reuse IR. See Compiler overview.
 Related host knobs (interpret path): PYNE_SERIES_CAP / PYNE_SERIES_MAX (history trim) and PYNE_TA_INCREMENTAL (bar-mode TA hot path)—see Series & history and Configuration.
@@ -5830,6 +5878,7 @@ Internals (repo paths)
 | src/pynescript/ast/evaluator/builtins/ | ta., strategy., arrays, … |
 | src/pynescript/ast/evaluator/events.py | Event emission hooks |
 | src/pynescript/runtime/host.py | Multi-bar Runtime.run SoT (interpret / compile / auto, timeout_seconds) plus InterpretSession (create_session / append_bars / update_last_bar) |
+| src/pynescript/mcp/cli.py | CLI pyne execute / parity → Runtime.run |
 | src/pynescript/runtime/series.py | PineSeries history model |
 | backend/runtime.py / backend/series.py | Compat re-exports of package Runtime |
 | src/pynescript/compiler/ | Transpile + Numba/object bar loops |
@@ -5902,6 +5951,8 @@ Failure modes
 | Async feed errors | Missing ccxt.pro / network |
 See also
 Pro API usage
+CLI guide
+MCP (agents)
 Runtime modes
 Library API
 Runtime series model
@@ -5931,7 +5982,7 @@ description: "Embed pynescript: parse, dump, unparse, walk, transform, and lint 
 ---
 Library API
 Abstract
-The public Python surface for language work lives primarily under pynescript.ast: parse source into an ASDL-backed tree, serialize it (dump), regenerate source (unparse), traverse (walk, visitors), rewrite (NodeTransformer), and lint (lint_script). Expression evaluation (literal_eval) and full script execution (pynescript.runtime.Runtime) sit adjacent; this page focuses on structural APIs. Evaluation workflows are covered in Evaluate scripts. Strategy hyperparameter search is pynescript.optimize.run_study (not a Pine builtin) — POST /optimize. Install via pip install hoox-pyne (import pynescript).
+The public Python surface for language work lives primarily under pynescript.ast: parse source into an ASDL-backed tree, serialize it (dump), regenerate source (unparse), traverse (walk, visitors), rewrite (NodeTransformer), and lint (lint_script). Expression evaluation (literal_eval) and full script execution (pynescript.runtime.Runtime) sit adjacent; this page focuses on structural APIs. Evaluation workflows are covered in Evaluate scripts. Strategy hyperparameter search is pynescript.optimize.run_study (not a Pine builtin) — POST /optimize. Agents can call the same operations over MCP stdio (pip install "hoox-pyne[mcp]") or from the CLI with pyne mcp call / pyne execute (no extra) — MCP (agents). Install via pip install hoox-pyne (import pynescript).
 Conceptual model
 Design intent mirrors Python’s ast module: stable tree operations, location attributes, and visitor protocols — specialized for Pine’s script model (annotations, series-aware semantics live at evaluation time).
 Interface surface
@@ -6118,6 +6169,94 @@ CLI guide
 Helper API (core)
 Visitor / transformer (core)
 Linter (core)
+---
+FILE: docs/pyne/enduser/guides/mcp.mdx
+Copyright (C) 2024-2026 jango_blockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "MCP (agents)"
+description: "PYNE MCP: stdio pyne-mcp for LLM hosts, plus in-process pyne mcp call and pyne execute (Runtime.run) with no extra."
+---
+MCP (agents)
+Abstract
+The PYNE MCP server exposes the Pine toolchain to LLM hosts (Cursor, Claude, Inspector, Grok) over stdio. The same tools run from the shell with pyne mcp call and first-class pyne execute (no MCP SDK). Tools call library APIs in-process — they do not shell out. Stdio serving needs hoox-pyne[mcp]; call / execute / config / tools do not. Tool names are prefixed pyne_ so they never collide with AXIS axis_ / app_.
+Conceptual model
+| Surface | Role |
+| --- | --- |
+| PYNE MCP | Language + runtime: parse, lint, convert, compile, execute, builtins |
+| AXIS MCP | Chart PWA + Worker APIs (POST /mcp, optional tab bridge) |
+| pyne-lsp | Editor language server (separate stdio process) |
+Clients may enable PYNE MCP and AXIS MCP together.
+Interface surface
+``bash
+pip install "hoox-pyne[mcp]"
+pyne mcp config # print mcpServers JSON
+pyne mcp tools # catalog names
+pyne mcp call lint script.pine
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
+pyne execute script.pine --mode interpret --bars 50
+pyne mcp # stdio (blocks)
+pyne-mcp # same as pyne mcp
+python -m pynescript.mcp
+`
+`json
+{
+"mcpServers": {
+"pyne": {
+"command": "pyne-mcp",
+"args": []
+}
+}
+}
+`
+pyne mcp config --module uses python -m pynescript.mcp instead of the console script.
+pyne mcp call and pyne execute / symbols / parity / diagnostics / builtin invoke the same ops in-process and print JSON (no stdio host, no mcp extra). TOOL may be pyne_lint or the short alias lint. Extra arguments: --arg KEY=VALUE (JSON-coerced) or --json '{"bars":50}'.
+Every tool returns { "ok": true, ... } or { "ok": false, "error", "kind", "line?", "column?" }. Pine syntax errors are tool results, not protocol failures. Prefer source= (pasted script) over path=. Plot series are truncated (last N samples). Default data provider is mock. Runner tools use PYNE_API_URL / ADMIN_TOKEN and hit the network.
+Catalog: MCP tools.
+Internals (repo paths)
+src/pynescript/mcp/server.py — MCPServer, tool registration
+src/pynescript/mcp/dispatch.py — in-process call_tool (CLI pyne mcp call)
+src/pynescript/mcp/cli.py — Click mcp group + execute / symbols / parity / diagnostics / builtin
+src/pynescript/mcp/ops/ — library-backed operations
+Extra: [mcp] in pyproject.toml (mcp>=2.0,<3, lsprotocol)
+Entry: pyne-mcp = pynescript.mcp.main:main
+Invariants & edge cases
+No disk writes (format / convert return source).
+pyne_run is the CLI compile + synthetic bars path. pyne_execute is Runtime.run (interpret / compile / auto, caller OHLCV, timeout).
+pyne_download_builtins lists pine-facade templates; it does not write files.
+Hover / complete / signature reuse LSP handlers; they need lsprotocol (pulled in by [mcp]).
+Worked examples
+`text
+User: lint this script and run 50 bars
+Agent: pyne_lint({source}) → pyne_run({source, bars: 50})
+`
+`text
+User: what does ta.sma take?
+Agent: pyne_builtin({name: "ta.sma"})
+`
+Failure modes
+| Symptom | Cause |
+| --- | --- |
+| MCP extra missing | pip install "hoox-pyne[mcp]" for stdio. pyne execute / mcp call run without the extra |
+| ok: false, kind: parse | Syntax error; line / column set when known |
+| kind: network | Runner / non-mock pyne_data / facade list |
+| Large plot dumps | Raise sample` only as needed (max 64) |
+See also
+MCP tools
+CLI guide
+Library API
+AXIS MCP
 ---
 FILE: docs/pyne/enduser/guides/pro-api-usage.mdx
 Copyright (C) 2024-2026 jango_blockchained
@@ -6469,7 +6608,7 @@ Escalate to Runtime.run for multi-bar scripts.
 `bash
 curl -s -X POST http://127.0.0.1:5002/run -H 'Content-Type: application/json' -d '{"script":"//@version=6\nindicator(\"t\")\nplot(close)","data":[{"time":1,"open":1,"high":1,"low":1,"close":1,"volume":1}]}'
 `
-If minimal works but strategy fails: remove request.*, drawings, then strategy entries until isolated. Check mode; try "interpret". Library Runtime.run defaults to interpret; POST /run defaults to auto; pyne run is compile-only synthetic smoke — they will not match each other unless you set mode explicitly. See modes.
+If minimal works but strategy fails: remove request.*, drawings, then strategy entries until isolated. Check mode; try "interpret". Library Runtime.run defaults to interpret; POST /run and pyne execute default to auto; pyne run is compile-only synthetic smoke and is not Runtime.run — they will not match each other unless you set mode explicitly. See modes.
 8. Schema validation errors
 UNKNOWN_FIELDS means you sent a key not in the schema — remove it. Do not rely on servers ignoring extras.
 9. CORS from AXIS / browser
@@ -6506,7 +6645,8 @@ Failure modes (quick matrix)
 | SyntaxError | parse | minimal script + version |
 | Lint CI fail | lint | --fail-on level |
 | Empty plots | eval | plot() present; enough bars |
-| pyne run ≠ Runtime.run | modes | CLI is compile-only synthetic; library default is interpret |
+| pyne run ≠ Runtime.run | modes | pyne run is compile-only synthetic; use pyne execute for Runtime.run (default auto); library default is interpret |
+| MCP extra missing | extra | [mcp] is only for stdio pyne-mcp; pyne execute / mcp call need no extra |
 | UNKNOWN_FIELDS + timeout_seconds | HTTP | field is valid on /run and /run/batch (0.3.11+); other extra keys still 400 |
 | 400 UNKNOWN_FIELDS | HTTP | schema |
 | 403 create_key | HTTP | ADMIN_TOKEN` |
@@ -6517,6 +6657,7 @@ See also
 Installation
 Configuration
 CLI guide
+MCP (agents)
 Evaluate scripts
 Pro API usage
 Editors
@@ -6538,10 +6679,10 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "End User Hub"
-description: "Install PYNE (pip install hoox-pyne). Library default is interpret, pyne run is compile-only, Pro API /run defaults to auto."
+description: "Install PYNE (pip install hoox-pyne). Library default is interpret, pyne run is compile-only, pyne execute is Runtime.run, Pro API /run defaults to auto."
 ---
 End User Hub
-This track is for people who consume PYNE: parse and reformat Pine Script, lint before upload, evaluate expressions or full scripts against OHLCV (library default interpret, pyne run is compile-only, Pro API /run defaults to auto), export alerts (optional L2 webhooks), wire an editor via LSP (.pyne / .pine), or call the HTTP evaluate contract. Contributor internals (grammar regeneration, AST builder, bar-loop semantics) live under Core, Runtime, and DevOps.
+This track is for people who consume PYNE: parse and reformat Pine Script, lint before upload, evaluate expressions or full scripts against OHLCV (library default interpret, pyne run is compile-only, pyne execute is Runtime.run, Pro API /run defaults to auto), export alerts (optional L2 webhooks), wire an editor via LSP (.pyne / .pine), call MCP tools from the CLI or a stdio host, or call the HTTP evaluate contract. Contributor internals (grammar regeneration, AST builder, bar-loop semantics) live under Core, Runtime, and DevOps.
 Abstract
 PYNE exposes one language pipeline through several thin surfaces:
 ``
@@ -6571,7 +6712,8 @@ Quick start — Parse → dump → unparse → lint → literal_eval in under te
 Configuration — Extras, console scripts, Pro API env vars (ALERT_WEBHOOK_URL, compile cache), editor settings.
 2. Operational guides
 Daily workflows against the same pipeline:
-CLI — check, format, lint, compile, prewarm, run, optimize, data, …
+CLI — check, format, lint, compile, prewarm, run, execute, mcp call, optimize, data, …
+MCP (agents) — stdio pyne-mcp plus in-process pyne mcp call / pyne execute.
 Library API — parse, unparse, dump, walk, visitors, transformers, linter, optimize.run_study.
 Evaluate scripts — Expression eval, bar-loop Runtime (library default interpret), strategy events, alerts export, mock vs live data.
 Editors — VS Code (.pyne first-class), Neovim, Zed, Emacs, Helix; clients/ snippets.
@@ -6579,7 +6721,8 @@ Pro API usage — /run (+ webhook_url / L2 webhooks), /run/batch, /optimize, pre
 Troubleshooting — Parse failures, recursion limits, missing extras, CORS, auth.
 3. Reference
 CLI commands — Full option trees for every Click command.
-Modes — interpret / compile / auto defaults: library interpret, POST /run auto, pyne run compile-only.
+Modes — interpret / compile / auto defaults: library interpret, POST /run auto, pyne execute auto (Runtime.run), pyne run compile-only.
+MCP tools — Catalog of pyne_ tools, resources, and prompts.
 Glossary — AST, series, bar-loop, Runtime, ASDL, and related terms.
 FAQ — Version support, TradingView parity, licensing, AXIS/HOOX boundaries.
 Interface surface (consumer map)
@@ -6596,6 +6739,8 @@ Interface surface (consumer map)
 | Bar-loop eval | from pynescript.runtime import Runtime (mode default interpret) | Evaluate · modes |
 | Incremental interpret | Runtime.create_session → append_bars / update_last_bar (0.6.1) | Evaluate |
 | Compile-only smoke | pyne run script.pine --bars 50 | CLI |
+| Runtime.run from CLI | pyne execute script.pine --mode interpret --bars 50 | CLI · MCP |
+| Call an MCP tool | pyne mcp call lint script.pine | MCP tools |
 | Warm Numba / IR | pyne prewarm / POST /compile/prewarm | CLI |
 | Strategy HPO | pyne optimize / POST /optimize / pynescript.optimize.run_study | Optimize |
 | Alerts + webhooks | /run → alerts[] / webhook_url | Alerts |
@@ -6606,12 +6751,14 @@ Preferred console scripts (aliases in parentheses) are registered in pyproject.t
 | --- | --- | --- |
 | pyne (pynescript) | pynescript.main:cli | Desk CLI (Click group) |
 | pyne-lsp (pynescript-lsp) | pynescript.langserver.main:main | Language server (pygls) |
-Do not conflate them: lint and parse live on pyne; editor features live on pyne-lsp.
+| pyne-mcp | pynescript.mcp.main:main | Stdio MCP server ([mcp] extra; same as pyne mcp) |
+Do not conflate them: lint, parse, and execute live on pyne; editor features live on pyne-lsp; LLM stdio lives on pyne-mcp.
 Internals (repo paths)
 Consumer-relevant code only — deeper design is linked from each guide:
 | Path | Role |
 | --- | --- |
-| src/pynescript/main.py | Click CLI: check, format, lint, compile, prewarm, run, optimize, data, info |
+| src/pynescript/main.py | Click CLI: check, format, lint, compile, prewarm, run, execute, mcp, optimize, data, info |
+| src/pynescript/mcp/cli.py | pyne execute / mcp call (in-process MCP ops) |
 | src/pynescript/ast/helper.py | Public parse, unparse, dump, walk, literal_eval |
 | src/pynescript/ast/linter.py | lint_script / PineLinter |
 | src/pynescript/ast/evaluator/ | Bar-aware and literal evaluators |
@@ -6628,7 +6775,7 @@ Round-trip is first-class. parse → unparse should preserve semantics; use it t
 Mode split. parse(..., mode="exec") yields a script tree; mode="eval" parses a single expression (used by literal_eval).
 No proprietary host required. Evaluation works offline with mock or supplied OHLCV; AXIS/HOOX are optional.
 Extras are opt-in. Core parse/lint needs only base deps (antlr4-python3-runtime, click, …). LSP needs [lsp]; CCXT paths need [data] / [datafeed].
-Optional example dir. pinescript_filepath only expands when --example-scripts-dir points at local .pine files; no third-party corpus is shipped.
+Optional example dir. pinescript_filepath only expands when --example-scripts-dir points at local *.pine files; no third-party corpus is shipped.
 Worked examples
 Minimal library round-trip:
 `python
@@ -6707,10 +6854,16 @@ Command index
 | compile | | Transpile or compile-check (Numba path) |
 | prewarm | | Warm Numba builtins / script IR caches (H2) |
 | run | | Compile + execute on synthetic OHLCV |
+| execute | | Runtime.run JSON (MCP pyne_execute) |
+| symbols | | Outline functions / inputs / plots |
+| parity | | Interpret vs compile last plot values |
+| diagnostics | | Parse errors + lint in one JSON list |
+| builtin | | Look up one Pine builtin (ta.sma) |
 | optimize | | Search input. values over N interpret Runtime runs |
 | data | | Fetch market bars |
 | runner | | Hosted scripts on the Pro API (deploy / tick / list) |
 | info | ls | Version + optional extras |
+| mcp | | Stdio server, config, tools, in-process call |
 ``bash
 pyne --help
 pyne --version
@@ -6924,7 +7077,60 @@ pyne info (ls)
 | Kind | Name | Description |
 | --- | --- | --- |
 | option | --json | Machine-readable payload |
-Prints package version, Python, platform, and whether numba / rich are available.
+Prints package version, Python, platform, and whether numba / rich / mcp are available.
+---
+pyne execute
+Runtime.run on PATH (MCP pyne_execute). Prints the JSON envelope. Unlike pyne run, this is interpret/compile/auto with optional caller OHLCV rows.
+| Kind | Name | Default | Description |
+| --- | --- | --- | --- |
+| argument | PATH | | File or - (stdin) |
+| option | --mode | auto | interpret / compile / auto |
+| option | --bars | 50 | Synthetic bars when --ohlcv is omitted |
+| option | --ohlcv | | JSON array of {time,open,high,low,close,volume?} rows, or a file |
+| option | --inputs | | JSON object of input. overrides, or a file |
+| option | --timeout | 30s (cap 120) | Seconds |
+| option | --sample | 8 | Trailing plot samples (max 64) |
+| option | --trades | | Include strategy trade extras |
+| option | --ticker / --timeframe | MCP / 1m | Runtime identity |
+`bash
+pyne execute script.pine --mode interpret --bars 50
+pyne execute script.pine --ohlcv bars.json --inputs '{"len": 14}'
+`
+Exit 1 when ok is false.
+---
+pyne symbols / parity / diagnostics / builtin
+JSON wrappers for the MCP-only tools. parity exits 1 when last values diverge. diagnostics exits 1 when any item is severity=error. builtin NAME looks up builtin_metadata.json.
+`bash
+pyne symbols script.pine
+pyne parity script.pine --bars 24
+pyne diagnostics script.pine
+pyne builtin ta.sma
+`
+---
+pyne mcp
+Stdio Model Context Protocol server, plus in-process tool execution. Serving stdio requires pip install "hoox-pyne[mcp]". config, tools, and call do not.
+| Kind | Name | Description |
+| --- | --- | --- |
+| (no args) | | Serve MCP on stdio (pyne-mcp) |
+| subcommand | config | Print mcpServers.pyne JSON |
+| subcommand | tools | List catalog tool names (--json array) |
+| subcommand | call TOOL [PATH] | Run a tool in-process and print JSON |
+| option | --module | config only: python -m pynescript.mcp |
+| option | --source / -s | call: inline Pine (overrides PATH) |
+| option | --arg / -a | call: KEY=VALUE (JSON-coerced; repeatable) |
+| option | --json | call: extra arguments object (inline or file) |
+| option | --name | call: shortcut for --arg name= (pyne_builtin) |
+`bash
+pip install "hoox-pyne[mcp]"
+pyne mcp config
+pyne mcp tools
+pyne mcp call lint script.pine
+pyne mcp call execute script.pine --arg bars=24 --arg mode=interpret
+pyne mcp
+pyne-mcp
+python -m pynescript.mcp
+`
+Tools, resources, prompts: MCP tools. Guide: MCP (agents).
 ---
 Related: pyne-lsp (not a subcommand)
 `bash
@@ -6938,6 +7144,7 @@ Internals
 | --- | --- |
 | CLI group | src/pynescript/main.py |
 | Entry | pyproject.toml → pyne / pynescript = pynescript.main:cli |
+| MCP | src/pynescript/mcp/ · pyne-mcp |
 | parse/dump/unparse | src/pynescript/ast/helper.py |
 | lint | src/pynescript/ast/linter.py |
 | compile / prewarm | src/pynescript/compiler/ |
@@ -6948,7 +7155,7 @@ Aliases: dump/ast → parse-and-dump; unparse → parse-and-unparse; fmt → for
 Prefix match works when unique (pynescript ch → check).
 check walks directories; dump/format take a single file.
 Docker: pynescript-cli image ENTRYPOINT is pynescript (non-root).
-Standalone binaries: GitHub Release pynescript-cli-* (Nuitka).
+Standalone binaries: GitHub Release pynescript-cli- (Nuitka).
 Failure modes
 | Situation | Result |
 | --- | --- |
@@ -6960,6 +7167,7 @@ Failure modes
 | Missing ccxt for data | Import/provider error → install [data]` |
 See also
 CLI guide
+MCP (agents)
 Runtime modes
 Installation
 Compiler overview
@@ -7031,7 +7239,9 @@ Not guaranteed. Broker emulator rules, fill models, request. data, and some buil
 Can I format Pine like Black?
 parse-and-unparse / LSP format normalize via the AST unparser. There is no rich style config comparable to Black’s profile system.
 Does the CLI evaluate strategies?
-pyne run script.pine --bars 50 compiles and executes on synthetic OHLCV. It is not Runtime.run (no real bars, no mode/libraries/timeout_seconds/inputs). For real OHLCV use:
+pyne run script.pine --bars 50 compiles and executes on synthetic OHLCV. It is not Runtime.run (no real bars, no mode/libraries/timeout_seconds/inputs).
+pyne execute script.pine --mode interpret --bars 50 is Runtime.run (JSON envelope; optional --ohlcv rows, --inputs, --timeout). Same as MCP pyne_execute.
+For real OHLCV you can also use:
 from pynescript.runtime import Runtime — library default mode is interpret
 POST /run — schema default mode is auto
 examples/execute_script.py as a didactic sample (not the production host)
@@ -7080,10 +7290,11 @@ It depends on the surface — this is the usual footgun:
 | --- | --- |
 | pynescript.runtime.Runtime.run(..., mode=None) | PYNE_RUNTIME_MODE else interpret |
 | POST /run (body omits mode) | auto |
+| pyne execute | auto (Runtime.run; pass --mode) |
 | pyne run | compile-only (not Runtime.run, no --mode) |
 See modes.
 Is there Runtime.evaluate?
-No. The host API is Runtime.run. Python CLI pyne run is compile-only smoke and is not Runtime.run. PyneTS pynets run does call Runtime.run.
+No. The host API is Runtime.run. Python CLI pyne run is compile-only smoke and is not Runtime.run. pyne execute and PyneTS pynets run do call Runtime.run.
 What license is pynescript?
 AGPL-3.0-or-later per pyproject.toml. Network use of modified versions requires offering corresponding source (AGPL §13). Proprietary embedding usually needs a commercial license; consult your counsel.
 Can I use this commercially?
@@ -7182,7 +7393,7 @@ A discrete OHLCV time step. A bar-loop evaluator re-executes script logic once p
 Builtin
 Host-provided namespace function or value (ta.rsi, strategy.entry, math.sqrt, …). Implemented under ast/evaluator/builtins/ and catalogued for LSP metadata.
 CLI
-The preferred pyne Click command group (alias pynescript: check, format, lint, compile, prewarm, run, data, info). pyne run is compile-only synthetic smoke — not Runtime.run.
+The preferred pyne Click command group (alias pynescript: check, format, lint, compile, prewarm, run, execute, mcp, data, info). pyne run is compile-only synthetic smoke. pyne execute is Runtime.run (JSON).
 Compile mode
 mode="compile" on Runtime / /run: attempts a Numba (or similar) compiled subset of bar logic for speed. Not full language coverage.
 Data provider
@@ -7271,6 +7482,79 @@ PYNE product map
 AXIS docs
 HOOX docs
 ---
+FILE: docs/pyne/enduser/reference/mcp-tools.mdx
+Copyright (C) 2024-2026 jango_blockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "MCP Tools"
+description: "Catalog of PYNE MCP tools, resources, and prompts. Every tool runs from pyne mcp call; execute / symbols / parity / diagnostics / builtin are first-class CLI commands."
+---
+MCP Tools
+Abstract
+Machine-oriented catalog for the PYNE MCP server (pyne-mcp / pyne mcp) and the in-process CLI (pyne mcp call TOOL, plus pyne execute / symbols / parity / diagnostics / builtin). Guide: MCP (agents). Tools return JSON {ok, ...}. Inputs accept source (preferred) and/or path. Stdio serving needs hoox-pyne[mcp]; call / execute do not.
+CLI parity
+| Tool | CLI | Notes |
+| --- | --- | --- |
+| pyne_info | pyne info --json | version, numba, mcp extra, entry points |
+| pyne_check | pyne check | parse-only; source / path / paths |
+| pyne_format | pyne format | returns formatted source (no write) |
+| pyne_convert | pyne convert --to | to 5 or 6 |
+| pyne_dump | pyne parse-and-dump | dump text + JSON tree |
+| pyne_unparse | pyne parse-and-unparse | round-trip source |
+| pyne_lint | pyne lint --json | findings array |
+| pyne_compile | pyne compile | emit prints generated Python |
+| pyne_prewarm | pyne prewarm | Numba / IR warm |
+| pyne_run | pyne run | synthetic OHLCV, compile pipeline |
+| pyne_optimize | pyne optimize | space object or space_json |
+| pyne_data | pyne data | default provider mock |
+| pyne_download_builtins | pyne download-builtins --list | list only (network) |
+| pyne_runner_deploy | pyne runner deploy | POST /scripts |
+| pyne_runner_list | pyne runner list | |
+| pyne_runner_show | pyne runner show | |
+| pyne_runner_delete | pyne runner delete | |
+| pyne_runner_tick | pyne runner tick | POST /cron/run |
+| pyne_runner_jobs | pyne runner jobs | |
+| pyne_runner_enable | pyne runner enable | |
+| pyne_runner_disable | pyne runner disable | |
+Runner tools read PYNE_API_URL / ADMIN_TOKEN. They never echo tokens or webhook URLs.
+Deeper tools
+These also run from the CLI (pyne mcp call TOOL, plus first-class commands where listed).
+| Tool | CLI | Result |
+| --- | --- | --- |
+| pyne_parse | pyne mcp call parse PATH | {version, kind, title, errors[{line,column,message}]} |
+| pyne_symbols | pyne symbols PATH | functions, types, enums, input.*, plots, strategy.entry |
+| pyne_execute | pyne execute PATH | Runtime.run; caller ohlcv rows; truncated plots; strategy extras |
+| pyne_parity | pyne parity PATH | interpret vs compile last values (rtol=1e-5, atol=1e-6) |
+| pyne_hover | pyne mcp call hover PATH --arg line=0 --arg character=0 | markdown at 0-based line / character |
+| pyne_complete | pyne mcp call complete PATH | completion items at cursor |
+| pyne_signature | pyne mcp call signature PATH | signature help for the enclosing call |
+| pyne_builtin | pyne builtin ta.sma | builtin_metadata.json row (ta.sma, …) |
+| pyne_diagnostics | pyne diagnostics PATH | parse errors + lint in one list |
+pyne_execute plot cells: {len, last, na_count, sample} (sample default 8, max 64). Timeout default 30s, cap 120s. Bars cap 5000.
+Resources and prompts
+| URI / name | Kind |
+| --- | --- |
+| pyne://info | resource — same as pyne_info |
+| pyne://builtins | resource — compact catalog |
+| pyne://builtins/{name} | resource — one builtin |
+| review_pine | prompt — lint + convert-to-v6 |
+| debug_pine | prompt — parse, lint, 50-bar run |
+| convert_to_v6 | prompt — convert + remaining W002/C002 |
+See also
+MCP (agents)
+CLI commands
+---
 FILE: docs/pyne/enduser/reference/modes.mdx
 Copyright (C) 2024-2026 jango_blockchained
 This file is part of pynescript.
@@ -7287,7 +7571,7 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Runtime modes"
-description: "interpret / compile / auto defaults differ by surface. Library interpret, POST /run auto, pyne run compile-only. PyneTS 0.5.0 has interpret + JS compile."
+description: "interpret / compile / auto defaults differ by surface. Library interpret, POST /run auto, pyne run compile-only, pyne execute is Runtime.run. PyneTS 0.5.0 has interpret + JS compile."
 ---
 Runtime modes
 Abstract
@@ -7308,6 +7592,7 @@ Defaults by surface
 | Pro API POST /run body omits mode | schema auto | yes (host wrap) |
 | ?mode= query (legacy) | overrides body | yes |
 | CLI pyne run | compile only — not Runtime.run | no |
+| CLI pyne execute | --mode default auto (MCP pyne_execute) | yes |
 | new Runtime() / pynets run | interpret only (no --mode; --bars default 20) | yes |
 | AXIS engine server | whatever you pass; UI default often auto | HTTP /run |
 | AXIS engine pyodide | object-mode in Wasm (no Numba) | in-browser Python |
@@ -7331,7 +7616,7 @@ realtime_from_bar=None,
 `
 | Argument | Surfaces | Effect on mode |
 | --- | --- | --- |
-| mode | library / POST /run | See defaults table. pyne run has no --mode. |
+| mode | library / POST /run / pyne execute | See defaults table. pyne run has no --mode. |
 | inputs | library / POST /run | Non-empty overrides force interpret (compile does not apply them). |
 | libraries | library / POST /run / POST /run/batch (max 32) | [{namespace, name, version, source}] for import ns/Name/ver. Compile-ineligible; auto keeps the list on interpret fallback. Not on pyne run. |
 | timeout_seconds | library / POST /run / POST /run/batch | Interpret wall-clock budget. Exceeded → partial plots + timed_out. Omit / null / ≤ 0 → no timeout. Not on pyne run. |
@@ -7349,12 +7634,13 @@ Internals
 | --- | --- |
 | Python library | src/pynescript/runtime/host.py |
 | Python CLI run | src/pynescript/main.py → compile_script + synthetic bars |
+| Python CLI execute | src/pynescript/mcp/cli.py → Runtime.run (MCP pyne_execute) |
 | Pro API | backend/app.py RUN_SCHEMA default auto |
 | PyneTS | @hoox-sh/pynets 0.5.0 — interpret + JS compile (mode interpret / compile / auto). Python remains the oracle |
 | PyneTS CLI | pynets/src/cli.ts → new Runtime("AAPL", { broker }).run |
 Invariants & edge cases
-1. Do not document pyne run as mode=auto. It is compile-only smoke (--bars default 50).
-2. Do not document pynets run as Python pyne run. PyneTS Runtime.run defaults to interpret; 0.5.0 also has JS compile / auto. Default --bars is 20 (Python pyne run defaults to 50).
+1. Do not document pyne run as mode=auto. It is compile-only smoke (--bars default 50). Use pyne execute --mode … for Runtime.run from the CLI.
+2. Do not document pynets run as Python pyne run. PyneTS Runtime.run defaults to interpret; 0.5.0 also has JS compile / auto. Default --bars is 20. The Python equivalent of pynets run is pyne execute (pyne run defaults to 50 bars and is compile-only).
 3. result.mode is what executed. After auto, also read auto_backend and compile_fallback_reason.
 4. Foreign request.security is na on every host. Compile does not invent bars to become "more complete".
 5. AXIS Pyodide compile / auto cannot be Numba (Wasm).
@@ -7369,6 +7655,8 @@ new Runtime("AAPL", { inputs: { len: 14 } }).run(src, bars);
 `bash
 Python desk smoke (compile only)
 pyne run script.pine --bars 50
+Python Runtime.run from the CLI
+pyne execute script.pine --mode interpret --bars 50
 PyneTS desk smoke (Runtime.run; default interpret, --bars 20)
 pynets run script.pine --bars 50
 `
@@ -7376,7 +7664,7 @@ Failure modes
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Pro API "misses" an input | auto compiled a path that drops overrides | Pass mode: "interpret" |
-| pyne run ≠ notebook Runtime.run | Different host | Use the library or Pro API |
+| pyne run ≠ notebook Runtime.run | Different host | Use pyne execute, the library, or Pro API |
 | Expect PyneTS ≡ Python compile | JS emit is object-mode analog, not Numba | Treat Python Runtime as the oracle |
 | mode omitted, two hosts disagree | Different defaults | Set mode` explicitly |
 See also
@@ -7427,29 +7715,15 @@ aliases: pynescript / pynescript-lsp
 `
 The same pipeline powers the desk CLI, the LSP binary, the Pro API, browser Pyodide (via AXIS), and Cloudflare workers. Round-trip fidelity (parse → unparse) and interpretcompile plot parity are first-class invariants — see compatibility. Local open-corpus set01–04 (2026-08-09): parse 99.96%, Runtime interpret 100% excl. intentional demos (set01 249/249). The repository does not ship third-party script corpora.
 TypeScript consumers import PyneTS (@hoox-sh/pynets) — same public names; Python remains the oracle.
-What's new
-hoox-pyne 0.6.14 (live) — dual-host HTF, LSP signature help, host hardening:
-Compile HTF request.security (D-06) — same-symbol simple OHLCV, close[1], and allowlisted ta.sma/ema/rsi/atr/wma/rma on a coarser TF match interpret (gaps_on / lookahead_on on those paths). Nested ta. and foreign tickers stay na.
-LSP signature help — textDocument/signatureHelp for builtins and user FunctionDef (( / ,).
-JSON key-store atomic save and webhook DNS pin — flock + os.replace; POST connects to the resolved public IP with HTTPS SNI on the original hostname.
-Live P3 / P2 — forming last-value tails, pair-form tick identity, gthread pin, 100 threads.
-0.6.12 — production hardening and live-surface additions (GET /stats, PYNE_DEBUG=1, engine-owned live plane 0.6.10–0.6.12).
-Earlier on main — prior releases are documented in GitHub releases.
-0.6.6 (2026-09-22) — last-sample TA (ao/dmi/bb/cog/mode), convert-to-v6 keeps UDF/for n names, webhook SSRF, LSP nested strategy.risk completion.
-0.6.5 — convert-to-v6 leaves UDF definitions, parameters, and unpack names alone (set01–04 older scripts parse 323/323 after convert).
-0.6.4 — convert any older Pine version to v6 from the editor, LSP code action, pyne convert --to 6, and POST /lsp/convert.
-0.6.3 — optional Flask/VPS/container hosted runner (PYNE_RUNNER) plus CLI pyne runner (deploy / tick / list). Scripts keep evaluating after upload without AXIS holding the connection.
-0.6.2 — interpret wraps subscripted UDF parameters (s[1]) per call site so src = close; updown(src) matches compile. Official TradingView builtin scripts are 0 MISMATCH vs compile.
-0.6.1 — persistent InterpretSession (Runtime.create_session, delta append_bars, forming-bar update_last_bar). Dual-host strategy.cash qty-type, fill-time risk gates, session confirm-on-append, finalized-bucket HTF lookahead_on.
-0.6.0 — type-aware intraday risk on both brokers, intrabar var rollback on realtime ticks, exchange-calendar timeframe.change D/W/M, request.security gaps_on / lookahead_on on HTF resample paths.
-Full notes: GitHub releases · compatibility · evaluate scripts.
+Release notes: GitHub releases · compatibility.
 How to use
 | Surface | Role | Start here |
 | --- | --- | --- |
-| Library + CLI | Parse, lint, unparse, evaluate. Library Runtime.run defaults to interpret; pyne run is compile-only smoke | End User hub · modes |
+| Library + CLI | Parse, lint, unparse, evaluate. Library Runtime.run defaults to interpret; pyne execute is CLI Runtime.run; pyne run is compile-only smoke | End User hub · modes |
 | Language core | Grammar, AST, visitors, type system | Core |
 | Runtime | Series caps, builtins, strategy, alerts, compiler parity | Runtime |
 | LSP | Diagnostics, completion, hover, format (.pyne / .pine) | LSP |
+| MCP | Stdio pyne-mcp plus in-process pyne mcp call / pyne execute — parse, lint, convert, compile, Runtime.run, builtins | MCP |
 | Pro API | HTTP /run (alerts + L2 webhooks), /optimize, preview, backtest | API |
 | Ops | CI, Docker, Nuitka, self-host | DevOps |
 | PyneTS | TypeScript / Bun library (parse / unparse / Runtime.run) | PyneTS |
@@ -7480,7 +7754,7 @@ Auto-generated like HOOX manuals (bun run docs:exports):
 | --- | --- |
 | Full-corpus LLM pack | llm.txt |
 | LLM site map (llmstxt.org) | llms.txt |
-| Track PDFs (A4) | /exports/pyne--manual.pdf` |
+| Track PDFs (A4) | /exports/pyne-*-manual.pdf` |
 See also
 Installation
 Quick start
@@ -7550,13 +7824,16 @@ Capability set (declared)
 From config.py:
 Diagnostic provider (identifier="pynescript-diagnostics", workspace_diagnostics=False in options; workspace pull handler still exists)
 Completion: trigger ".", resolve_provider=True
-Hover, definition, references
+Hover, definition, references, document highlight
+Rename with prepareProvider (same-document; keywords / builtin namespaces refused)
 Document + workspace symbols
 Full + range formatting
-Code action (Convert to Pine v6) + executeCommand pynescript.convertToV6
+Code action (Convert to Pine v6 RefactorRewrite, W001 QuickFix inserting //@version=6) + executeCommand pynescript.convertToV6
 Inlay hints (resolve_provider=False)
+Folding ranges (folding_range_provider=True) for blocks, type/enum/function bodies, and //#region
+Selection ranges (selection_range_provider=True) from ident / smallest AST node to enclosing statement and block
 Semantic tokens full (legend of standard token types/modifiers; range=false)
-Signature help is not advertised.
+Signature help (( / ,)
 File filters (get_filter_options): .pine, .pinev5, *.pinev6 under language id pinescript. .pyne is not in this helper — VS Code still maps it via the extension contribution (extensions: .pyne first).
 Internals
 Workspace
@@ -7982,7 +8259,7 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Diagnostics"
-description: "Push and pull diagnostics: parse errors, lint rules, severity mapping, and code-action stubs."
+description: "Push and pull diagnostics: parse errors, lint rules, severity mapping, and the W001/W002/C002 QuickFixes."
 ---
 Diagnostics
 Abstract
@@ -8029,31 +8306,9 @@ ast = None, diagnostics = [] (lint skipped)
 Message stored as parse_error
 Synthetic diagnostic code E001, severity Error, line from regex on the exception text
 Quick fixes (feature module)
-create_quick_fix (not yet fully wired through workspace/executeCommand / codeAction handlers in server.py):
-W001 → insert //@version=6\n at document start
-C002 (long line) → suggest format document command
-Capability advertises QuickFix / Refactor / SourceOrganizeImports kinds for future wiring.
-Invariants and edge cases
-1. Lint does not run when parse fails — only E001 is shown.
-2. Warnings without a line number are dropped (None conversion).
-3. End column heuristic uses the remainder of the line and clamps to 2000 characters — not a precise token span.
-4. inter_file_dependencies=False: no cross-file analysis; each URI is independent.
-5. Push and pull should agree for a given buffer version; both read the same TextDocumentState.
-6. Noise filters: C001 on names that already lack _ (camelCase fastMA) is dropped. The C003 block-if noise filter was removed with the rule (retired 0.6.0).
-Worked example
-Source:
-`pinescript
-indicator("x")
-plot(close)
-`
-If the linter emits a missing-version warning (code W001), the client receives a Warning diagnostic on the relevant line with source: "PineScript" and may offer the version-header quick fix when code actions are connected.
-On a hard parse failure at line 3, expect:
-`json
-{
-"severity": 1,
-"code": "E001",
-"source": "PineScript",
-"message": ""
+create_quick_fix is wired through textDocument/codeAction (server.py → convert.handle_code_action) for W001, W002, and C002:
+W001 (missing //@version) → QuickFix inserting //@version=6\n at document start (line 0, character 0). Offered even when Convert-to-v6 is also available (undeclared version is treated as v1 for convert).
+W002 (//@version=N with N "
 }
 `
 Failure modes
@@ -8066,6 +8321,54 @@ See also
 Linter (core)
 Error model
 Architecture
+---
+FILE: docs/pyne/lsp/features/folding.mdx
+Copyright (C) 2024-2026 jango_blockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "Folding ranges"
+description: "textDocument/foldingRange for Pine blocks, type/enum/function bodies, and //#region comments."
+---
+Folding ranges
+Abstract
+textDocument/foldingRange folds indented Pine blocks so editors can collapse if / for / while / switch / once, FunctionDef / TypeDef / EnumDef, and //#region … //#endregion pairs. Empty or unparsed documents return [].
+Conceptual model
+Control blocks are expressions (If, ForTo, ForIn, While, Switch, Once) and often sit under Expr. The walker visits the inner node. Parser end_lineno can land on the next statement, so the handler prefers the indented body when source lines are available (else at the header indent continues an if). Single-line constructs are skipped.
+Interface surface
+Method: textDocument/foldingRange
+Capability: folding_range_provider=True
+Handler: features/folding.py → handle_folding_range (receives cached tree=doc.ast)
+Each range uses 0-based start_line / end_line. Region comment pairs set kind: "region".
+| Construct | Folded |
+| --- | --- |
+| if / else if / else | keyword line through the last indented body line |
+| for … to / for … in | same |
+| while / switch / once | same |
+| FunctionDef / TypeDef / EnumDef | declaration through last body line |
+| //#region … //#endregion | start through end marker (# region / # endregion too) |
+Returns [] for empty source, parse failure, or tree=None.
+Internals
+| Path | Role |
+| --- | --- |
+| src/pynescript/langserver/features/folding.py | AST walk + indent clamp + region scan |
+| src/pynescript/langserver/config.py | folding_range_provider=True |
+| src/pynescript/langserver/server.py | TEXT_DOCUMENT_FOLDING_RANGE handler |
+Tests: tests/test_lsp_features.py.
+See also
+Architecture — declared capabilities
+Selection ranges — expand selection over the same blocks
+Navigation — outline symbols share AST line spans
 ---
 FILE: docs/pyne/lsp/features/formatting.mdx
 Copyright (C) 2024-2026 jango_blockchained
@@ -8323,20 +8626,23 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "Navigation"
-description: "Go-to-definition, find-references, document outline, and workspace symbol search over the ASDL AST."
+description: "Go-to-definition, find-references, document highlight, rename across open documents, document outline, and workspace symbol search over the ASDL AST."
 ---
 Navigation
 Abstract
-Navigation features operate on user AST symbols, not the builtin catalog. Definition and references walk a freshly parsed tree with NodeVisitor subclasses; document symbols build a hierarchical outline; workspace symbols scan all open documents. Locations currently anchor to line starts (coarse ranges) — enough for jump lists, not character-precise rename.
+Navigation features operate on user AST symbols, not the builtin catalog. Definition and references walk a freshly parsed tree with NodeVisitor subclasses; document highlight and rename reuse the same ident-at-cursor + AST walk with character-precise ranges; rename applies that walk to every currently open workspace document; document symbols build a hierarchical outline; workspace symbols scan all open documents. Definition/reference locations still anchor to line starts (coarse ranges) — highlight and rename do not.
 Conceptual model
 Interface surface
 | Method | Handler | Returns |
 | --- | --- | --- |
 | textDocument/definition | definitions.handle_definition | list[Location] \| None |
 | textDocument/references | references.handle_references | list[Location] (possibly empty) |
+| textDocument/documentHighlight | highlight.handle_document_highlight | list[DocumentHighlight] |
+| textDocument/prepareRename | rename.handle_prepare_rename | Range \| None |
+| textDocument/rename | rename.handle_rename | WorkspaceEdit \| None (all open documents) |
 | textDocument/documentSymbol | symbols.handle_document_symbols | list[DocumentSymbol] |
 | workspace/symbol | server._collect_workspace_symbols | list[SymbolInformation] |
-Capabilities: definition_provider, references_provider, document + workspace symbol options with work-done progress flags.
+Capabilities: definition_provider, references_provider, document_highlight_provider, rename_provider (prepare_provider=True), document + workspace symbol options with work-done progress flags.
 Definition (DefinitionFinder)
 Matches target word against:
 FunctionDef.name
@@ -8364,15 +8670,17 @@ Internals
 | --- | --- |
 | features/definitions.py | Go-to-definition visitor |
 | features/references.py | Find-all-references visitor |
+| features/highlight.py | Document highlight + ident occurrence collector |
+| features/rename.py | prepareRename (cursor document) + rename across open documents |
 | features/symbols.py | Document outline |
 | server.py | Workspace symbol aggregation |
 Handlers accept the workspace-cached AST (tree=doc.ast from server.py). They re-parse from source only when tree is omitted (tests / isolated calls). Pass tree=None after a failed parse so the handler does not retry.
 Invariants and edge cases
 1. Parse failure → empty / null (definition None, others []).
 2. Builtin names have no definition in-file; clients should not expect ta.sma to resolve to a library file URI.
-3. Ranges are line-coarse for many locations (character=0); selection ranges for document symbols use col_offset when present.
+3. Ranges are line-coarse for definition/reference locations (character=0); highlight and rename use character-precise ident ranges (col_offset / line scan). Selection ranges for document symbols use col_offset when present.
 4. Scope is naive — same identifier in nested functions may collect multiple definitions; no shadowing analysis.
-5. Closed documents disappear from workspace symbol search.
+5. Closed documents disappear from workspace symbol search and from textDocument/rename. Rename updates every currently open buffer that contains the ident; files that are not open are not in the workspace edit. prepareRename stays the cursor document's ident range.
 Worked example
 ``pinescript
 //@version=6
@@ -8395,6 +8703,52 @@ See also
 Architecture
 Hover — builtins vs user symbols
 Diagnostics
+---
+FILE: docs/pyne/lsp/features/selection-range.mdx
+Copyright (C) 2024-2026 jango_blockchained
+This file is part of pynescript.
+pynescript is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+pynescript is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+You should have received a copy of the GNU Affero General Public License
+along with pynescript. If not, see .
+SPDX-License-Identifier: AGPL-3.0-or-later
+---
+title: "Selection ranges"
+description: "textDocument/selectionRange expands from an ident or smallest AST node to the enclosing statement and block."
+---
+Selection ranges
+Abstract
+textDocument/selectionRange grows the editor selection from the identifier (or smallest AST node) under the cursor to the enclosing statement, then enclosing if / for / while / switch / once blocks and FunctionDef / TypeDef / EnumDef. Empty or unparsed documents, or a position with no node, return [].
+Conceptual model
+Control blocks are expressions (If, ForTo, ForIn, While, Switch, Once) and often sit under Expr. Duplicate spans (the Expr wrapper and the inner block) are collapsed. Nested blocks are linked inner-to-outer so Expand Selection walks ident → statement → inner block → outer block.
+Interface surface
+Method: textDocument/selectionRange
+Capability: selection_range_provider=True
+Handler: features/selection_range.py → handle_selection_range (receives cached tree=doc.ast)
+Each result is a SelectionRange whose range contains the requested position and whose optional parent is a strictly larger containing range (LSP exclusive-end ranges from AST lineno / end_lineno / col_offset / end_col_offset).
+| Layer | Selected |
+| --- | --- |
+| Innermost | Identifier segment under the cursor, else the smallest AST node |
+| Statement | Enclosing stmt (Assign, Expr, FunctionDef, …) |
+| Block | If / ForTo / ForIn / While / Switch / Once / FunctionDef / TypeDef / EnumDef |
+Returns [] for empty source, parse failure, tree=None, or no node at the position.
+Internals
+| Path | Role |
+| --- | --- |
+| src/pynescript/langserver/features/selection_range.py | Ident + AST walk → nested SelectionRange |
+| src/pynescript/langserver/config.py | selection_range_provider=True |
+| src/pynescript/langserver/server.py | TEXT_DOCUMENT_SELECTION_RANGE handler |
+Tests: tests/test_lsp_features.py.
+See also
+Architecture — declared capabilities
+Folding ranges — same block constructs, line folds
+Navigation — outline symbols share AST line spans
 ---
 FILE: docs/pyne/lsp/features/semantic-tokens.mdx
 Copyright (C) 2024-2026 jango_blockchained
@@ -8512,10 +8866,15 @@ Interface surface
 | Diagnostics (push + pull) | publishDiagnostics, textDocument/diagnostic | workspace.py, features/diagnostics.py |
 | Completion (+ resolve) | textDocument/completion, completionItem/resolve | features/completion.py |
 | Hover | textDocument/hover | features/hover.py |
+| Signature help | textDocument/signatureHelp | features/signature_help.py |
 | Definition / references | textDocument/definition, textDocument/references | definitions.py, references.py |
+| Highlight / rename | textDocument/documentHighlight, prepareRename, rename | highlight.py, rename.py |
 | Symbols | textDocument/documentSymbol, workspace/symbol | symbols.py, server.py |
 | Formatting | textDocument/formatting, rangeFormatting | features/formatting.py |
 | Inlay hints | textDocument/inlayHint | features/inlay_hints.py |
+| Folding | textDocument/foldingRange | features/folding.py |
+| Selection range | textDocument/selectionRange | features/selection_range.py |
+| Code action | textDocument/codeAction | convert.py (Convert-to-v6 + W001 QuickFix) |
 | Semantic tokens | textDocument/semanticTokens/full | features/semantic_tokens.py |
 Declared capabilities: src/pynescript/langserver/config.py (get_server_capabilities).
 Internals
@@ -8532,7 +8891,7 @@ Internals
 Console scripts are separate: pyne (Click CLI; alias pynescript) vs pyne-lsp (pygls; alias pynescript-lsp). Do not conflate them — see architecture.
 Tracks in this tab
 1. Architecture — server lifecycle, workspace, capabilities
-2. Diagnostics through Inlay hints — feature manuals
+2. Diagnostics through Selection range — feature manuals
 3. Builtin metadata — generation + Fernet .enc / CRYPTO_KEY
 4. VS Code extension — client packaging
 5. Clients — Neovim, Zed, Emacs, Helix, Sublime
@@ -8866,12 +9225,12 @@ along with pynescript. If not, see .
 SPDX-License-Identifier: AGPL-3.0-or-later
 ---
 title: "PyneTS CLI"
-description: "pynets check / format / run / dump / info — Rich TTY, JSON on pipes. run calls Runtime.run, unlike Python pyne run."
+description: "pynets check / format / run / dump / info — Rich TTY, JSON on pipes. run calls Runtime.run (Python equivalent is pyne execute)."
 ---
 PyneTS CLI
 Abstract
 pynets is a Bun CLI for parse, format, AST dump, and evaluate. TTY output is a Rich-inspired panel (PYNE volt). Pipes and --json stay machine-readable. Exit codes: 0 ok, 1 syntax/runtime, 2 usage.
-Unlike Python pyne run (compile-only smoke), pynets run calls Runtime.run. Default --mode interpret. --mode compile / auto select JS emit (@hoox-sh/pynets 0.5.0).
+pynets run calls Runtime.run, matching Python pyne execute. Python pyne run is compile-only synthetic smoke. Default --mode interpret. --mode compile / auto select JS emit (@hoox-sh/pynets 0.5.0).
 Conceptual model
 Interface surface
 ``text
@@ -8940,7 +9299,7 @@ Failure modes
 | Exit 2 missing file | No path / ENOENT | Pass a real file |
 | Exit 1 on check | Syntax error | Read the ANTLR message |
 | run JSON has error / error_kind: parse | Script does not parse | pynets check first |
-| Expected compile-only like pyne run | Different CLI | See modes |
+| Expected compile-only like pyne run | Different CLI | Use Python pyne run for compile smoke; pynets run is Runtime.run like pyne execute. See modes |
 | Rich garbage in logs | TTY detected | --plain` or pipe |
 See also
 Install
@@ -9121,7 +9480,7 @@ What this is not
 | --- | --- |
 | pyne-worker | Python Cloudflare Worker. Vendors pynescript.runtime. POST /run. See pyne-worker. |
 | pyne-agent-worker | NL authoring host. Not an evaluate library. See agent. |
-| Python pyne run | Compile-only smoke on synthetic bars. PyneTS pynets run calls Runtime.run. |
+| Python pyne run | Compile-only smoke on synthetic bars. Python pyne execute and PyneTS pynets run call Runtime.run. |
 | Numba | Python compile backend. PyneTS compile is JS emit (object-mode analog). |
 | AXIS engine | AXIS does not load this package. |
 Internals (repo paths)
@@ -9769,7 +10128,7 @@ Grouped map
 | Ring buffer | Residual | PYNE_SERIES_RING default off |
 | Area | Status | Notes |
 | --- | --- | --- |
-| MAs | Working | sma/ema/rma/wma/hma/vwma/kama/dema/tema/alma incremental |
+| MAs | Working | sma/ema/rma/wma/hma/vwma/kama/dema/tema/alma/sma_weighted incremental |
 | Oscillators | Working | rsi/macd/stoch/cci/cmo/tsi/roc/wpr; incremental aroon/dpo/kst |
 | Volatility / structure | Working | atr (Wilder rma(tr)), bb, kc, stdev, highest/lowest, linreg, adx/dmi, supertrend, sar; incremental donchian |
 | Volume | Working | Incremental obv/wad/wvad/cmf/klinger/mfi/vwap/nvi/pvi |
@@ -9916,7 +10275,7 @@ Abstract
 The HOOX family splits language, chart, and execution. Mixing the names is the most common docs failure: pyne-worker is not pynets, and AXIS does not place HOOX orders.
 | Product | Role | Docs |
 | --- | --- | --- |
-| PYNE (hoox-pyne, import pynescript) | Python language SoT: parse, LSP, Pro API, Runtime.run | this site |
+| PYNE (hoox-pyne, import pynescript) | Python language SoT: parse, LSP, MCP (pyne-mcp), Pro API, Runtime.run | this site |
 | PyneTS (@hoox-sh/pynets) | TypeScript / Bun library + CLI | PyneTS |
 | pyne-worker | Python Cloudflare isolate — POST /run | pyne-worker · HOOX isolate |
 | pyne-agent-worker | NL → Pine (Workers AI) | agent · AXIS plugin |
@@ -9970,7 +10329,7 @@ Failure modes
 | Opening pyne-worker/ or pine-worker/ inside PYNE | Directories do not exist — clone the sister repos; TS library work is @hoox-sh/pynets |
 | Expecting AXIS to flatten a position | No trade-worker hop |
 | Pointing AXIS at pynets as an engine | No such engine. Use Flask / Pyodide / Worker proxy |
-| pyne run vs Runtime.run vs pynets run | Different defaults — see modes |
+| pyne run vs pyne execute vs Runtime.run vs pynets run | pyne run is compile-only; pyne execute / pynets run call Runtime.run — see modes |
 See also
 PYNE index
 PyneTS
@@ -10047,7 +10406,7 @@ Still incomplete / by design
 | Warm-compile product path (H2) | SLOs / prewarm / deploy IR cache defaults |
 | Runtime residual (C1) | set01-04 Runtime interpret 100% excl. EXPECTED_FAIL; third-party corpus not shipped |
 | Series cap (T1) | PYNE_SERIES_CAP default ON |
-| Residual TA inc (T2) | R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume obv/wad/cmf/klinger; nvi/pvi; aroon/dpo/donchian/kst; ichimoku/apo/emv; skewness/kurtosis/beta landed (other T2 residuals remain) |
+| Residual TA inc (T2) | R7 bb/kama/cmo/stochrsi + wma/hma/linreg; volume obv/wad/cmf/klinger; nvi/pvi; aroon/dpo/donchian/kst; ichimoku/apo/emv; skewness/kurtosis/beta; r_squared/comovement; volume_weighted_momentum; rci/bb_pct/atr_normalized; cumulative_delta/volume_momentum; sma_weighted; range/max/min; stoch_smooth; rsi_divergence; fractal; engulfing/hammer; double_top_bottom; gap_detector; inside_bar_pattern; ema_cross_signal; rsi_oversold_overbought; zigzag landed (other T2 residuals remain) |
 | Pending-fill (F2) | R7 interpret + compile goldens |
 | Plot parity residual (P1p) | Harness + first-party goldens + official TV builtins 0 MISMATCH; optional set0x community corpus unmeasured |
 | Compile leftover library stubs | Some float(None) / UDF arity on missing import libraries; INV expected-fail fixtures stay fail |
@@ -11246,7 +11605,7 @@ Incremental hot path
 When _pine_bar_mode and _pine_ta_incremental are enabled (Runtime default; disable with PYNE_TA_INCREMENTAL=0), hot ta. builtins update call-site state once per bar instead of recomputing full history. Call sites are indexed like crossovers (_ta_call_i reset each bar). Nested forms such as ta.ema(ta.sma(close, 14), 10) stay correct because each call keeps its own slot. Golden suite: tests/test_ta_incremental.py (incremental last values ≡ full recompute).
 | Family | Incremental builtins (non-exhaustive) |
 | --- | --- |
-| Moving averages | sma, ema, rma, wma, hma, vwma, swma, kama, dema, tema, alma |
+| Moving averages | sma, ema, rma, wma, hma, vwma, swma, kama, dema, tema, alma, sma_weighted |
 | Oscillators | rsi, macd, stoch/stochrsi, cci, cmo, tsi, roc, wpr, aroon, dpo, kst |
 | Volatility / structure | atr, tr, stdev, bb, highest/lowest, linreg, adx/dmi, supertrend, kc, sar, donchian |
 | Volume (0.3.10–0.3.11) | obv, wad/wvad, cmf, klinger, mfi, vwap, accdist, nvi, pvi |
@@ -11256,7 +11615,7 @@ Interface surface
 Dispatch keys (non-exhaustive; map is authoritative in technical.py):
 | Family | Examples |
 | --- | --- |
-| Moving averages | ta.sma, ta.ema, ta.wma, ta.rma, ta.hma, ta.vwma, ta.swma, ta.alma |
+| Moving averages | ta.sma, ta.ema, ta.wma, ta.rma, ta.hma, ta.vwma, ta.swma, ta.alma, ta.sma_weighted |
 | Oscillators | ta.rsi, ta.stoch, ta.cci, ta.cmo, ta.mfi, ta.roc, ta.wpr, ta.tsi, ta.rci |
 | Trend / channels | ta.macd, ta.adx, ta.dmi, ta.supertrend, ta.sar, ta.linreg |
 | Volatility | ta.atr, ta.tr, ta.bb, ta.bbw, ta.kc, ta.kcw, ta.stdev, ta.variance |

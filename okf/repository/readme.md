@@ -7,7 +7,7 @@ tags: [doc, readme]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-05T14:26:27Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "README.md"
@@ -36,6 +36,7 @@ Repo path `README.md`.
   * Evaluate an expression
   * CLI
   * Language server
+  * MCP (agents)
 * Pro API
 * Library API (sketch)
 * CLI reference

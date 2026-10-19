@@ -19,14 +19,14 @@
 
 ---
 title: "CLI Guide"
-description: "Use the pyne Click CLI to check, format, lint, compile, run, optimize, prewarm, fetch data, and more."
+description: "Use the pyne Click CLI to check, format, lint, compile, run, execute (Runtime.run), call MCP tools, optimize, prewarm, and fetch data."
 ---
 
 # CLI Guide
 
 ## Abstract
 
-The preferred **`pyne`** console script (alias **`pynescript`**) is a Click group over the same helpers used by the library API. Install with **`pip install hoox-pyne`** ([live on PyPI](https://pypi.org/project/hoox-pyne/)). It is optimized for **shell pipelines, CI gates, one-shot inspection, and light compile/run smokes**. Full multi-bar evaluation with real OHLCV belongs on the package `pynescript.runtime.Runtime` or Pro API. Exhaustive flags: [CLI commands](/pyne/docs/enduser/reference/cli-commands).
+The preferred **`pyne`** console script (alias **`pynescript`**) is a Click group over the same helpers used by the library API. Install with **`pip install hoox-pyne`** ([live on PyPI](https://pypi.org/project/hoox-pyne/)). It is optimized for **shell pipelines, CI gates, one-shot inspection, and light compile/run smokes**. `pyne execute` is `Runtime.run` (JSON). Full multi-bar evaluation with real OHLCV also lives on the package `pynescript.runtime.Runtime` or Pro API. Exhaustive flags: [CLI commands](/pyne/docs/enduser/reference/cli-commands).
 
 ## Conceptual model
 
@@ -38,6 +38,8 @@ flowchart LR
   C --> D[parse-and-dump]
   C --> L[lint]
   C --> CO[compile / prewarm / run]
+  C --> EX[execute / symbols / parity]
+  C --> MCP[mcp call / tools]
   C --> OPT[optimize]
   C --> M[data]
   C --> RN[runner]
@@ -95,7 +97,7 @@ pyne <command> --help
 | --- | --- |
 | `pip install hoox-pyne` | Default desk / CI use |
 | `pip install "hoox-pyne[compile]"` | Need Numba `compile` / `run` modes |
-| `pip install "hoox-pyne[mcp]"` | MCP server (`pyne-mcp` / `pyne mcp`) |
+| `pip install "hoox-pyne[mcp]"` | Stdio MCP server (`pyne-mcp` / `pyne mcp`). `pyne execute` / `mcp call` need no extra |
 | GitHub Release binary `pynescript-cli-*` | No Python install |
 | Docker `pynescript-cli` | Isolated CI / one-shot checks |
 
@@ -116,7 +118,8 @@ chmod +x pynescript-cli-linux-x86_64
 
 | Path | Role |
 | --- | --- |
-| `src/pynescript/__main__.py` | All command implementations |
+| `src/pynescript/__main__.py` | Click group; registers `mcp` + first-class execute/symbols/parity |
+| `src/pynescript/mcp/cli.py` | `pyne mcp` group, `execute`, `symbols`, `parity`, `diagnostics`, `builtin` |
 | `src/pynescript/ast/helper.py` | `parse`, `dump`, `unparse` |
 | `src/pynescript/ast/linter.py` | `lint_script` |
 | `src/pynescript/compiler/` | `compile` / `prewarm` / `run` |
@@ -198,11 +201,13 @@ pyne compile script.pine --emit       # print generated Python
 pyne prewarm                          # warm shared Numba kernels
 pyne prewarm script.pine              # also compile that source into IR caches
 pyne run script.pine --bars 100       # compile-only execute on synthetic OHLCV
+pyne execute script.pine --mode interpret --bars 50
+pyne mcp call execute script.pine --arg bars=50 --arg mode=interpret
 ```
 
 ### Compose with library for evaluation
 
-`pyne run` is compile-only smoke. Real bars + `mode` / `libraries` / `timeout_seconds` belong on the package Runtime:
+`pyne run` is compile-only smoke. `pyne execute` is `Runtime.run` (JSON; `--mode`, `--ohlcv`, `--inputs`, `--timeout`). The same ops are `pyne mcp call TOOL`. Direct library use:
 
 ```bash
 pyne format strat.pine -o /tmp/s.pine
@@ -227,6 +232,7 @@ PY
 ## See also
 
 - [CLI commands reference](/pyne/docs/enduser/reference/cli-commands)
+- [MCP (agents)](/pyne/docs/enduser/guides/mcp)
 - [Runtime modes](/pyne/docs/enduser/reference/modes)
 - [Library API](/pyne/docs/enduser/guides/library-api)
 - [Quick start](/pyne/docs/enduser/getting-started/quick-start)

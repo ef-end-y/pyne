@@ -1294,14 +1294,10 @@ def _copy_list_dict_level(value: Any) -> Any:
     """
     try:
         if isinstance(value, list):
-            return [
-                x[:] if isinstance(x, list) else (dict(x) if isinstance(x, dict) else x)
-                for x in value
-            ]
+            return [x[:] if isinstance(x, list) else (dict(x) if isinstance(x, dict) else x) for x in value]
         if isinstance(value, dict):
             return {
-                k: v[:] if isinstance(v, list) else (dict(v) if isinstance(v, dict) else v)
-                for k, v in value.items()
+                k: v[:] if isinstance(v, list) else (dict(v) if isinstance(v, dict) else v) for k, v in value.items()
             }
     except Exception:
         return value
@@ -2393,9 +2389,7 @@ class InterpretSession:
                     pass
             for tick_i in range(n_ticks):
                 if bar_rt:
-                    _apply_feed_forming_bar(
-                        self._ohlcv_data, bar_index, ev, self._data_feed, self._runtime.symbol
-                    )
+                    _apply_feed_forming_bar(self._ohlcv_data, bar_index, ev, self._data_feed, self._runtime.symbol)
                     barstate.isrealtime = True
                     barstate.ishistory = False
                     barstate.isnew = tick_i == 0
@@ -3002,6 +2996,11 @@ class InterpretSession:
             "script_type": script_type,
             "meta": meta_out,
             "session_bars": self._n_bars,
+            # Bar-time axis of the evaluated window. The engine's stored series
+            # can have gaps (a missed minute), so a client that joins the
+            # series by index displaces the plot; the axis lets it join by
+            # time instead (AXIS ``alignSeriesToTimes``).
+            "times": [int(t or 0) for t in self._col_time[:n_result_bars]],
         }
         if alert_conditions:
             out["alert_conditions"] = alert_conditions
@@ -3822,9 +3821,7 @@ class Runtime:
                 # one sample per call site, else the same bar counts N times.
                 rt_snap = _snapshot_realtime_scope(evaluator) if bar_rt and tick_i < n_ticks - 1 else None
                 ta_snap = _snapshot_ta_state(evaluator) if bar_rt and tick_i < n_ticks - 1 else None
-                broker_snap = (
-                    strategy_state.snapshot() if need_strategy and bar_rt and tick_i < n_ticks - 1 else None
-                )
+                broker_snap = strategy_state.snapshot() if need_strategy and bar_rt and tick_i < n_ticks - 1 else None
 
                 # Reset per-bar/tick plot index; clear strategy event buffer
                 reset_plots()
@@ -4455,8 +4452,7 @@ class Runtime:
             )
         run_ms = (time.perf_counter() - t_run0) * 1000.0
         _dbg(
-            "compile: executed src=%s bars=%d run=%.2fms compile=%.2fms object_mode=%s "
-            "nopython_fallback=%s plots=%d",
+            "compile: executed src=%s bars=%d run=%.2fms compile=%.2fms object_mode=%s nopython_fallback=%s plots=%d",
             cache_key[:12],
             n_bars_hint,
             run_ms,

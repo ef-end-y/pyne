@@ -1166,6 +1166,10 @@ def _session_envelope(result: Any, session_id: str, extra: dict[str, Any] | None
         "overlay": result.get("overlay", True),
         "script_name": result.get("script_name", "plot"),
         "logs": result.get("logs", []),
+        # Bar-time axis of the evaluated window — the client joins the series
+        # to its chart by time (the engine's stored series can have gaps, so
+        # an index join would displace the plot).
+        "times": result.get("times") or [],
         "meta": {
             **(result.get("meta") or {}),
             "inputs": result.get("inputs", []),
@@ -1235,10 +1239,14 @@ def _delta_envelope(
     if tail_len > 0:
         out["plots"] = _delta_tail(plots, tail_len)
         out["series"] = {k: _delta_tail(v, tail_len) for k, v in series.items()}
+        # The bar-time axis travels with the tail (the client splices it the
+        # same way it splices plots/series).
+        out["times"] = _delta_tail(result.get("times") or [], tail_len)
         out["delta"] = {"base_index": count - tail_len, "count": count, "tail_len": tail_len}
     else:
         out["plots"] = []
         out["series"] = {}
+        out["times"] = []
     return out
 
 

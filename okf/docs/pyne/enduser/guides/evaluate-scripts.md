@@ -7,7 +7,7 @@ tags: [doc, docs, enduser, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "docs/pyne/enduser/guides/evaluate-scripts.mdx"
@@ -53,6 +53,7 @@ Repo path `docs/pyne/enduser/guides/evaluate-scripts.mdx`.
 * [src/pynescript](/code/src/pynescript.md)
 * [src/pynescript/ast](/code/src/pynescript/ast.md)
 * [src/pynescript/ast/evaluator](/code/src/pynescript/ast/evaluator.md)
+* [src/pynescript/mcp](/code/src/pynescript/mcp.md)
 * [src/pynescript/runtime](/code/src/pynescript/runtime.md)
 * [src/pynescript/util](/code/src/pynescript/util.md)
 * [tests](/code/tests.md)

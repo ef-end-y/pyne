@@ -176,6 +176,29 @@ class TestSessionRoutes:
         assert body["session_id"]
         assert "series" in body
 
+    def test_session_carries_the_bar_time_axis(self, client):
+        """The evaluated window ships its bar times.
+
+        The engine's stored series can have gaps (a missed minute), so a
+        client that joins the series by index displaces the plot. The axis
+        lets it join by time instead.
+        """
+        bars = _bars(30)
+        body = client.post("/session", json={"script": SCRIPT, "data": bars}).get_json()
+        times = body["times"]
+        assert times == [b["time"] for b in bars]
+        assert len(times) == body["count"]
+
+    def test_delta_tick_trims_the_bar_time_axis(self, client):
+        """A delta carries the tail's times — the client splices them."""
+        last = _bars(1, start=119)[0]
+        last = dict(last, close=last["close"] + 5.0, high=last["high"] + 5.0)
+        sid = client.post("/session", json={"script": SCRIPT, "data": _bars(120)}).get_json()["session_id"]
+        body = client.post(f"/session/{sid}/tick", json={"bar": last, "delta": True}).get_json()
+        assert body["delta"] == {"base_index": 119, "count": 120, "tail_len": 1}
+        assert len(body["times"]) == 1
+        assert body["times"] == [last["time"]]
+
     def test_create_requires_script(self, client):
         res = client.post("/session", json={"data": _bars(10)})
         assert res.status_code == 400

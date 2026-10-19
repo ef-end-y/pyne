@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "MCP (agents)"
-description: "Run the PYNE Model Context Protocol server so agents can parse, lint, convert, compile, and execute Pine Script™ in-process."
+description: "PYNE MCP: stdio pyne-mcp for LLM hosts, plus in-process pyne mcp call and pyne execute (Runtime.run) with no extra."
 resource: "docs/pyne/enduser/guides/mcp.mdx"
 tags: [doc, docs, enduser, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T17:27:04Z
+  at: 2026-10-19T20:09:51Z
 sources:
   - id: tree
     resource: "docs/pyne/enduser/guides/mcp.mdx"

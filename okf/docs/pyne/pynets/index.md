@@ -2,7 +2,7 @@
 
 # Concepts
 
-* [PyneTS CLI](cli.md) - pynets check / format / run / dump / info — Rich TTY, JSON on pipes. run calls Runtime.run, unlike Python pyne run.
+* [PyneTS CLI](cli.md) - pynets check / format / run / dump / info — Rich TTY, JSON on pipes. run calls Runtime.run (Python equivalent is pyne execute).
 * [PyneTS compile](compile.md) - JS bar-loop emit for mode compile | auto. Python object-mode analog — not Numba. auto falls back to interpret.
 * [PyneTS](index.md) - TypeScript / Bun library port of PYNE — parse, unparse, Runtime.run. Python remains the semantic source of truth.
 * [Install PyneTS](install.md) - Add @hoox-sh/pynets with Bun, npm, or esm.sh. CLI requires Bun. Node and browsers use the ESM bundle.
