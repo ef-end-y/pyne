@@ -162,7 +162,7 @@ Engine parity improvements, observability tooling, and documentation refresh.
 
 ### Unreleased (local, post-0.6.13)
 
-- **HTF allowlist** (D-06) — `cmo`/`stdev`/`linreg`, `cci`/`roc`/`mom`, `hma`/`vwma` + 1-arg `ta.cci(n)`, `dema`/`tema` + 1-arg `ta.wpr(n)`, `highest`/`lowest` (2-arg and 1-arg high/low) + `ta.range`, `median`/`dev`/`variance` (disk IR v27)
+- **HTF allowlist** (D-06) — `cmo`/`stdev`/`linreg`, `cci`/`roc`/`mom`, `hma`/`vwma` + 1-arg `ta.cci(n)`, `dema`/`tema` + 1-arg `ta.wpr(n)`, `highest`/`lowest` (2-arg and 1-arg high/low) + `ta.range`, `median`/`dev`/`variance`, `mode`/`percentrank`/`change` (disk IR v28)
 - **T2 incremental** — `rci`/`bb_pct`/`atr_normalized`, `cumulative_delta`/`volume_momentum`, `sma_weighted`, `range`/`max`/`min`, `stoch_smooth`, `rsi_divergence`, `fractal`
 - **Forming-bar realtime** — trail ratchet (D-01), MAE/MFE (D-03), nested list/dict snapshot (D-04)
 - **LSP** — document highlight + rename (open docs), W001/W002 QuickFix, `textDocument/foldingRange`, `textDocument/selectionRange`
