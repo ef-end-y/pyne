@@ -372,7 +372,7 @@ def _aligned_1m_bars(n: int = 600, start: float = 100.0) -> list[dict]:
 
 
 class TestHtfSimpleTaResample:
-    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema + 1-arg wpr on HTF."""
+    """Allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/highest/lowest/range + 1-arg wpr/highest/lowest on HTF."""
 
     def test_htf_sma_finite_after_warmup_and_stepwise_constant(self) -> None:
         """1m chart + request 60m sma(close, 3) → finite after 3 HTF bars; flat in bucket."""
@@ -466,7 +466,8 @@ plot(ta.atr(3), title="catr")
         hit the pre-existing passthrough heuristic — that is not the simple-ta
         HTF path. Nested ``ta.sma(ta.ema(...))``, 4-arg ``ta.cci``, and 4-arg
         ``ta.wpr`` stay na; 2-arg ``ta.cci(close, n)`` / 1-arg ``ta.cci(n)`` /
-        ``ta.hma`` / ``ta.vwma`` / ``ta.dema`` / ``ta.tema`` / 1-arg ``ta.wpr(n)``
+        ``ta.hma`` / ``ta.vwma`` / ``ta.dema`` / ``ta.tema`` / 1-arg ``ta.wpr(n)`` /
+        ``ta.highest`` / ``ta.lowest`` (2-arg and 1-arg) / ``ta.range``
         are allowlisted.
         """
         from backend.runtime import Runtime
@@ -550,11 +551,24 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "tema" and m.source == "hl2" and m.length == 9
         m = match_htf_simple_ta_ast(_expr("ta.wpr(14)"))
         assert m is not None and m.name == "wpr" and m.source is None and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.highest(close, 14)"))
+        assert m is not None and m.name == "highest" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.lowest(close, 14)"))
+        assert m is not None and m.name == "lowest" and m.source == "close" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.highest(14)"))
+        assert m is not None and m.name == "highest" and m.source == "high" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.lowest(14)"))
+        assert m is not None and m.name == "lowest" and m.source == "low" and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.range(close, 14)"))
+        assert m is not None and m.name == "range" and m.source == "close" and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.linreg(close, 14, 1)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.kama(close, 14, 2, 30)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.highest(ta.sma(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.lowest(ta.ema(close, 5), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.range(14)")) is None
         assert match_htf_simple_ta_ast(_expr("close")) is None
 
     def test_htf_cmo_stdev_linreg_hourly_to_daily_last_completed(self) -> None:
@@ -827,6 +841,69 @@ plot(ta.wpr(3), title="cwpr")
         assert abs(float(hdema[-1]) - float(out["series"]["cdema"][-1])) > 1e-6
         assert abs(float(htema[-1]) - float(out["series"]["ctema"][-1])) > 1e-6
         assert abs(float(hwpr[-1]) - float(out["series"]["cwpr"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_highest_lowest_range_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily highest/lowest/range."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.highest(close, 3)), title="hhi")
+plot(request.security(syminfo.tickerid, "D", ta.lowest(close, 3)), title="hlo")
+plot(request.security(syminfo.tickerid, "D", ta.highest(3)), title="hhi1")
+plot(request.security(syminfo.tickerid, "D", ta.lowest(3)), title="hlo1")
+plot(request.security(syminfo.tickerid, "D", ta.range(close, 3)), title="hrng")
+plot(ta.highest(close, 3), title="chi")
+plot(ta.lowest(close, 3), title="clo")
+plot(ta.range(close, 3), title="crng")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hhi = out["series"]["hhi"]
+        hlo = out["series"]["hlo"]
+        hhi1 = out["series"]["hhi1"]
+        hlo1 = out["series"]["hlo1"]
+        hrng = out["series"]["hrng"]
+        # 8 UTC days of hourly bars; last-completed is day 6 while day 7 is forming.
+        daily_closes: list[float] = []
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+        # highest/lowest/range(3) need 3 HTF samples.
+        assert all(_is_na(x) for x in hhi[1:72])
+        assert all(_is_na(x) for x in hlo[1:72])
+        assert all(_is_na(x) for x in hhi1[1:72])
+        assert all(_is_na(x) for x in hlo1[1:72])
+        assert all(_is_na(x) for x in hrng[1:72])
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = hhi[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        win_c = daily_closes[-3:]
+        expect_hi = max(win_c)
+        expect_lo = min(win_c)
+        expect_rng = expect_hi - expect_lo
+        assert abs(float(hhi[-1]) - expect_hi) < 1e-9
+        assert abs(float(hlo[-1]) - expect_lo) < 1e-9
+        assert abs(float(hrng[-1]) - expect_rng) < 1e-9
+        expect_hi1 = max(daily_highs[-3:])
+        expect_lo1 = min(daily_lows[-3:])
+        assert abs(float(hhi1[-1]) - expect_hi1) < 1e-9
+        assert abs(float(hlo1[-1]) - expect_lo1) < 1e-9
+        # Not chart-TF passthrough.
+        assert abs(float(hhi[-1]) - float(out["series"]["chi"][-1])) > 1e-6
+        assert abs(float(hlo[-1]) - float(out["series"]["clo"][-1])) > 1e-6
+        assert abs(float(hrng[-1]) - float(out["series"]["crng"][-1])) > 1e-6
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

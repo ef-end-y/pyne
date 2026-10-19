@@ -268,6 +268,32 @@ plot(ta.dema(close, 3), title="cdema")
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["dema"][-1]) - float(sc["series"]["cdema"][-1])) > 1e-6
 
+    def test_htf_highest_lowest_range_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed highest/lowest/range: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.highest(close, 3)), title="hi")
+plot(request.security(syminfo.tickerid, "D", ta.lowest(close, 3)), title="lo")
+plot(request.security(syminfo.tickerid, "D", ta.highest(3)), title="hi1")
+plot(request.security(syminfo.tickerid, "D", ta.lowest(3)), title="lo1")
+plot(request.security(syminfo.tickerid, "D", ta.range(close, 3)), title="rng")
+plot(ta.highest(close, 3), title="chi")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("hi", "lo", "hi1", "lo1", "rng"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        # Stepwise constant inside day 5 (last completed = day 4).
+        day5 = sc["series"]["hi"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["hi"][-1]) - float(sc["series"]["chi"][-1])) > 1e-6
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
