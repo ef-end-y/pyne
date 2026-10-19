@@ -29,8 +29,9 @@ Public handlers: :func:`handle_document_color` and
   on ``Name("color")``
 - ``color.rgb(r, g, b[, transp])`` with numeric literals (Pine transp 0-100,
   0 = opaque)
-- ``color.new(color, transp)`` when both args are literals (named ``color.*``,
-  ``#hex`` token, or quoted hex; transp 0-100)
+- ``color.new(color, transp)`` and the Pine alias ``color(color, transp)``
+  when both args are literals (named ``color.*``, ``#hex`` token, or quoted
+  hex; transp 0-100)
 
 Each becomes a 0-1 RGBA :class:`~lsprotocol.types.ColorInformation`.
 ``colorPresentation`` rewrites the range as ``#rrggbb`` (or ``#rrggbbaa`` when
@@ -87,8 +88,8 @@ def handle_document_color(
 
     Returns:
         Color information for each hex literal, quoted ``"#hex"`` string,
-        ``color.*`` name, and literal ``color.rgb`` / ``color.new`` call
-        (possibly empty). Never ``None``.
+        ``color.*`` name, and literal ``color.rgb`` / ``color.new`` /
+        ``color()`` call (possibly empty). Never ``None``.
     """
     if tree is ...:
         if not source:
@@ -130,7 +131,7 @@ def handle_color_presentation(
 
 
 def _color_info_for_node(node: Any) -> lsp.ColorInformation | None:
-    """Return ColorInformation for a hex / ``color.*`` / ``color.rgb`` / ``color.new`` node."""
+    """Return ColorInformation for a hex / ``color.*`` / ``color.rgb`` / ``color.new`` / ``color()`` node."""
     color = None
     if isinstance(node, ast.Constant):
         color = _hex_constant_color(node)
@@ -192,11 +193,11 @@ def _rgb_call_color(node: ast.Call) -> lsp.Color | None:
 
 
 def _new_call_color(node: ast.Call) -> lsp.Color | None:
-    """Parse ``color.new(color, transp)`` with literal args, or ``None``."""
-    func = node.func
-    if not isinstance(func, ast.Attribute) or func.attr != _NEW_ATTR:
-        return None
-    if not isinstance(func.value, ast.Name) or func.value.id != _COLOR_NS:
+    """Parse ``color.new`` / ``color()`` with literal args, or ``None``.
+
+    Pine registers ``color()`` as an alias of ``color.new()``.
+    """
+    if not _is_color_new_func(node.func):
         return None
     pair = _new_literal_args(node.args)
     if pair is None:
@@ -210,6 +211,19 @@ def _new_call_color(node: ast.Call) -> lsp.Color | None:
     )
 
 
+def _is_color_new_func(func: Any) -> bool:
+    """True for ``color.new`` Attribute or ``color`` Name (Pine alias)."""
+    if isinstance(func, ast.Name):
+        return func.id == _COLOR_NS
+    if isinstance(func, ast.Attribute):
+        return (
+            func.attr == _NEW_ATTR
+            and isinstance(func.value, ast.Name)
+            and func.value.id == _COLOR_NS
+        )
+    return False
+
+
 def _literal_color(node: Any) -> lsp.Color | None:
     """Color from a hex / quoted-hex Constant or named ``color.*`` Attribute."""
     if isinstance(node, ast.Constant):
@@ -220,7 +234,7 @@ def _literal_color(node: Any) -> lsp.Color | None:
 
 
 def _new_literal_args(args: list[Any]) -> tuple[lsp.Color, float] | None:
-    """Merge positional/keyword ``color.new`` literals to (color, transp)."""
+    """Merge positional/keyword ``color.new`` / ``color()`` literals to (color, transp)."""
     color: lsp.Color | None = None
     transp: float | None = None
     pos_i = 0

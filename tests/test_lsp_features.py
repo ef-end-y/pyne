@@ -1677,9 +1677,24 @@ skip3 = color.new(color.rgb(1, 2, 3), 50)
 extra = color.new(color.white, 50, 1)
 """
 
+_COLOR_ALIAS_SOURCE = """//@version=6
+indicator("T")
+n = color(color.white, 50)
+n2 = color(#ff0000, 25)
+n3 = color("#00ff00", 0)
+n4 = color(color.red, transp=75)
+n5 = color(color=#2962FF, transp=10)
+kw = color(transp=50, color=color.blue)
+one = color(color.white)
+skip = color(x, 50)
+skip2 = color(color.white, t)
+skip3 = color(color.rgb(1, 2, 3), 50)
+extra = color(color.white, 50, 1)
+"""
+
 
 class TestDocumentColorHandler:
-    """Test textDocument/documentColor and colorPresentation for #hex, color.*, rgb, color.new."""
+    """Test textDocument/documentColor and colorPresentation for #hex, color.*, rgb, color.new / color()."""
 
     def test_handle_document_color_empty_and_unparsed(self) -> None:
         """Empty source and parse failure return an empty list."""
@@ -1796,6 +1811,39 @@ class TestDocumentColorHandler:
         assert "color.new(color.white, t)" not in texts
         assert "color.new(color.rgb(1, 2, 3), 50)" not in texts
         assert "color.new(color.white, 50, 1)" not in texts
+
+    def test_handle_document_color_color_alias_literals(self) -> None:
+        """color() is Pine's alias of color.new; same literal args yield the same swatch."""
+        src = _COLOR_ALIAS_SOURCE
+        result = handle_document_color(_color_params(), src)
+        # transp 50 → alpha = round(255 * 0.5) = 128
+        _assert_rgba(_color_at(result, src, "color(color.white, 50)"), 0xFF, 0xFF, 0xFF, 128)
+        # transp 25 → alpha = round(255 * 0.75) = 191
+        _assert_rgba(_color_at(result, src, "color(#ff0000, 25)"), 0xFF, 0, 0, 191)
+        _assert_rgba(_color_at(result, src, 'color("#00ff00", 0)'), 0, 0xFF, 0)
+        # transp 75 → alpha = round(255 * 0.25) = 64
+        _assert_rgba(_color_at(result, src, "color(color.red, transp=75)"), 0xF2, 0x36, 0x45, 64)
+        # transp 10 → alpha = round(255 * 0.9) = 230
+        _assert_rgba(_color_at(result, src, "color(color=#2962FF, transp=10)"), 0x29, 0x62, 0xFF, 230)
+        _assert_rgba(_color_at(result, src, "color(transp=50, color=color.blue)"), 0x29, 0x62, 0xFF, 128)
+        found = {_slice_range(src, info.range) for info in result}
+        assert "color.white" in found
+        assert "#ff0000" in found
+        assert '"#00ff00"' in found
+        assert "color.red" in found
+        assert "color.blue" in found
+        assert "color.rgb(1, 2, 3)" in found
+
+    def test_handle_document_color_color_alias_skips_non_literals(self) -> None:
+        """color() needs both args as literals, same as color.new."""
+        src = _COLOR_ALIAS_SOURCE
+        result = handle_document_color(_color_params(), src)
+        texts = [_slice_range(src, info.range) for info in result]
+        assert "color(color.white)" not in texts
+        assert "color(x, 50)" not in texts
+        assert "color(color.white, t)" not in texts
+        assert "color(color.rgb(1, 2, 3), 50)" not in texts
+        assert "color(color.white, 50, 1)" not in texts
 
     def test_handle_document_color_reuses_tree(self) -> None:
         """Passing a pre-parsed tree must not require re-parse of source."""
