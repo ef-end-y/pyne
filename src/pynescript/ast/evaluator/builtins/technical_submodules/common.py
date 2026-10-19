@@ -112,7 +112,23 @@ class CommonIndicators(TechnicalHelpers):
         return self._lowestbars(series, period)
 
     def _builtin_ta_range(self, args: list[Any]) -> float | None:
-        """Range = highest - lowest over a period."""
+        """Range = highest - lowest over a period.
+
+        2-arg ``ta.range(source, n)``; 1-arg ``ta.range(n)`` is high − low.
+        """
+        if len(args) == UNARY and self._is_period_like(args[0]):
+            period = self._expect_int(args[0], "Period must be an integer")
+            if self._use_incremental_ta():
+                highest = self._highest_inc_update(self._context_source("high"), period)
+                lowest = self._lowest_inc_update(self._context_source("low"), period)
+                if highest is None or lowest is None:
+                    return None
+                return highest - lowest
+            highest = self._highest(self._context_series("high"), period)
+            lowest = self._lowest(self._context_series("low"), period)
+            if highest is None or lowest is None:
+                return None
+            return highest - lowest
         series, period = self._expect_series(args, length=BINARY, last_sample_ok=True)
         if self._use_incremental_ta():
             highest = self._highest_inc_update(series, period)

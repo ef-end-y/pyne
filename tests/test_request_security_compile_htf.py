@@ -278,10 +278,11 @@ plot(request.security(syminfo.tickerid, "D", ta.lowest(close, 3)), title="lo")
 plot(request.security(syminfo.tickerid, "D", ta.highest(3)), title="hi1")
 plot(request.security(syminfo.tickerid, "D", ta.lowest(3)), title="lo1")
 plot(request.security(syminfo.tickerid, "D", ta.range(close, 3)), title="rng")
+plot(request.security(syminfo.tickerid, "D", ta.range(3)), title="rng1")
 plot(ta.highest(close, 3), title="chi")
 """
         si, sc = _run_both(src, bars)
-        for key in ("hi", "lo", "hi1", "lo1", "rng"):
+        for key in ("hi", "lo", "hi1", "lo1", "rng", "rng1"):
             _assert_series_match(si, sc, key)
             finite = [x for x in sc["series"][key][4 * 24 :] if not _is_na(x)]
             assert len(finite) > 0, key
@@ -393,6 +394,29 @@ plot(ta.kama(close, 3), title="ckama")
         for v in day5:
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["kama"][-1]) - float(sc["series"]["ckama"][-1])) > 1e-6
+
+    def test_htf_swma_ao_range1_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed swma / ao / 1-arg range: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 40)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.swma(close)), title="swma")
+plot(request.security(syminfo.tickerid, "D", ta.ao()), title="ao")
+plot(request.security(syminfo.tickerid, "D", ta.range(3)), title="rng1")
+plot(ta.swma(close), title="cswma")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("swma", "ao", "rng1"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][35 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day36 = sc["series"]["ao"][36 * 24 : 37 * 24]
+        assert all(not _is_na(x) for x in day36)
+        ref = float(day36[0])
+        for v in day36:
+            assert abs(float(v) - ref) < 1e-9
+        assert abs(float(sc["series"]["swma"][-1]) - float(sc["series"]["cswma"][-1])) > 1e-6
 
 
 class TestCompileHtfBarmerge:
