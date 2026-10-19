@@ -446,41 +446,69 @@ class OscillatorIndicators(TechnicalHelpers):
         strength = float(macd_line) - float(signal_line)
         return strength
 
-    def _builtin_ta_stoch_smooth(self, args: list[Any]) -> list[float | None]:
-        """Smoothed Stochastic Oscillator."""
+    def _builtin_ta_stoch_smooth(self, args: list[Any]) -> Any:
+        """Smoothed Stochastic Oscillator.
+
+        ``ta.stoch_smooth(high, low, close, period, smooth_k, smooth_d)``:
+        raw stochastic per bar, then ``EMA(stoch, smooth_k)``, then
+        ``EMA(that, smooth_d)``. Bar-mode incremental returns the last
+        sample of the second EMA.
+        """
         senary = 6
         if len(args) < senary:
             msg = "ta.stoch_smooth() requires 6 arguments: high, low, close, period, smooth_k, smooth_d"
             self._error(msg)
 
-        high_series = args[0] if isinstance(args[0], list) else [args[0]]
-        low_series = args[1] if isinstance(args[1], list) else [args[1]]
-        close_series = args[2] if isinstance(args[2], list) else [args[2]]
         period = self._expect_int(args[3], "ta.stoch_smooth period must be integer")
         smooth_k = self._expect_int(args[4], "ta.stoch_smooth smooth_k must be integer")
         smooth_d = self._expect_int(args[5], "ta.stoch_smooth smooth_d must be integer")
 
-        # Calculate raw stochastic
-        stoch_values = []
-        for i in range(len(close_series)):
-            start_idx = max(0, i - period + 1)
-            high_max = max(high_series[j] for j in range(start_idx, i + 1) if j < len(high_series))
-            low_min = min(low_series[j] for j in range(start_idx, i + 1) if j < len(low_series))
-            c = close_series[i] if i < len(close_series) else 0
+        if self._use_incremental_ta():
+            return self._stoch_smooth_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                period,
+                smooth_k,
+                smooth_d,
+            )
 
+        high_series = self._as_series(args[0])
+        low_series = self._as_series(args[1])
+        close_series = self._as_series(args[2])
+
+        stoch_values: list[float | None] = []
+        n_close = len(close_series)
+        n_high = len(high_series)
+        n_low = len(low_series)
+        for i in range(n_close):
+            start_idx = max(0, i - period + 1)
+            window_h: list[float] = []
+            window_l: list[float] = []
+            poisoned = False
+            for j in range(start_idx, i + 1):
+                hf = self._finite_or_none(high_series[j] if j < n_high else None)
+                lf = self._finite_or_none(low_series[j] if j < n_low else None)
+                if hf is None or lf is None:
+                    poisoned = True
+                    break
+                window_h.append(hf)
+                window_l.append(lf)
+            c = self._finite_or_none(close_series[i])
+            if poisoned or c is None or not window_h or not window_l:
+                stoch_values.append(None)
+                continue
+            high_max = max(window_h)
+            low_min = min(window_l)
             hl_range = high_max - low_min
             if hl_range != 0:
-                stoch = 100 * (c - low_min) / hl_range
+                stoch_values.append(100.0 * (c - low_min) / hl_range)
             else:
-                stoch = 50.0
+                stoch_values.append(50.0)
 
-            stoch_values.append(stoch)
-
-        # Smooth stochastic
         smooth_k_ema = self._ema(stoch_values, smooth_k)
         smooth_d_ema = self._ema(smooth_k_ema, smooth_d)
-
-        return smooth_d_ema
+        return self._finalize_series(smooth_d_ema)
 
     def _builtin_ta_stochrsi(self, args: list[Any]) -> dict[str, float | None]:
         """Stochastic RSI.

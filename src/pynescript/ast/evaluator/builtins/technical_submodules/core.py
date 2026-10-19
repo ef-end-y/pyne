@@ -1102,6 +1102,65 @@ class TechnicalHelpers:
         st["value"] = 100.0 * (c - ll) / (hh - ll)
         return st.get("value")
 
+    def _stoch_smooth_inc_update(
+        self,
+        highs: list[Any],
+        lows: list[Any],
+        closes: list[Any],
+        period: int,
+        smooth_k: int,
+        smooth_d: int,
+    ) -> float | None:
+        """Incremental smoothed stochastic matching full ``ta.stoch_smooth``.
+
+        Raw stoch over last ``period`` bars (partial window while warming up;
+        na if any high/low/close in the window is non-numeric), then
+        ``EMA(stoch, smooth_k)`` then ``EMA(that, smooth_d)`` via SMA-seed
+        EMA state (same as full ``_ema``). One call-site slot every bar,
+        including warmup / na.
+        """
+        slot = self._ta_next_slot()
+        n = int(period)
+        sk = int(smooth_k)
+        sd = int(smooth_d)
+        if n < 1 or sk < 1 or sd < 1:
+            return None
+        key = ("stoch_smooth", slot, n, sk, sd)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "h": deque(maxlen=n),
+                "l": deque(maxlen=n),
+                "ema_k": self._ema_state_new(),
+                "ema_d": self._ema_state_new(),
+                "value": None,
+            }
+            bucket[key] = st
+        h = self._finite_or_none(self._series_last(highs))
+        l = self._finite_or_none(self._series_last(lows))
+        c = self._finite_or_none(self._series_last(closes))
+        hw: deque[float | None] = st["h"]
+        lw: deque[float | None] = st["l"]
+        hw.append(h)
+        lw.append(l)
+        stoch: float | None = None
+        if (
+            c is not None
+            and not any(v is None for v in hw)
+            and not any(v is None for v in lw)
+        ):
+            hh = max(hw)
+            ll = min(lw)
+            if hh == ll:
+                stoch = 50.0
+            else:
+                stoch = 100.0 * (c - ll) / (hh - ll)
+        k_val = self._ema_state_step(st["ema_k"], stoch, sk)
+        d_val = self._ema_state_step(st["ema_d"], k_val, sd)
+        st["value"] = d_val
+        return d_val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

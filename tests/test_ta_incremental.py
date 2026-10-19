@@ -5738,3 +5738,186 @@ plot(ta.min(close), "mn1")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+# ---------------------------------------------------------------------------
+# T2: stoch_smooth incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _stoch_smooth_last(full: Any) -> float | None:
+    if full is None:
+        return None
+    if isinstance(full, list):
+        if not full:
+            return None
+        last = full[-1]
+    else:
+        last = full
+    if isinstance(last, float) and math.isnan(last):
+        return None
+    return last
+
+
+def _bar_walk_full_stoch_smooth(
+    highs: list[Any],
+    lows: list[Any],
+    closes: list[Any],
+    period: int,
+    smooth_k: int,
+    smooth_d: int,
+) -> list[float | None]:
+    ev = _FullTA()
+    return [
+        _stoch_smooth_last(
+            ev._builtin_ta_stoch_smooth(
+                [highs[: i + 1], lows[: i + 1], closes[: i + 1], period, smooth_k, smooth_d]
+            )
+        )
+        for i in range(len(closes))
+    ]
+
+
+def _bar_walk_inc_stoch_smooth(
+    highs: list[Any],
+    lows: list[Any],
+    closes: list[Any],
+    period: int,
+    smooth_k: int,
+    smooth_d: int,
+) -> list[float | None]:
+    ev = _IncTA()
+    out: list[float | None] = []
+    for i in range(len(closes)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._stoch_smooth_inc_update(
+                highs[: i + 1],
+                lows[: i + 1],
+                closes[: i + 1],
+                period,
+                smooth_k,
+                smooth_d,
+            )
+        )
+    return out
+
+
+def test_incremental_stoch_smooth_matches_full() -> None:
+    highs, lows, closes = _ohlc(120)
+    for period, smooth_k, smooth_d in ((14, 3, 3), (5, 3, 3), (10, 5, 5), (1, 1, 1)):
+        _assert_series_close(
+            _bar_walk_inc_stoch_smooth(highs, lows, closes, period, smooth_k, smooth_d),
+            _bar_walk_full_stoch_smooth(highs, lows, closes, period, smooth_k, smooth_d),
+        )
+
+
+def test_incremental_stoch_smooth_warmup() -> None:
+    highs, lows, closes = _ohlc(40)
+    period, smooth_k, smooth_d = 14, 3, 3
+    got = _bar_walk_inc_stoch_smooth(highs, lows, closes, period, smooth_k, smooth_d)
+    exp = _bar_walk_full_stoch_smooth(highs, lows, closes, period, smooth_k, smooth_d)
+    # Raw stoch is defined from bar 0 (partial window); each EMA SMA-seeds.
+    first_defined = smooth_k + smooth_d - 2
+    for i in range(first_defined):
+        assert got[i] is None, f"warmup bar {i}: expected None, got {got[i]}"
+        assert exp[i] is None, f"full warmup bar {i}: expected None, got {exp[i]}"
+    assert got[first_defined] is not None
+    _assert_series_close(got, exp)
+
+
+def test_incremental_stoch_smooth_na_in_window() -> None:
+    """NA in the last-N high/low/close window matches full recompute last sample."""
+    highs, lows, closes = _ohlc(80)
+    h: list[float | None] = list(highs)
+    l: list[float | None] = list(lows)
+    c: list[float | None] = list(closes)
+    na_i = 20
+    h[na_i] = None
+    l[na_i + 3] = None
+    c[na_i + 7] = math.nan
+    got = _bar_walk_inc_stoch_smooth(h, l, c, 14, 3, 3)
+    exp = _bar_walk_full_stoch_smooth(h, l, c, 14, 3, 3)
+    _assert_series_close(got, exp)
+
+
+def test_incremental_stoch_smooth_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup and na samples."""
+    highs, lows, closes = _ohlc(40)
+    h: list[float | None] = list(highs)
+    l: list[float | None] = list(lows)
+    c: list[float | None] = list(closes)
+    h[4] = None
+    c[11] = math.nan
+    ev = _IncTA()
+    for i in range(len(closes)):
+        ev._ta_call_i = 0
+        ev._stoch_smooth_inc_update(h[: i + 1], l[: i + 1], c[: i + 1], 14, 3, 3)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_stoch_smooth_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    highs, lows, closes = _ohlc(30)
+    ev = _IncTA()
+    for i in range(len(closes)):
+        prefix_h, prefix_l, prefix_c = highs[: i + 1], lows[: i + 1], closes[: i + 1]
+        ev._ta_call_i = 0
+        ev._builtin_ta_stoch_smooth([prefix_h, prefix_l, prefix_c, 14, 3, 3])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_stoch_smooth_two_call_sites_independent() -> None:
+    highs, lows, closes = _ohlc(80)
+    ev = _IncTA()
+    a_out: list[float | None] = []
+    b_out: list[float | None] = []
+    for i in range(len(closes)):
+        prefix_h, prefix_l, prefix_c = highs[: i + 1], lows[: i + 1], closes[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._stoch_smooth_inc_update(prefix_h, prefix_l, prefix_c, 14, 3, 3))
+        b_out.append(ev._stoch_smooth_inc_update(prefix_h, prefix_l, prefix_c, 5, 3, 3))
+    _assert_series_close(a_out, _bar_walk_full_stoch_smooth(highs, lows, closes, 14, 3, 3))
+    _assert_series_close(b_out, _bar_walk_full_stoch_smooth(highs, lows, closes, 5, 3, 3))
+
+
+def test_runtime_stoch_smooth_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    src = """//@version=5
+indicator("stoch_smooth")
+plot(ta.stoch_smooth(high, low, close, 14, 3, 3), "ss")
+plot(ta.stoch_smooth(high, low, close, 5, 3, 3), "ss5")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"ss", "ss5"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
