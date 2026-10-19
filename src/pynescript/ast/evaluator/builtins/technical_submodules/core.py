@@ -1256,6 +1256,109 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _engulfing_inc_update(
+        self,
+        opens: Any,
+        closes: Any,
+    ) -> dict[str, bool | float]:
+        """Incremental engulfing matching full ``ta.engulfing`` last sample.
+
+        Last two opens/closes (high/low unused). Warmup is 2 bars (both flags
+        False, strength 0.0). One call-site slot every bar, including warmup.
+        """
+        slot = self._ta_next_slot()
+        off: dict[str, bool | float] = {
+            "is_bullish": False,
+            "is_bearish": False,
+            "pattern_strength": 0.0,
+        }
+        key = ("engulfing", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"prev_o": None, "prev_c": None, "count": 0, "value": off}
+            bucket[key] = st
+        o = self._finite_or_none(self._series_last(opens))
+        c = self._finite_or_none(self._series_last(closes))
+        st["count"] = int(st["count"]) + 1
+        prev_o = st["prev_o"]
+        prev_c = st["prev_c"]
+        if (
+            int(st["count"]) < 2
+            or prev_o is None
+            or prev_c is None
+            or o is None
+            or c is None
+        ):
+            st["prev_o"] = o
+            st["prev_c"] = c
+            st["value"] = off
+            return off
+        is_bullish = o < prev_c and c > prev_o and c > o
+        is_bearish = o > prev_c and c < prev_o and c < o
+        if is_bullish:
+            engulf_amount = max(
+                0,
+                min(1, (c - prev_o) / abs(prev_o - prev_c + 0.0001)),
+            )
+        elif is_bearish:
+            engulf_amount = max(
+                0,
+                min(1, (prev_o - c) / abs(prev_c - prev_o + 0.0001)),
+            )
+        else:
+            engulf_amount = 0.0
+        val: dict[str, bool | float] = {
+            "is_bullish": is_bullish,
+            "is_bearish": is_bearish,
+            "pattern_strength": engulf_amount,
+        }
+        st["prev_o"] = o
+        st["prev_c"] = c
+        st["value"] = val
+        return val
+
+    def _hammer_inc_update(
+        self,
+        opens: Any,
+        highs: Any,
+        lows: Any,
+        closes: Any,
+    ) -> dict[str, bool | float]:
+        """Incremental hammer/doji matching full ``ta.hammer`` last sample.
+
+        Last 1 OHLC. Defined on bar 0. One call-site slot every bar.
+        """
+        self._ta_next_slot()
+        off: dict[str, bool | float] = {
+            "is_hammer": False,
+            "is_doji": False,
+            "pattern_strength": 0.0,
+        }
+        o = self._finite_or_none(self._series_last(opens))
+        h = self._finite_or_none(self._series_last(highs))
+        lo = self._finite_or_none(self._series_last(lows))
+        c = self._finite_or_none(self._series_last(closes))
+        if o is None or h is None or lo is None or c is None:
+            return off
+        body_size = abs(c - o)
+        total_range = h - lo
+        lower_wick = min(o, c) - lo
+        upper_wick = h - max(o, c)
+        is_doji = body_size < total_range * 0.1
+        is_hammer = body_size > 0 and lower_wick > body_size * 2 and upper_wick < body_size
+        if is_doji:
+            strength = 1.0 - (body_size / (total_range + 0.0001))
+        elif is_hammer:
+            strength = min(1.0, lower_wick / (total_range + 0.0001))
+        else:
+            strength = 0.0
+        return {
+            "is_hammer": is_hammer,
+            "is_doji": is_doji,
+            "pattern_strength": strength,
+        }
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

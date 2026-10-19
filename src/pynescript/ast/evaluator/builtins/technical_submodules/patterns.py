@@ -62,8 +62,14 @@ class PatternIndicators(TechnicalHelpers):
             msg = "ta.engulfing() requires 4 arguments: open, high, low, close"
             self._error(msg)
 
-        opens = args[0] if isinstance(args[0], list) else [args[0]]
-        closes = args[3] if isinstance(args[3], list) else [args[3]]
+        if self._use_incremental_ta():
+            return self._engulfing_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
+
+        opens = self._as_series(args[0])
+        closes = self._as_series(args[3])
 
         if len(opens) < 2 or len(closes) < 2:
             return {"is_bullish": False, "is_bearish": False, "pattern_strength": 0.0}
@@ -80,10 +86,18 @@ class PatternIndicators(TechnicalHelpers):
             msg = "ta.hammer() requires 4 arguments: open, high, low, close"
             self._error(msg)
 
-        opens = args[0] if isinstance(args[0], list) else [args[0]]
-        highs = args[1] if isinstance(args[1], list) else [args[1]]
-        lows = args[2] if isinstance(args[2], list) else [args[2]]
-        closes = args[3] if isinstance(args[3], list) else [args[3]]
+        if self._use_incremental_ta():
+            return self._hammer_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
+
+        opens = self._as_series(args[0])
+        highs = self._as_series(args[1])
+        lows = self._as_series(args[2])
+        closes = self._as_series(args[3])
 
         if not opens or not closes:
             return {"is_hammer": False, "is_doji": False, "pattern_strength": 0.0}

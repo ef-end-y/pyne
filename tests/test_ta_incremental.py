@@ -6276,3 +6276,352 @@ plot(g.is_low_fractal ? 1 : 0, "lo5")
             assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
+
+
+# ---------------------------------------------------------------------------
+# T2: engulfing / hammer incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_ENGULFING_OFF = {"is_bullish": False, "is_bearish": False, "pattern_strength": 0.0}
+
+
+def _ohlc4(
+    n: int = 120, seed: float = 100.0
+) -> tuple[list[float], list[float], list[float], list[float]]:
+    highs, lows, closes = _ohlc(n, seed)
+    opens = [closes[0]] + [closes[i] for i in range(n - 1)]
+    return opens, highs, lows, closes
+
+
+def _assert_pattern_close(
+    got: list[dict[str, Any]],
+    exp: list[dict[str, Any]],
+) -> None:
+    assert len(got) == len(exp)
+    for i, (g, e) in enumerate(zip(got, exp, strict=True)):
+        assert set(g) == set(e), f"bar {i}: keys {sorted(g)} != {sorted(e)}"
+        for k in e:
+            gv, ev = g[k], e[k]
+            if isinstance(ev, (int, float)) or isinstance(gv, (int, float)):
+                if isinstance(ev, bool) or isinstance(gv, bool):
+                    assert gv is ev, f"bar {i} {k}: {gv} != {ev}"
+                else:
+                    assert gv == pytest.approx(ev, rel=1e-9, abs=1e-9), (
+                        f"bar {i} {k}: {gv} != {ev}"
+                    )
+            else:
+                assert gv == ev, f"bar {i} {k}: {gv} != {ev}"
+
+
+def _bar_walk_full_engulfing(
+    opens: list[Any],
+    highs: list[Any],
+    lows: list[Any],
+    closes: list[Any],
+) -> list[dict[str, Any]]:
+    ev = _FullTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(opens)):
+        out.append(
+            ev._builtin_ta_engulfing(
+                [opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_engulfing(
+    opens: list[Any],
+    _highs: list[Any],
+    _lows: list[Any],
+    closes: list[Any],
+) -> list[dict[str, Any]]:
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(opens)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._engulfing_inc_update(opens[: i + 1], closes[: i + 1])
+        )
+    return out
+
+
+def _bar_walk_full_hammer(
+    opens: list[Any],
+    highs: list[Any],
+    lows: list[Any],
+    closes: list[Any],
+) -> list[dict[str, Any]]:
+    ev = _FullTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(opens)):
+        out.append(
+            ev._builtin_ta_hammer(
+                [opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_hammer(
+    opens: list[Any],
+    highs: list[Any],
+    lows: list[Any],
+    closes: list[Any],
+) -> list[dict[str, Any]]:
+    ev = _IncTA()
+    out: list[dict[str, Any]] = []
+    for i in range(len(opens)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._hammer_inc_update(
+                opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]
+            )
+        )
+    return out
+
+
+def test_incremental_engulfing_matches_full() -> None:
+    opens, highs, lows, closes = _ohlc4(120)
+    _assert_pattern_close(
+        _bar_walk_inc_engulfing(opens, highs, lows, closes),
+        _bar_walk_full_engulfing(opens, highs, lows, closes),
+    )
+
+
+def test_incremental_engulfing_warmup() -> None:
+    """Fewer than 2 bars is all-false / strength 0.0, matching full recompute."""
+    opens = [12.0]
+    highs = [13.0]
+    lows = [9.0]
+    closes = [10.0]
+    got = _bar_walk_inc_engulfing(opens, highs, lows, closes)
+    exp = _bar_walk_full_engulfing(opens, highs, lows, closes)
+    assert got[0] == _ENGULFING_OFF
+    assert exp[0] == _ENGULFING_OFF
+    _assert_pattern_close(got, exp)
+
+
+def test_incremental_engulfing_bullish() -> None:
+    """Current green body fully wraps previous red body → is_bullish."""
+    opens = [12.0, 9.5]
+    highs = [12.5, 13.0]
+    lows = [9.8, 9.0]
+    closes = [10.0, 12.5]
+    got = _bar_walk_inc_engulfing(opens, highs, lows, closes)
+    exp = _bar_walk_full_engulfing(opens, highs, lows, closes)
+    _assert_pattern_close(got, exp)
+    assert got[0] == _ENGULFING_OFF
+    assert got[-1]["is_bullish"] is True
+    assert got[-1]["is_bearish"] is False
+    assert exp[-1]["is_bullish"] is True
+
+
+def test_incremental_engulfing_bearish() -> None:
+    """Current red body fully wraps previous green body → is_bearish."""
+    opens = [10.0, 12.5]
+    highs = [12.2, 13.0]
+    lows = [9.8, 9.0]
+    closes = [12.0, 9.5]
+    got = _bar_walk_inc_engulfing(opens, highs, lows, closes)
+    exp = _bar_walk_full_engulfing(opens, highs, lows, closes)
+    _assert_pattern_close(got, exp)
+    assert got[-1]["is_bearish"] is True
+    assert got[-1]["is_bullish"] is False
+    assert exp[-1]["is_bearish"] is True
+
+
+def test_incremental_hammer_matches_full() -> None:
+    opens, highs, lows, closes = _ohlc4(120)
+    _assert_pattern_close(
+        _bar_walk_inc_hammer(opens, highs, lows, closes),
+        _bar_walk_full_hammer(opens, highs, lows, closes),
+    )
+
+
+def test_incremental_hammer_bar_zero() -> None:
+    """Hammer is defined on bar 0 (last 1 OHLC), matching full recompute."""
+    # Body ≥ 10% of range (not a doji) with a long lower wick.
+    opens = [10.0]
+    highs = [11.2]
+    lows = [7.0]
+    closes = [11.0]
+    got = _bar_walk_inc_hammer(opens, highs, lows, closes)
+    exp = _bar_walk_full_hammer(opens, highs, lows, closes)
+    _assert_pattern_close(got, exp)
+    assert got[0]["is_hammer"] is True
+    assert got[0]["is_doji"] is False
+    assert exp[0]["is_hammer"] is True
+
+
+def test_incremental_hammer_doji() -> None:
+    """Small body vs range → is_doji on bar 0."""
+    opens = [10.0]
+    highs = [12.0]
+    lows = [8.0]
+    closes = [10.05]
+    got = _bar_walk_inc_hammer(opens, highs, lows, closes)
+    exp = _bar_walk_full_hammer(opens, highs, lows, closes)
+    _assert_pattern_close(got, exp)
+    assert got[0]["is_doji"] is True
+    assert got[0]["is_hammer"] is False
+    assert exp[0]["is_doji"] is True
+
+
+def test_incremental_engulfing_hammer_slot_count_stable() -> None:
+    """One call-site slot every bar, including engulfing warmup and hammer bar 0."""
+    opens, highs, lows, closes = _ohlc4(40)
+    ev_e = _IncTA()
+    ev_h = _IncTA()
+    for i in range(len(opens)):
+        prefix_o = opens[: i + 1]
+        prefix_h = highs[: i + 1]
+        prefix_l = lows[: i + 1]
+        prefix_c = closes[: i + 1]
+        ev_e._ta_call_i = 0
+        ev_e._engulfing_inc_update(prefix_o, prefix_c)
+        assert ev_e._ta_call_i == 1, f"engulfing bar {i}: expected 1 slot, got {ev_e._ta_call_i}"
+        ev_h._ta_call_i = 0
+        ev_h._hammer_inc_update(prefix_o, prefix_h, prefix_l, prefix_c)
+        assert ev_h._ta_call_i == 1, f"hammer bar {i}: expected 1 slot, got {ev_h._ta_call_i}"
+
+
+def test_incremental_engulfing_hammer_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtins consume the inc kernel slot (gate is wired)."""
+    opens, highs, lows, closes = _ohlc4(30)
+    ev = _IncTA()
+    for i in range(len(opens)):
+        args = [opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]
+        ev._ta_call_i = 0
+        ev._builtin_ta_engulfing(args)
+        assert ev._ta_call_i == 1, f"engulfing builtin bar {i}: {ev._ta_call_i}"
+        ev._ta_call_i = 0
+        ev._builtin_ta_hammer(args)
+        assert ev._ta_call_i == 1, f"hammer builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_engulfing_hammer_two_call_sites_independent() -> None:
+    a_o, a_h, a_l, a_c = _ohlc4(80, seed=100.0)
+    b_o, b_h, b_l, b_c = _ohlc4(80, seed=140.0)
+    ev = _IncTA()
+    e_a: list[dict[str, Any]] = []
+    e_b: list[dict[str, Any]] = []
+    h_a: list[dict[str, Any]] = []
+    h_b: list[dict[str, Any]] = []
+    for i in range(len(a_o)):
+        ev._ta_call_i = 0
+        e_a.append(ev._engulfing_inc_update(a_o[: i + 1], a_c[: i + 1]))
+        e_b.append(ev._engulfing_inc_update(b_o[: i + 1], b_c[: i + 1]))
+        h_a.append(
+            ev._hammer_inc_update(
+                a_o[: i + 1], a_h[: i + 1], a_l[: i + 1], a_c[: i + 1]
+            )
+        )
+        h_b.append(
+            ev._hammer_inc_update(
+                b_o[: i + 1], b_h[: i + 1], b_l[: i + 1], b_c[: i + 1]
+            )
+        )
+    _assert_pattern_close(e_a, _bar_walk_full_engulfing(a_o, a_h, a_l, a_c))
+    _assert_pattern_close(e_b, _bar_walk_full_engulfing(b_o, b_h, b_l, b_c))
+    _assert_pattern_close(h_a, _bar_walk_full_hammer(a_o, a_h, a_l, a_c))
+    _assert_pattern_close(h_b, _bar_walk_full_hammer(b_o, b_h, b_l, b_c))
+
+
+def test_runtime_engulfing_hammer_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(120)
+    # Inject a bullish engulfing pair, a bearish pair, a hammer, and a doji.
+    bars[10] = {
+        "open": 12.0,
+        "high": 12.5,
+        "low": 9.8,
+        "close": 10.0,
+        "volume": 1010,
+        "time": 1_700_000_000 + 10 * 86_400,
+    }
+    bars[11] = {
+        "open": 9.5,
+        "high": 13.0,
+        "low": 9.0,
+        "close": 12.5,
+        "volume": 1011,
+        "time": 1_700_000_000 + 11 * 86_400,
+    }
+    bars[20] = {
+        "open": 10.0,
+        "high": 12.2,
+        "low": 9.8,
+        "close": 12.0,
+        "volume": 1020,
+        "time": 1_700_000_000 + 20 * 86_400,
+    }
+    bars[21] = {
+        "open": 12.5,
+        "high": 13.0,
+        "low": 9.0,
+        "close": 9.5,
+        "volume": 1021,
+        "time": 1_700_000_000 + 21 * 86_400,
+    }
+    bars[30] = {
+        "open": 10.0,
+        "high": 11.2,
+        "low": 7.0,
+        "close": 11.0,
+        "volume": 1030,
+        "time": 1_700_000_000 + 30 * 86_400,
+    }
+    bars[40] = {
+        "open": 10.0,
+        "high": 12.0,
+        "low": 8.0,
+        "close": 10.05,
+        "volume": 1040,
+        "time": 1_700_000_000 + 40 * 86_400,
+    }
+    src = """//@version=5
+indicator("engulfing hammer")
+e = ta.engulfing(open, high, low, close)
+h = ta.hammer(open, high, low, close)
+plot(e.is_bullish ? 1 : 0, "bull")
+plot(e.is_bearish ? 1 : 0, "bear")
+plot(e.pattern_strength, "estr")
+plot(h.is_hammer ? 1 : 0, "ham")
+plot(h.is_doji ? 1 : 0, "doji")
+plot(h.pattern_strength, "hstr")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"bull", "bear", "estr", "ham", "doji", "hstr"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    for key in r_on["series"]:
+        for i, (a, b) in enumerate(zip(r_on["series"][key], r_off["series"][key], strict=True)):
+            a_na = a is None or (isinstance(a, float) and math.isnan(a))
+            b_na = b is None or (isinstance(b, float) and math.isnan(b))
+            if a_na and b_na:
+                continue
+            assert not a_na, f"{key} bar {i}: incremental na, disabled={b}"
+            assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
+            assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
