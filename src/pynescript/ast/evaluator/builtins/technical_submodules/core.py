@@ -1945,6 +1945,74 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _volume_thrust_inc_update(
+        self,
+        close: Any,
+        volume: Any,
+        vol_sma: Any,
+        sensitivity: Any,
+    ) -> bool:
+        """Incremental volume thrust matching full ``ta.volume_thrust``.
+
+        Last-2 closes + last volume + last vol_sma. ``False`` while any series
+        is empty (no samples yet). Non-numeric last close → 100.0, last volume
+        / vol_sma → 1000.0; missing / non-numeric prev close → 100.0. After
+        samples: volume spike ``v > vs*(1+sensitivity)`` and price move
+        ``abs(c-c_prev)/c_prev > 0.01`` (False if ``c_prev==0``). One call-site
+        slot every bar, including warmup / empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("volume_thrust", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "c": deque(maxlen=2),
+                "v": None,
+                "vs": None,
+                "n_c": 0,
+                "n_v": 0,
+                "n_vs": 0,
+                "value": False,
+            }
+            bucket[key] = st
+        wc: deque[Any] = st["c"]
+        c_last = self._series_last(close)
+        v_last = self._series_last(volume)
+        vs_last = self._series_last(vol_sma)
+        n_c = int(st["n_c"])
+        if not (type(close) is list and not close) and not (close is None and n_c == 0):
+            wc.append(c_last)
+            st["n_c"] = n_c + 1
+        n_v = int(st["n_v"])
+        if not (type(volume) is list and not volume) and not (volume is None and n_v == 0):
+            st["v"] = v_last
+            st["n_v"] = n_v + 1
+        n_vs = int(st["n_vs"])
+        if not (type(vol_sma) is list and not vol_sma) and not (
+            vol_sma is None and n_vs == 0
+        ):
+            st["vs"] = vs_last
+            st["n_vs"] = n_vs + 1
+        if int(st["n_c"]) < 1 or int(st["n_v"]) < 1 or int(st["n_vs"]) < 1:
+            st["value"] = False
+            return False
+        c_raw = wc[-1]
+        c_val = c_raw if isinstance(c_raw, (int, float)) else 100.0
+        if len(wc) > 1:
+            p_raw = wc[-2]
+            c_prev = p_raw if isinstance(p_raw, (int, float)) else 100.0
+        else:
+            c_prev = 100.0
+        v_val = st["v"] if isinstance(st["v"], (int, float)) else 1000.0
+        vs_val = st["vs"] if isinstance(st["vs"], (int, float)) else 1000.0
+        sens = sensitivity if isinstance(sensitivity, (int, float)) else 0.3
+        volume_spike = v_val > vs_val * (1 + sens)
+        price_move = abs(c_val - c_prev) / c_prev > 0.01 if c_prev != 0 else False
+        val = bool(volume_spike and price_move)
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

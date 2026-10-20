@@ -1362,15 +1362,25 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.volume_thrust(close, volume, volume_sma, sensitivity)
         Returns: bool
+
+        Bar-mode incremental last sample uses ``_volume_thrust_inc_update``.
         """
         msg = "ta.volume_thrust() requires 4 arguments"
         if len(args) < QUATERNARY:
             self._error(msg)
 
+        sensitivity = args[3] if isinstance(args[3], (int, float)) else 0.3
+        if self._use_incremental_ta():
+            return self._volume_thrust_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                sensitivity,
+            )
+
         close = self._expect_list(args[0], msg)
         volume = self._expect_list(args[1], msg)
         vol_sma = self._expect_list(args[2], msg)
-        sensitivity = args[3] if isinstance(args[3], (int, float)) else 0.3
 
         if not close or not volume or not vol_sma:
             return False

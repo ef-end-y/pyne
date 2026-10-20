@@ -9627,3 +9627,324 @@ plot(g, "ofi14")
     assert r_off["series"]["ofi5"][0] == pytest.approx(0.0)
     assert r_on["series"]["ofi5"][4] != pytest.approx(0.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: volume_thrust incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _volume_thrust_last_n(
+    close: list[Any],
+    volume: list[Any],
+    vol_sma: list[Any],
+    sensitivity: float,
+) -> bool:
+    """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
+    if not close or not volume or not vol_sma:
+        return False
+    c_val = close[-1] if isinstance(close[-1], (int, float)) else 100.0
+    c_prev = close[-2] if len(close) > 1 and isinstance(close[-2], (int, float)) else 100.0
+    v_val = volume[-1] if isinstance(volume[-1], (int, float)) else 1000.0
+    vs_val = vol_sma[-1] if isinstance(vol_sma[-1], (int, float)) else 1000.0
+    sens = sensitivity if isinstance(sensitivity, (int, float)) else 0.3
+    volume_spike = v_val > vs_val * (1 + sens)
+    price_move = abs(c_val - c_prev) / c_prev > 0.01 if c_prev != 0 else False
+    return volume_spike and price_move
+
+
+def _vt_series(n: int = 120) -> tuple[list[float], list[float], list[float]]:
+    """Closes with 2% jumps on spike bars; volume vs a flat SMA."""
+    close = _series(n)
+    volume: list[float] = []
+    vol_sma: list[float] = []
+    for i in range(n):
+        vol_sma.append(1000.0)
+        if i % 6 == 0:
+            volume.append(1500.0)  # 50% spike — fires at 0.3 and 0.1
+        elif i % 6 == 3:
+            volume.append(1200.0)  # 20% spike — fires at 0.1, not 0.3
+        else:
+            volume.append(1000.0)
+        if i >= 6 and i % 6 == 0:
+            close[i] = close[i - 1] * 1.025
+        elif i >= 3 and i % 6 == 3:
+            close[i] = close[i - 1] * 1.02
+    return close, volume, vol_sma
+
+
+def _vt_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: 2% close steps, open is flat volume SMA, spiked volume."""
+    bars: list[dict] = []
+    for i in range(n):
+        c = 100.0 * (1.02**i)
+        volume = 1600.0 if i % 4 == 0 else 1050.0
+        bars.append(
+            {
+                "open": 1000.0,
+                "high": c + 0.8,
+                "low": c - 0.8,
+                "close": c,
+                "volume": volume,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_volume_thrust(
+    close: list[Any],
+    volume: list[Any],
+    vol_sma: list[Any],
+    sensitivity: float,
+) -> list[bool]:
+    ev = _FullTA()
+    out: list[bool] = []
+    for i in range(len(close)):
+        out.append(
+            bool(
+                ev._builtin_ta_volume_thrust(
+                    [close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity]
+                )
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_volume_thrust(
+    close: list[Any],
+    volume: list[Any],
+    vol_sma: list[Any],
+    sensitivity: float,
+) -> list[bool]:
+    ev = _IncTA()
+    out: list[bool] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            bool(
+                ev._volume_thrust_inc_update(
+                    close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity
+                )
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_volume_thrust_last_sample(
+    close: list[Any],
+    volume: list[Any],
+    vol_sma: list[Any],
+    sensitivity: float,
+) -> list[bool]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[bool] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            bool(
+                ev._volume_thrust_inc_update(
+                    close[i], volume[i], vol_sma[i], sensitivity
+                )
+            )
+        )
+    return out
+
+
+def test_incremental_volume_thrust_matches_full() -> None:
+    close, volume, vol_sma = _vt_series(120)
+    sensitivity = 0.3
+    got = _bar_walk_inc_volume_thrust(close, volume, vol_sma, sensitivity)
+    exp = _bar_walk_full_volume_thrust(close, volume, vol_sma, sensitivity)
+    assert got == exp
+    last = _bar_walk_inc_volume_thrust_last_sample(close, volume, vol_sma, sensitivity)
+    assert last == exp
+    oracle = [
+        _volume_thrust_last_n(
+            close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity
+        )
+        for i in range(len(close))
+    ]
+    assert got == oracle
+    assert True in got
+
+
+def test_incremental_volume_thrust_warmup() -> None:
+    """Empty series or a single close (no 1% move vs default prev 100) is False."""
+    close = [100.0]
+    volume = [1500.0]
+    vol_sma = [1000.0]
+    sensitivity = 0.3
+    got = _bar_walk_inc_volume_thrust(close, volume, vol_sma, sensitivity)
+    exp = _bar_walk_full_volume_thrust(close, volume, vol_sma, sensitivity)
+    assert got == exp
+    assert got == [False]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._volume_thrust_inc_update([], [], [], 0.3) is False
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._volume_thrust_inc_update(None, None, None, 0.3) is False
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_volume_thrust([None], [None], [None], 0.3)
+    exp_na = _bar_walk_full_volume_thrust([None], [None], [None], 0.3)
+    assert got_na == exp_na
+    assert got_na[0] is False
+
+
+def test_incremental_volume_thrust_detected() -> None:
+    """Volume spike plus >1% close change is True after bar 0."""
+    close = [100.0, 102.0]
+    volume = [1000.0, 1500.0]
+    vol_sma = [1000.0, 1000.0]
+    got = _bar_walk_inc_volume_thrust(close, volume, vol_sma, 0.3)
+    exp = _bar_walk_full_volume_thrust(close, volume, vol_sma, 0.3)
+    assert got == exp
+    assert got[0] is False
+    assert got[-1] is True
+    last = _bar_walk_inc_volume_thrust_last_sample(close, volume, vol_sma, 0.3)
+    assert last == exp
+
+
+def test_incremental_volume_thrust_no_spike_or_move() -> None:
+    """Missing volume spike or missing price move is False."""
+    close_move = [100.0, 102.0]
+    vol_flat = [1000.0, 1000.0]
+    sma = [1000.0, 1000.0]
+    got_vol = _bar_walk_inc_volume_thrust(close_move, vol_flat, sma, 0.3)
+    exp_vol = _bar_walk_full_volume_thrust(close_move, vol_flat, sma, 0.3)
+    assert got_vol == exp_vol
+    assert got_vol[-1] is False
+
+    close_flat = [100.0, 100.1]
+    vol_spike = [1000.0, 1500.0]
+    got_px = _bar_walk_inc_volume_thrust(close_flat, vol_spike, sma, 0.3)
+    exp_px = _bar_walk_full_volume_thrust(close_flat, vol_spike, sma, 0.3)
+    assert got_px == exp_px
+    assert got_px[-1] is False
+
+
+def test_incremental_volume_thrust_non_numeric_last() -> None:
+    """Non-numeric last close → 100.0; last volume / vol_sma → 1000.0."""
+    close: list[Any] = [100.0, 102.0, "x"]
+    volume: list[Any] = [1000.0, 1500.0, None]
+    vol_sma: list[Any] = [1000.0, 1000.0, None]
+    got = _bar_walk_inc_volume_thrust(close, volume, vol_sma, 0.3)
+    exp = _bar_walk_full_volume_thrust(close, volume, vol_sma, 0.3)
+    assert got == exp
+    last = _bar_walk_inc_volume_thrust_last_sample(close, volume, vol_sma, 0.3)
+    assert last == exp
+    # c=100, c_prev=102, v=1000, vs=1000 → no spike, ~2% move → False
+    assert got[-1] is False
+
+
+def test_incremental_volume_thrust_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    close, volume, vol_sma = _vt_series(40)
+    close_na: list[float | None] = list(close)
+    close_na[4] = None
+    ev = _IncTA()
+    for i in range(len(close_na)):
+        ev._ta_call_i = 0
+        ev._volume_thrust_inc_update(
+            close_na[: i + 1], volume[: i + 1], vol_sma[: i + 1], 0.3
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_volume_thrust_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    close, volume, vol_sma = _vt_series(30)
+    ev = _IncTA()
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_volume_thrust(
+            [close[: i + 1], volume[: i + 1], vol_sma[: i + 1], 0.3]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_volume_thrust_two_call_sites_independent() -> None:
+    close, volume, vol_sma = _vt_series(80)
+    ev = _IncTA()
+    a_out: list[bool] = []
+    b_out: list[bool] = []
+    for i in range(len(close)):
+        prefix_c = close[: i + 1]
+        prefix_v = volume[: i + 1]
+        prefix_s = vol_sma[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            bool(ev._volume_thrust_inc_update(prefix_c, prefix_v, prefix_s, 0.1))
+        )
+        b_out.append(
+            bool(ev._volume_thrust_inc_update(prefix_c, prefix_v, prefix_s, 0.3))
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    assert a_out == _bar_walk_full_volume_thrust(close, volume, vol_sma, 0.1)
+    assert b_out == _bar_walk_full_volume_thrust(close, volume, vol_sma, 0.3)
+    assert a_out != b_out
+
+
+def test_runtime_volume_thrust_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _vt_bars(80)
+    src = """//@version=5
+indicator("volume thrust")
+f = ta.volume_thrust(close, volume, open, 0.3)
+g = ta.volume_thrust(close, volume, open, 0.8)
+plot(f ? 1 : 0, "vt03")
+plot(g ? 1 : 0, "vt08")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"vt03", "vt08"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses ``_expect_list`` on PineSeries (newest-first), so
+    # last-sample on the reversed list is the oldest bar — not chronological
+    # last-sample. Incremental last sample is the chronological prefix formula
+    # (list-oracle / kernel). Do not require incremental == disabled for every bar.
+    closes = [b["close"] for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    smas = [float(b["open"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["vt03"]):
+        exp = _volume_thrust_last_n(
+            closes[: i + 1], vols[: i + 1], smas[: i + 1], 0.3
+        )
+        assert val == pytest.approx(
+            1.0 if exp else 0.0, rel=1e-9, abs=1e-9
+        ), f"vt03 bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["vt08"]):
+        exp = _volume_thrust_last_n(
+            closes[: i + 1], vols[: i + 1], smas[: i + 1], 0.8
+        )
+        assert val == pytest.approx(
+            1.0 if exp else 0.0, rel=1e-9, abs=1e-9
+        ), f"vt08 bar {i}: {val} != {exp}"
+    assert r_on["series"]["vt03"][0] == pytest.approx(0.0)
+    assert r_off["series"]["vt03"][0] == pytest.approx(0.0)
+    assert r_on["series"]["vt03"][4] != pytest.approx(0.0)
+
