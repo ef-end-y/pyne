@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP architecture and index docs catch-up.** `docs/pyne/lsp/architecture.mdx` and `docs/pyne/lsp/index.mdx` now list range semantic tokens, on-type formatting, inlay resolve plus parameter-name hints, linked editing, and document links.
 - **Public LSP docs catch-up.** Mintlify pages under `docs/pyne/lsp/features/` now document hover Pine v6 function-reference links, `textDocument/semanticTokens/range`, `textDocument/onTypeFormatting`, `inlayHint/resolve` plus parameter-name hints, and `textDocument/linkedEditingRange`.
 - **LSP parameter inlay hints.** `textDocument/inlayHint` shows builtin parameter names before positional args (`ta.sma(close, 14)` → `source:` / `length:`). Assignment type hints and `inlayHint/resolve` textEdits are unchanged.
 - **`DELETE /data/series` drops one stored series.** The engine's series store is its cache of the venue's OHLCV; a client that flushed its own dataset could not drop the engine's copy, so the engine kept serving the old (stale, holed) window. The route takes the same key fields as `GET /data/series` and removes the series' bars plus its metadata row. Per key only — the store is shared, so a purge never touches another series.
