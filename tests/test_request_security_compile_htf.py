@@ -918,6 +918,40 @@ plot(ta.wvad(3), title="cwvad")
         assert any(abs(float(hvpt_day5[i]) - float(cvpt_day5[i])) > 1e-6 for i in range(24) if not _is_na(cvpt_day5[i]))
         assert any(abs(float(hwvad_day5[i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i]))
 
+    def test_htf_uo_apo_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 3-arg ta.uo / 3-arg ta.apo: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.uo(2, 3, 4)), title="uo")
+plot(request.security(syminfo.tickerid, "D", ta.apo(close, 2, 3)), title="apo")
+plot(ta.uo(2, 3, 4), title="cuo")
+plot(ta.apo(close, 2, 3), title="capo")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("uo", "apo"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][5 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day5 = sc["series"]["uo"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        for v in sc["series"]["apo"][5 * 24 : 6 * 24]:
+            assert abs(float(v) - float(sc["series"]["apo"][5 * 24])) < 1e-9
+        cuo_day5 = sc["series"]["cuo"][5 * 24 : 6 * 24]
+        capo_day5 = sc["series"]["capo"][5 * 24 : 6 * 24]
+        huo_day5 = sc["series"]["uo"][5 * 24 : 6 * 24]
+        hapo_day5 = sc["series"]["apo"][5 * 24 : 6 * 24]
+        assert any(abs(float(huo_day5[i]) - float(cuo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cuo_day5[i]))
+        assert any(
+            abs(float(hapo_day5[i]) - float(capo_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(capo_day5[i])
+        ) or all(_is_na(x) for x in capo_day5)
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -1033,6 +1067,7 @@ plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low
 plot(request.security(syminfo.tickerid, "60", ta.vpt(ta.sma(close, 5))), title="vptn")
 plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume)), title="wvad4")
 plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume, 5)), title="wvad5")
+plot(request.security(syminfo.tickerid, "60", ta.apo(ta.sma(close, 5), 10, 20)), title="apon")
 """
         si, sc = _run_both(src, bars)
         assert all(_is_na(x) for x in sc["series"]["cci1"])
@@ -1070,6 +1105,7 @@ plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume, 
         assert all(_is_na(x) for x in sc["series"]["vptn"])
         assert all(_is_na(x) for x in sc["series"]["wvad4"])
         assert all(_is_na(x) for x in sc["series"]["wvad5"])
+        assert all(_is_na(x) for x in sc["series"]["apon"])
         _assert_series_match(si, sc, "tr3")
         _assert_series_match(si, sc, "bbwn")
         _assert_series_match(si, sc, "stoch4")

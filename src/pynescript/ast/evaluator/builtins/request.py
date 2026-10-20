@@ -178,6 +178,8 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "vpt",
         "pvt",
         "wvad",
+        "uo",
+        "apo",
     }
 )
 
@@ -206,7 +208,8 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "and 1-arg ta.dpo(n) / 2-arg ta.dpo(source, n) / 2-arg ta.crossover / ta.crossunder "
     "/ ta.cross of OHLCV names "
     "and 3-arg ta.correlation of two OHLCV names "
-    "and 0-arg ta.vpt/ta.pvt / 1-arg ta.wvad on coarser TF "
+    "and 0-arg ta.vpt/ta.pvt / 1-arg ta.wvad "
+    "and 3-arg ta.uo(n1, n2, n3) / 3-arg ta.apo(source, fast, slow) on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -236,10 +239,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation | vpt | wvad
-    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20)
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); else None
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation | vpt | wvad | uo | apo
+    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), 0-arg tr (h/l/c), and 3-arg uo (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a; 3-arg apo is source Name
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20); 3-arg uo stores n1; 3-arg apo stores slow
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); 3-arg uo: n2*1000+n3 (1 <= n2,n3 <= 999); 3-arg apo: fast; else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -301,6 +304,12 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       same form. Nested unmatched.
     - ``ta.wvad(14)`` — length-only form (uses HTF high/low/close/volume).
       0-arg ``ta.wvad()`` matches period 20. 4-arg explicit-series unmatched.
+    - ``ta.uo(7, 14, 28)`` — three const positive ints; HTF high/low/close.
+      ``length`` is n1, ``extra`` is ``n2*1000+n3`` with ``1 <= n2,n3 <= 999``.
+      Nested unmatched.
+    - ``ta.apo(close, 10, 20)`` — 3-arg ``(source, fast, slow)`` when source is
+      an OHLCV Name. ``length`` is slow, ``extra`` is fast (like ``ta.ao``).
+      Nested unmatched.
     - ``ta.obv()`` — 0-arg (HTF close+volume, running signed volume).
       ``length`` is stored as 0. 2-arg ``ta.obv(close, volume)`` stays unmatched.
     - ``ta.nvi()`` — 0-arg (HTF close+volume, seed 1000, multiply on volume
@@ -395,7 +404,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.percentile_nearest_rank`` / ``ta.percentile_linear_interpolation``,
     nested ``ta.dpo``, nested ``ta.crossover`` / ``ta.crossunder`` / ``ta.cross``,
     nested / 2-arg / length < 2 ``ta.correlation``,
-    nested ``ta.vpt``, 4-arg ``ta.wvad``,
+    nested ``ta.vpt``, 4-arg ``ta.wvad``, nested ``ta.uo``, nested ``ta.apo``,
     5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
@@ -445,6 +454,31 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if type(src_node) is not ast_mod.Name:
             return None
         return HtfSimpleTaExpr("vpt", None, 0)
+
+    if fname == "uo":
+        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (n1, n2, n3)
+            return None
+        n1 = _const_positive_int(arg_nodes[0].value)
+        n2 = _const_positive_int(arg_nodes[1].value)
+        n3 = _const_positive_int(arg_nodes[2].value)
+        if n1 is None or n2 is None or n3 is None:
+            return None
+        if n2 > 999 or n3 > 999:  # noqa: PLR2004 - extra packs n2*1000+n3
+            return None
+        return HtfSimpleTaExpr("uo", None, n1, extra=n2 * 1000 + n3)
+
+    if fname == "apo":
+        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, fast, slow)
+            return None
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        fast = _const_positive_int(arg_nodes[1].value)
+        slow = _const_positive_int(arg_nodes[2].value)
+        if src is None or fast is None or slow is None:
+            return None
+        return HtfSimpleTaExpr("apo", src, slow, extra=fast)
 
     if fname == "obv":
         if arg_nodes:
@@ -2633,6 +2667,37 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         """``ta.ao`` on unique HTF hl2 (defaults SMA 5 − 34)."""
         return self._htf_ao_from_hl2(self._htf_source_series(unique, "hl2"), fast, slow)
 
+    def _htf_apo_full_series(
+        self, src: list[float | None], fast: int, slow: int
+    ) -> list[float | None]:
+        """Full-list APO: EMA(fast) − EMA(slow) on unique HTF source.
+
+        Matches interpret ``_apo``. Does not call ``_ta_next_slot``. Nested
+        unmatched.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or fast <= 0 or slow <= 0:
+            return out
+        ema_fn = getattr(self, "_ema", None)
+        if not callable(ema_fn):
+            return out
+        fast_s = ema_fn(src, int(fast))
+        slow_s = ema_fn(src, int(slow))
+        if not fast_s or not slow_s:
+            return out
+        m = min(n, len(fast_s), len(slow_s))
+        for i in range(m):
+            f, s = fast_s[i], slow_s[i]
+            if f is None or s is None:
+                continue
+            try:
+                fv = float(f) - float(s)
+            except (TypeError, ValueError):
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
     @staticmethod
     def _htf_finite_window(window: list[float | None]) -> list[float] | None:
         """Strict finite window, or None if any slot is missing/non-numeric."""
@@ -3810,6 +3875,36 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 out[i] = 0.0
         return out
 
+    def _htf_uo_full_series(
+        self,
+        highs: list[float | None],
+        lows: list[float | None],
+        closes: list[float | None],
+        n1: int,
+        n2: int,
+        n3: int,
+    ) -> list[float | None]:
+        """Full-list Ultimate Oscillator via prefix walk of ``_uo_last``.
+
+        Three const positive ints; uses HTF high/low/close. Nested unmatched.
+        Does not call ``_ta_next_slot``.
+        """
+        n = min(len(highs), len(lows), len(closes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0 or n1 <= 0 or n2 <= 0 or n3 <= 0:
+            return out
+        uo_fn = getattr(self, "_uo_last", None)
+        if not callable(uo_fn):
+            return out
+        for i in range(n):
+            try:
+                v = uo_fn(highs[: i + 1], lows[: i + 1], closes[: i + 1], n1, n2, n3)
+                fv = float(v) if v is not None else float("nan")
+            except (TypeError, ValueError):
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
     def _htf_rsi_full_series(self, closes: list[float | None], period: int) -> list[float | None]:
         """Full-list RSI on *closes* (Wilder RMA of gains/losses), bar-aligned."""
         n = len(closes)
@@ -3922,6 +4017,21 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             lows = self._htf_source_series(unique, "low")
             closes = self._htf_source_series(unique, "close")
             return self._htf_tr_full_series(highs, lows, closes)
+        if name == "uo":
+            extra = int(expr.extra) if expr.extra is not None else 0
+            n1 = int(expr.length)
+            n2 = extra // 1000
+            n3 = extra % 1000
+            highs = self._htf_source_series(unique, "high")
+            lows = self._htf_source_series(unique, "low")
+            closes = self._htf_source_series(unique, "close")
+            return self._htf_uo_full_series(highs, lows, closes, n1, n2, n3)
+        if name == "apo":
+            field = expr.source or "close"
+            src = self._htf_source_series(unique, field)
+            extra = int(expr.extra) if expr.extra is not None else 0
+            period = int(expr.length)
+            return self._htf_apo_full_series(src, extra, period)
         if name == "tsi":
             field = expr.source or "close"
             src = self._htf_source_series(unique, field)
@@ -4332,6 +4442,19 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             lows = self._series_chrono_values("low")
             closes = self._series_chrono_values("close")
             return _last_of(self._htf_tr_full_series(highs, lows, closes))
+        if name == "uo":
+            extra = int(expression.extra) if expression.extra is not None else 0
+            n2 = extra // 1000
+            n3 = extra % 1000
+            highs = self._series_chrono_values("high")
+            lows = self._series_chrono_values("low")
+            closes = self._series_chrono_values("close")
+            return _last_of(self._htf_uo_full_series(highs, lows, closes, period, n2, n3))
+        if name == "apo":
+            field = expression.source or "close"
+            src = self._series_chrono_values(field)
+            extra = int(expression.extra) if expression.extra is not None else 0
+            return _last_of(self._htf_apo_full_series(src, extra, period))
         if name == "tsi":
             field = expression.source or "close"
             src = self._series_chrono_values(field)
@@ -5065,6 +5188,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           0-arg ``ta.obv()`` uses HTF close+volume; 1-arg ``ta.cmf(n)`` uses HTF
           high/low/close/volume; 0-arg ``ta.vpt()`` / ``ta.pvt()`` uses HTF
           close+volume; 1-arg ``ta.wvad(n)`` uses HTF high/low/close/volume;
+          3-arg ``ta.uo(n1, n2, n3)`` uses HTF high/low/close (extra packs
+          n2*1000+n3); 3-arg ``ta.apo(source, fast, slow)`` uses HTF source
+          (extra=fast, length=slow);
           1-arg ``ta.highest(n)`` /
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
           high / low; 1-arg ``ta.range(n)`` is HTF high−low; 1-arg ``ta.swma``
@@ -5795,6 +5921,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` / ``ta.change`` /
     ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` /
     0-arg ``ta.vpt`` / ``ta.pvt`` / 1-arg ``ta.wvad`` /
+    3-arg ``ta.uo`` / 3-arg ``ta.apo`` /
     1-arg ``ta.stoch`` / 2-arg ``ta.stoch(k, d)`` /
     2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)`` /
     1-arg ``ta.dpo`` / 2-arg ``ta.dpo(source, n)`` / 2-arg ``ta.crossover`` /
@@ -5871,6 +5998,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         self._wad = VolumeIndicators._wad.__get__(self, type(self))
         self._wvad = VolumeIndicators._wvad.__get__(self, type(self))
         self._vpt = VolumeIndicators._vpt.__get__(self, type(self))
+        self._uo_avg = TechnicalHelpers._uo_avg.__get__(self, type(self))
+        self._uo_last = TechnicalHelpers._uo_last.__get__(self, type(self))
 
     def set_bar_index(self, index: int) -> None:
         i = int(index)
@@ -6074,6 +6203,14 @@ def compile_htf_security_value(  # noqa: PLR0913
             src = None
         elif name == "tr":
             src = None
+        elif name == "uo":
+            src = None
+            extra = int(offset)
+            # extra packs n2*1000+n3; unpack as n2 = extra // 1000, n3 = extra % 1000
+        elif name == "apo":
+            src = field_s or "close"
+            if length > 0 and offset > 0:
+                extra = int(offset)
         elif name == "tsi":
             src = field_s or "close"
             if length > 0 and offset > 0:

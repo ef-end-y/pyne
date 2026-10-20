@@ -180,7 +180,7 @@ _BUILTINS_WARMED = False
 # Bump when generated IR semantics change so source→IR disk index is invalidated
 # (source hash alone is stable across compiler fixes, e.g. fill() series keys).
 # v5: strategy series history + Pine na-aware ==/!=
-_DISK_META_VERSION = 48  # v48: HTF 0-arg ta.vpt / 1-arg ta.wvad
+_DISK_META_VERSION = 49  # v49: HTF 3-arg ta.uo / 3-arg ta.apo
 _NJIT_CACHE_FALSE = "@numba.njit(cache=False)"
 _NJIT_CACHE_TRUE = "@numba.njit(cache=True)"
 
