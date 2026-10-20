@@ -148,6 +148,7 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "wad",
         "tr",
         "tsi",
+        "bbw",
     }
 )
 
@@ -167,7 +168,7 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi "
+    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -198,10 +199,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi
-    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi is close
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; else None
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw
+    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -273,6 +274,11 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.tsi(13, 25)`` — two positive int literals; ``source="close"``,
       ``length`` is long, ``extra`` is short. 3-arg
       ``ta.tsi(source, short, long)`` stays unmatched.
+    - ``ta.bbw(close, 20, 2)`` — 3-arg ``(source, length, mult)`` with a
+      positive int multiplier stored in ``extra`` (float ``2.0`` matches
+      via ``_const_int_ge``). Nested ``ta.bbw(ta.sma(...), n, 2)`` stays unmatched.
+    - ``ta.bbw(20, 2)`` — two positive int literals; ``source="close"``,
+      ``length`` is length, ``extra`` is mult. 1-arg ``ta.bbw`` stays unmatched.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -301,7 +307,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.swma(ta.sma(...))`` / ``ta.vwap(ta.sma(...))`` /
     ``ta.cum(ta.sma(...))`` / ``ta.change(ta.sma(...))`` /
     ``ta.adx(ta.sma(...), n)`` / ``ta.mfi(ta.sma(...), n)`` /
-    ``ta.cmf(ta.sma(...))`` / ``ta.linreg(ta.sma(...), n, offset)``), multi-arg
+    ``ta.cmf(ta.sma(...))`` / ``ta.linreg(ta.sma(...), n, offset)`` /
+    ``ta.bbw(ta.sma(...), n, 2)``), multi-arg
     atr, 2-arg ``ta.adx(diLength, adxSmoothing)``, 4-arg ``ta.adx`` /
     ``ta.cci`` / ``ta.wpr``, 2-arg ``ta.mfi(source, length)``, 1-arg ``ta.median`` /
     ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
@@ -309,7 +316,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
     2-arg ``ta.nvi`` / ``ta.pvi``, 4-arg ``ta.accdist`` / ``ta.wad``,
-    3-arg ``ta.tr`` / ``ta.tsi``, 5-arg ``ta.cmf``,
+    3-arg ``ta.tr`` / ``ta.tsi``, 1-arg ``ta.bbw``, 5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -384,6 +391,25 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if short is None or long is None:
             return None
         return HtfSimpleTaExpr("tsi", "close", long, extra=short)
+
+    if fname == "bbw":
+        if len(arg_nodes) == 2:  # noqa: PLR2004 - 2-arg (length, mult)
+            length = _const_positive_int(arg_nodes[0].value)
+            mult = _const_positive_int(arg_nodes[1].value)
+            if length is None or mult is None:
+                return None
+            return HtfSimpleTaExpr("bbw", "close", length, extra=mult)
+        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, length, mult)
+            return None
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        length = _const_positive_int(arg_nodes[1].value)
+        mult = _const_positive_int(arg_nodes[2].value)
+        if src is None or length is None or mult is None:
+            return None
+        return HtfSimpleTaExpr("bbw", src, length, extra=mult)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2318,6 +2344,43 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = statistics.stdev(vals) if ok else None
         return out
 
+    def _htf_bbw_full_series(
+        self, src: list[float | None], period: int, mult: int
+    ) -> list[float | None]:
+        """BBW = 2*mult*stdev/sma on unique HTF source.
+
+        ``na`` while SMA or stdev is ``na`` or SMA is 0. Uses
+        :meth:`_htf_stdev_full_series` and interpret ``_sma`` (no ``_ta_next_slot``).
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 1:
+            return out
+        stdev_s = self._htf_stdev_full_series(src, period)
+        sma_fn = getattr(self, "_sma", None)
+        if not callable(sma_fn):
+            return out
+        sma_s = sma_fn(src, period)
+        if not sma_s:
+            return out
+        m = min(n, len(stdev_s), len(sma_s))
+        mf = float(mult)
+        for i in range(m):
+            mid = sma_s[i]
+            sd = stdev_s[i]
+            if mid is None or sd is None:
+                continue
+            try:
+                mid_f = float(mid)
+                sd_f = float(sd)
+            except (TypeError, ValueError):
+                continue
+            if mid_f != mid_f or sd_f != sd_f or mid_f == 0.0:
+                continue
+            fv = 2.0 * mf * sd_f / mid_f
+            out[i] = None if fv != fv else fv
+        return out
+
     @staticmethod
     def _htf_cmo_full_series(src: list[float | None], period: int) -> list[float | None]:
         """Full-list CMO matching interpret ``ta.cmo`` (window of length+1 diffs)."""
@@ -3176,6 +3239,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             extra = int(expr.extra) if expr.extra is not None else 0
             period = int(expr.length)
             return self._htf_tsi_full_series(src, extra, period)
+        if name == "bbw":
+            field = expr.source or "close"
+            src = self._htf_source_series(unique, field)
+            extra = int(expr.extra) if expr.extra is not None else 0
+            period = int(expr.length)
+            return self._htf_bbw_full_series(src, period, extra)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -3533,6 +3602,11 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             src = self._series_chrono_values(field)
             extra = int(expression.extra) if expression.extra is not None else 0
             return _last_of(self._htf_tsi_full_series(src, extra, period))
+        if name == "bbw":
+            field = expression.source or "close"
+            src = self._series_chrono_values(field)
+            extra = int(expression.extra) if expression.extra is not None else 0
+            return _last_of(self._htf_bbw_full_series(src, period, extra))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
         if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and expression.source is None):
@@ -5216,6 +5290,10 @@ def compile_htf_security_value(  # noqa: PLR0913
         elif name == "tr":
             src = None
         elif name == "tsi":
+            src = field_s or "close"
+            if length > 0 and offset > 0:
+                extra = int(offset)
+        elif name == "bbw":
             src = field_s or "close"
             if length > 0 and offset > 0:
                 extra = int(offset)

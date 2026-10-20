@@ -478,12 +478,13 @@ plot(ta.atr(3), title="catr")
         1-arg ``ta.change(source)`` (length 1) / 1-arg ``ta.adx(n)`` /
         1-arg ``ta.mfi(n)`` / 0-arg ``ta.obv()`` / 1-arg ``ta.cmf(n)`` /
         0-arg ``ta.nvi()`` / 0-arg ``ta.pvi()`` / 0-arg ``ta.accdist()`` /
-        0-arg ``ta.wad()`` / 0-arg ``ta.tr()`` / 2-arg ``ta.tsi(short, long)``
+        0-arg ``ta.wad()`` / 0-arg ``ta.tr()`` / 2-arg ``ta.tsi(short, long)`` /
+        2-arg ``ta.bbw(n, mult)`` / 3-arg ``ta.bbw(source, n, mult)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
         ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
-        3-arg ``ta.tsi(source, short, long)``, and nested
-        ``ta.adx`` / ``ta.mfi`` stay na.
+        3-arg ``ta.tsi(source, short, long)``, nested ``ta.bbw``, 1-arg
+        ``ta.bbw``, and nested ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
 
@@ -510,6 +511,7 @@ plot(request.security(syminfo.tickerid, "60", ta.accdist(high, low, close, volum
 plot(request.security(syminfo.tickerid, "60", ta.wad(high, low, close, volume)), title="wad4")
 plot(request.security(syminfo.tickerid, "60", ta.tr(high, low, close)), title="tr3")
 plot(request.security(syminfo.tickerid, "60", ta.tsi(close, 13, 25)), title="tsi3")
+plot(request.security(syminfo.tickerid, "60", ta.bbw(ta.sma(close, 5), 5, 2)), title="bbwn")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -520,6 +522,7 @@ plot(request.security(syminfo.tickerid, "60", ta.tsi(close, 13, 25)), title="tsi
         assert all(_is_na(x) for x in out["series"]["adx4"])
         assert all(_is_na(x) for x in out["series"]["tr3"])
         assert all(_is_na(x) for x in out["series"]["tsi3"])
+        assert all(_is_na(x) for x in out["series"]["bbwn"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -690,6 +693,15 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.tsi(13, 25)"))
         assert m is not None and m.name == "tsi" and m.source == "close" and m.length == 25
         assert m.extra == 13
+        m = match_htf_simple_ta_ast(_expr("ta.bbw(close, 20, 2)"))
+        assert m is not None and m.name == "bbw" and m.source == "close" and m.length == 20
+        assert m.extra == 2
+        m = match_htf_simple_ta_ast(_expr("ta.bbw(hl2, 20, 2.0)"))
+        assert m is not None and m.name == "bbw" and m.source == "hl2" and m.length == 20
+        assert m.extra == 2
+        m = match_htf_simple_ta_ast(_expr("ta.bbw(20, 2)"))
+        assert m is not None and m.name == "bbw" and m.source == "close" and m.length == 20
+        assert m.extra == 2
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -707,6 +719,9 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.tr(high, low, close)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.tsi(close, 13, 25)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.tsi(ta.sma(close, 5), 13, 25)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.bbw(ta.sma(close, 5), 20, 2)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.bbw(20)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.bbw(close, 20, 2.5)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -1907,6 +1922,52 @@ plot(ta.tsi(2, 3), title="ctsi")
         ctsi_day5 = out["series"]["ctsi"][5 * 24 : 6 * 24]
         assert any(abs(float(htr[5 * 24 + i]) - float(ctr_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctr_day5[i]))
         assert any(abs(float(htsi[5 * 24 + i]) - float(ctsi_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctsi_day5[i]))
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_bbw_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 2-arg / 3-arg ta.bbw."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.bbw(close, 3, 2)), title="hbbw")
+plot(request.security(syminfo.tickerid, "D", ta.bbw(3, 2)), title="hbbw2")
+plot(ta.bbw(close, 3, 2), title="cbbw")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hbbw = out["series"]["hbbw"]
+        hbbw2 = out["series"]["hbbw2"]
+        daily_closes: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+        # SMA/stdev(3) defined at unique 2; unique 2 completes at chart 72.
+        assert all(_is_na(x) for x in hbbw[1:72])
+        assert all(_is_na(x) for x in hbbw2[1:72])
+        day5_bbw = hbbw[5 * 24 : 6 * 24]
+        day5_bbw2 = hbbw2[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_bbw)
+        assert all(not _is_na(x) for x in day5_bbw2)
+        bbw_ref = float(day5_bbw[0])
+        for v in day5_bbw:
+            assert abs(float(v) - bbw_ref) < 1e-9
+        for v in day5_bbw2:
+            assert abs(float(v) - bbw_ref) < 1e-9
+        helpers = TechnicalHelpers()
+        mid = helpers._sma(daily_closes, 3)[-1]
+        sd = helpers._stdev(daily_closes, 3)
+        assert mid is not None and sd is not None and float(mid) != 0.0
+        expect_bbw = 2.0 * 2.0 * float(sd) / float(mid)
+        assert math.isfinite(expect_bbw)
+        assert abs(float(hbbw[-1]) - expect_bbw) < 1e-9
+        assert abs(float(hbbw2[-1]) - expect_bbw) < 1e-9
+        cbbw_day5 = out["series"]["cbbw"][5 * 24 : 6 * 24]
+        assert any(abs(float(hbbw[5 * 24 + i]) - float(cbbw_day5[i])) > 1e-6 for i in range(24) if not _is_na(cbbw_day5[i]))
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
