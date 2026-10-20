@@ -885,6 +885,39 @@ plot(ta.dpo(3), title="cdpo")
             if not _is_na(cdpo_day5[i])
         ) or all(_is_na(x) for x in cdpo_day5)
 
+    def test_htf_vpt_wvad_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 0-arg ta.vpt / 1-arg ta.wvad: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.vpt()), title="vpt")
+plot(request.security(syminfo.tickerid, "D", ta.pvt()), title="pvt")
+plot(request.security(syminfo.tickerid, "D", ta.wvad(3)), title="wvad")
+plot(ta.vpt(), title="cvpt")
+plot(ta.wvad(3), title="cwvad")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("vpt", "pvt", "wvad"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][5 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day5 = sc["series"]["vpt"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        for v in sc["series"]["pvt"][5 * 24 : 6 * 24]:
+            assert abs(float(v) - ref) < 1e-9
+        for v in sc["series"]["wvad"][5 * 24 : 6 * 24]:
+            assert abs(float(v) - float(sc["series"]["wvad"][5 * 24])) < 1e-9
+        cvpt_day5 = sc["series"]["cvpt"][5 * 24 : 6 * 24]
+        cwvad_day5 = sc["series"]["cwvad"][5 * 24 : 6 * 24]
+        hvpt_day5 = sc["series"]["vpt"][5 * 24 : 6 * 24]
+        hwvad_day5 = sc["series"]["wvad"][5 * 24 : 6 * 24]
+        assert any(abs(float(hvpt_day5[i]) - float(cvpt_day5[i])) > 1e-6 for i in range(24) if not _is_na(cvpt_day5[i]))
+        assert any(abs(float(hwvad_day5[i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i]))
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -997,6 +1030,9 @@ plot(request.security(syminfo.tickerid, "60", ta.correlation(ta.sma(close, 5), v
 plot(request.security(syminfo.tickerid, "60", ta.correlation(close, ta.ema(volume, 5), 20)), title="corrn2")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5)), title="cmf5")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low, volume, 5)), title="cmfn")
+plot(request.security(syminfo.tickerid, "60", ta.vpt(ta.sma(close, 5))), title="vptn")
+plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume)), title="wvad4")
+plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume, 5)), title="wvad5")
 """
         si, sc = _run_both(src, bars)
         assert all(_is_na(x) for x in sc["series"]["cci1"])
@@ -1031,6 +1067,9 @@ plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low
         assert all(_is_na(x) for x in sc["series"]["corrn2"])
         assert all(_is_na(x) for x in sc["series"]["cmf5"])
         assert all(_is_na(x) for x in sc["series"]["cmfn"])
+        assert all(_is_na(x) for x in sc["series"]["vptn"])
+        assert all(_is_na(x) for x in sc["series"]["wvad4"])
+        assert all(_is_na(x) for x in sc["series"]["wvad5"])
         _assert_series_match(si, sc, "tr3")
         _assert_series_match(si, sc, "bbwn")
         _assert_series_match(si, sc, "stoch4")

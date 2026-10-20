@@ -510,7 +510,8 @@ plot(ta.atr(3), title="catr")
         3-arg ``ta.percentile_linear_interpolation(source, n, percentage)`` /
         1-arg ``ta.dpo(n)`` / 2-arg ``ta.dpo(source, n)`` / 2-arg
         ``ta.crossover`` / ``ta.crossunder`` / ``ta.cross`` of
-        OHLCV names / 3-arg ``ta.correlation`` of two OHLCV names
+        OHLCV names / 3-arg ``ta.correlation`` of two OHLCV names /
+        0-arg ``ta.vpt()`` / ``ta.pvt()`` / 1-arg ``ta.wvad(n)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
         ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
@@ -520,6 +521,7 @@ plot(ta.atr(3), title="catr")
         ``ta.percentile_nearest_rank`` / ``ta.percentile_linear_interpolation``,
         nested ``ta.dpo``, nested ``ta.crossover`` /
         ``ta.crossunder`` / ``ta.cross``, nested ``ta.correlation``,
+        nested ``ta.vpt``, 4-arg ``ta.wvad``,
         and nested ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
@@ -559,6 +561,9 @@ plot(request.security(syminfo.tickerid, "60", ta.cross(ta.sma(close, 5), open)),
 plot(request.security(syminfo.tickerid, "60", ta.cross(close, ta.ema(open, 5))), title="xn2")
 plot(request.security(syminfo.tickerid, "60", ta.correlation(ta.sma(close, 5), volume, 20)), title="corrn")
 plot(request.security(syminfo.tickerid, "60", ta.correlation(close, ta.ema(volume, 5), 20)), title="corrn2")
+plot(request.security(syminfo.tickerid, "60", ta.vpt(ta.sma(close, 5))), title="vptn")
+plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume)), title="wvad4")
+plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume, 5)), title="wvad5")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -834,6 +839,20 @@ plot(ta.wma(close, 3), title="cwma")
         assert m.extra == 8
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.vpt()"))
+        assert m is not None and m.name == "vpt" and m.source is None and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.pvt()"))
+        assert m is not None and m.name == "vpt" and m.source is None and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.vpt(close)"))
+        assert m is not None and m.name == "vpt" and m.source is None and m.length == 0
+        m = match_htf_simple_ta_ast(_expr("ta.wvad(14)"))
+        assert m is not None and m.name == "wvad" and m.source is None and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.wvad()"))
+        assert m is not None and m.name == "wvad" and m.source is None and m.length == 20
+        m = match_htf_simple_ta_ast(_expr("ta.wvad(3)"))
+        assert m is not None and m.name == "wvad" and m.source is None and m.length == 3
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.adx(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.adx(ta.sma(close, 14), 14)")) is None
@@ -884,6 +903,10 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.correlation(close, 20)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.vpt(ta.sma(close, 5))")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.wvad(high, low, close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.wvad(high, low, close, volume, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.wvad(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
@@ -2460,6 +2483,68 @@ plot(ta.dpo(3), title="cdpo")
             for i in range(24)
             if not _is_na(cdpo_day5[i])
         )
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_vpt_wvad_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 0-arg ta.vpt / 1-arg ta.wvad."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.volume import VolumeIndicators
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.vpt()), title="hvpt")
+plot(request.security(syminfo.tickerid, "D", ta.pvt()), title="hpvt")
+plot(request.security(syminfo.tickerid, "D", ta.wvad(3)), title="hwvad")
+plot(ta.vpt(), title="cvpt")
+plot(ta.wvad(3), title="cwvad")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hvpt = out["series"]["hvpt"]
+        hpvt = out["series"]["hpvt"]
+        hwvad = out["series"]["hwvad"]
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        daily_closes: list[float] = []
+        daily_vols: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+        # First completed HTF bar at chart 24; vpt seeds 0.0 on unique bar 0.
+        assert all(_is_na(x) for x in hvpt[1:24])
+        assert all(_is_na(x) for x in hwvad[1:24])
+        assert abs(float(hvpt[24]) - 0.0) < 1e-9
+        assert abs(float(hpvt[24]) - 0.0) < 1e-9
+        day5_vpt = hvpt[5 * 24 : 6 * 24]
+        day5_pvt = hpvt[5 * 24 : 6 * 24]
+        day5_wvad = hwvad[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_vpt)
+        assert all(not _is_na(x) for x in day5_pvt)
+        assert all(not _is_na(x) for x in day5_wvad)
+        vpt_ref = float(day5_vpt[0])
+        wvad_ref = float(day5_wvad[0])
+        for v in day5_vpt:
+            assert abs(float(v) - vpt_ref) < 1e-9
+        for v in day5_pvt:
+            assert abs(float(v) - vpt_ref) < 1e-9
+        for v in day5_wvad:
+            assert abs(float(v) - wvad_ref) < 1e-9
+        expect_vpt = float(VolumeIndicators()._vpt(daily_closes, daily_vols))
+        expect_wvad = float(VolumeIndicators()._wvad(daily_highs, daily_lows, daily_closes, daily_vols, 3)[-1])
+        assert math.isfinite(expect_vpt) and math.isfinite(expect_wvad)
+        assert abs(float(hvpt[-1]) - expect_vpt) < 1e-9
+        assert abs(float(hpvt[-1]) - expect_vpt) < 1e-9
+        assert abs(float(hwvad[-1]) - expect_wvad) < 1e-9
+        cvpt_day5 = out["series"]["cvpt"][5 * 24 : 6 * 24]
+        cwvad_day5 = out["series"]["cwvad"][5 * 24 : 6 * 24]
+        assert any(abs(float(hvpt[5 * 24 + i]) - float(cvpt_day5[i])) > 1e-6 for i in range(24) if not _is_na(cvpt_day5[i]))
+        assert any(abs(float(hwvad[5 * 24 + i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i]))
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
