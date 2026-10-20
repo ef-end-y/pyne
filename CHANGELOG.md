@@ -32,6 +32,7 @@
 - **Bar-mode incremental `ta.trend_confirmation_score` (T2).** Last-sample kernel matches full recompute: five last samples mixed, clamp [0, 100].
 - **Bar-mode incremental `ta.atr_stop` (T2).** Last-sample kernel matches full recompute: last close ± last ATR × multiplier.
 - **Bar-mode incremental `ta.max_loss_level` (T2).** Last-sample kernel matches full recompute: last entry/account/max_loss_pct → stop price.
+- **Bar-mode incremental `ta.profit_lock_level` (T2).** Last-sample kernel matches full recompute: last entry/current/trail_pct/direction → trailing stop.
 
 ### Fixed
 

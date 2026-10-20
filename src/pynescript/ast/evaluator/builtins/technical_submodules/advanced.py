@@ -1833,10 +1833,20 @@ class AdvancedIndicators(TechnicalHelpers):
         ta.profit_lock_level(entry, current, trail_pct, direction)
         Direction: 1 for long, -1 for short.
         Returns: Stop price that trails behind price.
+
+        Bar-mode incremental last sample uses ``_profit_lock_level_inc_update``.
         """
         if len(args) < QUATERNARY:
             msg = "ta.profit_lock_level() requires 4 arguments"
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._profit_lock_level_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
 
         entry = args[0] if isinstance(args[0], (int, float)) else 100.0
         current = args[1] if isinstance(args[1], (int, float)) else 100.0

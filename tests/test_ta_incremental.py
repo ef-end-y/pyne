@@ -12087,3 +12087,336 @@ plot(g, "mll2")
     assert any(v != pytest.approx(99.0) for v in r_on["series"]["mll"][1:])
 
 
+# ---------------------------------------------------------------------------
+# T2: profit_lock_level incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _profit_lock_level_last_n(
+    entry: list[Any],
+    current: list[Any],
+    trail_pct: list[Any],
+    direction: list[Any],
+) -> float:
+    """Oracle formula on a chronological prefix (last sample, defaults 100/100/0.05/1.0)."""
+    e = entry[-1] if entry and isinstance(entry[-1], (int, float)) else 100.0
+    c = current[-1] if current and isinstance(current[-1], (int, float)) else 100.0
+    t = (
+        trail_pct[-1]
+        if trail_pct and isinstance(trail_pct[-1], (int, float))
+        else 0.05
+    )
+    d = (
+        direction[-1]
+        if direction and isinstance(direction[-1], (int, float))
+        else 1.0
+    )
+    t = max(0.0, min(1.0, t))
+    if d > 0:
+        stop = c - c * t
+        return max(e * 0.9, stop)
+    stop = c + c * t
+    return min(e * 1.1, stop)
+
+
+def _pll_series(
+    n: int = 120,
+) -> tuple[list[float], list[float], list[float], list[float]]:
+    """Entry / current / trail_pct / direction with mild trend + oscillation."""
+    entry = [100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0 for i in range(n)]
+    current = [105.0 + i * 0.2 + math.cos(i / 4.0) * 3.0 for i in range(n)]
+    trail = [0.02 + 0.08 * (0.5 + 0.5 * math.sin(i / 7.0)) for i in range(n)]
+    direction = [1.0 if i % 7 != 0 else -1.0 for i in range(n)]
+    return entry, current, trail, direction
+
+
+def _pll_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: close=entry, high=current (long); open/low=2nd site (short)."""
+    bars: list[dict] = []
+    for i in range(n):
+        entry = 100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0
+        current = 105.0 + i * 0.2 + math.cos(i / 4.0) * 3.0
+        entry_b = 90.0 + i * 0.1 + math.cos(i / 6.0) * 1.5
+        current_b = 88.0 + i * 0.12 + math.sin(i / 5.0) * 2.0
+        bars.append(
+            {
+                "open": entry_b,
+                "high": current,
+                "low": current_b,
+                "close": entry,
+                "volume": 1000.0 + i,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_profit_lock_level(
+    entry: list[Any],
+    current: list[Any],
+    trail_pct: list[Any],
+    direction: list[Any],
+) -> list[float]:
+    """Full-path oracle: last sample of each arg as a scalar (advanced.py formula)."""
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(entry)):
+        out.append(
+            ev._builtin_ta_profit_lock_level(
+                [entry[i], current[i], trail_pct[i], direction[i]]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_profit_lock_level(
+    entry: list[Any],
+    current: list[Any],
+    trail_pct: list[Any],
+    direction: list[Any],
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(entry)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._profit_lock_level_inc_update(
+                entry[: i + 1],
+                current[: i + 1],
+                trail_pct[: i + 1],
+                direction[: i + 1],
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_profit_lock_level_last_sample(
+    entry: list[Any],
+    current: list[Any],
+    trail_pct: list[Any],
+    direction: list[Any],
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(entry)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._profit_lock_level_inc_update(
+                entry[i], current[i], trail_pct[i], direction[i]
+            )
+        )
+    return out
+
+
+def test_incremental_profit_lock_level_matches_full() -> None:
+    entry, current, trail, direction = _pll_series(120)
+    got = _bar_walk_inc_profit_lock_level(entry, current, trail, direction)
+    exp = _bar_walk_full_profit_lock_level(entry, current, trail, direction)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_profit_lock_level_last_sample(
+        entry, current, trail, direction
+    )
+    _assert_series_close(last, exp)
+    oracle = [
+        _profit_lock_level_last_n(
+            entry[: i + 1],
+            current[: i + 1],
+            trail[: i + 1],
+            direction[: i + 1],
+        )
+        for i in range(len(entry))
+    ]
+    _assert_series_close(got, oracle)
+    assert any(v != pytest.approx(95.0) for v in got)
+
+
+def test_incremental_profit_lock_level_empty() -> None:
+    """Empty / missing last sample → defaults (100/100/0.05/1.0) → 95.0, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._profit_lock_level_inc_update([], [], [], []) == pytest.approx(95.0)
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._profit_lock_level_inc_update(None, None, None, None) == pytest.approx(
+        95.0
+    )
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_profit_lock_level([None], [None], [None], [None])
+    oracle_na = [_profit_lock_level_last_n([None], [None], [None], [None])]
+    _assert_series_close(got_na, oracle_na)
+    assert got_na[0] == pytest.approx(95.0)
+
+
+def test_incremental_profit_lock_level_non_numeric_last() -> None:
+    """Non-numeric last sample uses the same defaults as the full path."""
+    entry: list[Any] = [100.0, 110.0, "x"]
+    current: list[Any] = [110.0, 120.0, None]
+    trail: list[Any] = [0.05, 0.10, None]
+    direction: list[Any] = [1.0, -1.0, None]
+    got = _bar_walk_inc_profit_lock_level(entry, current, trail, direction)
+    exp = _bar_walk_full_profit_lock_level(entry, current, trail, direction)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_profit_lock_level_last_sample(
+        entry, current, trail, direction
+    )
+    _assert_series_close(last, exp)
+    # defaults 100/100/0.05/1.0 → 95.0
+    assert got[-1] == pytest.approx(95.0)
+    # long: max(100*0.9, 110 - 110*0.05) = max(90, 104.5) = 104.5
+    assert got[0] == pytest.approx(104.5)
+    # short: min(110*1.1, 120 + 120*0.10) = min(121, 132) = 121.0
+    assert got[1] == pytest.approx(121.0)
+
+
+def test_incremental_profit_lock_level_clamp() -> None:
+    """trail_pct is clamped to [0, 1], matching the full-path oracle."""
+    got_hi = _bar_walk_inc_profit_lock_level([100.0], [110.0], [2.0], [1.0])
+    exp_hi = _bar_walk_full_profit_lock_level([100.0], [110.0], [2.0], [1.0])
+    _assert_series_close(got_hi, exp_hi)
+    # clamp 2.0 → 1.0: max(90, 110 - 110) = 90.0
+    assert got_hi[-1] == pytest.approx(90.0)
+
+    got_lo = _bar_walk_inc_profit_lock_level([100.0], [110.0], [-0.5], [1.0])
+    exp_lo = _bar_walk_full_profit_lock_level([100.0], [110.0], [-0.5], [1.0])
+    _assert_series_close(got_lo, exp_lo)
+    # clamp -0.5 → 0.0: max(90, 110 - 0) = 110.0
+    assert got_lo[-1] == pytest.approx(110.0)
+
+
+def test_incremental_profit_lock_level_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    entry, current, trail, direction = _pll_series(40)
+    entry_na: list[float | None] = list(entry)
+    entry_na[4] = None
+    ev = _IncTA()
+    for i in range(len(entry_na)):
+        ev._ta_call_i = 0
+        ev._profit_lock_level_inc_update(
+            entry_na[: i + 1],
+            current[: i + 1],
+            trail[: i + 1],
+            direction[: i + 1],
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_profit_lock_level_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    entry, current, trail, direction = _pll_series(30)
+    ev = _IncTA()
+    for i in range(len(entry)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_profit_lock_level(
+            [
+                entry[: i + 1],
+                current[: i + 1],
+                trail[: i + 1],
+                direction[: i + 1],
+            ]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_profit_lock_level_two_call_sites_independent() -> None:
+    entry, current, trail, _direction = _pll_series(80)
+    dir_long = [1.0] * len(entry)
+    dir_short = [-1.0] * len(entry)
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(entry)):
+        prefix_e = entry[: i + 1]
+        prefix_c = current[: i + 1]
+        prefix_t = trail[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._profit_lock_level_inc_update(
+                prefix_e, prefix_c, prefix_t, dir_long[: i + 1]
+            )
+        )
+        b_out.append(
+            ev._profit_lock_level_inc_update(
+                prefix_e, prefix_c, prefix_t, dir_short[: i + 1]
+            )
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(
+        a_out, _bar_walk_full_profit_lock_level(entry, current, trail, dir_long)
+    )
+    _assert_series_close(
+        b_out, _bar_walk_full_profit_lock_level(entry, current, trail, dir_short)
+    )
+    assert a_out != b_out
+
+
+def test_runtime_profit_lock_level_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _pll_bars(80)
+    src = """//@version=5
+indicator("profit lock level")
+f = ta.profit_lock_level(close, high, 0.05, 1)
+g = ta.profit_lock_level(open, low, 0.08, -1)
+plot(f, "pll")
+plot(g, "pll2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"pll", "pll2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses scalar isinstance on PineSeries (newest-first wrap),
+    # so series args default to 100/100. Incremental last sample is the
+    # chronological prefix formula (list-oracle / kernel). Do not require
+    # incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    trail_long = [0.05] * len(bars)
+    trail_short = [0.08] * len(bars)
+    dir_long = [1.0] * len(bars)
+    dir_short = [-1.0] * len(bars)
+    for i, val in enumerate(r_on["series"]["pll"]):
+        exp = _profit_lock_level_last_n(
+            closes[: i + 1], highs[: i + 1], trail_long[: i + 1], dir_long[: i + 1]
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"pll bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["pll2"]):
+        exp = _profit_lock_level_last_n(
+            opens[: i + 1], lows[: i + 1], trail_short[: i + 1], dir_short[: i + 1]
+        )
+        assert val == pytest.approx(
+            exp, rel=1e-9, abs=1e-9
+        ), f"pll2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["pll"][0] == pytest.approx(
+        _profit_lock_level_last_n(closes[:1], highs[:1], trail_long[:1], dir_long[:1])
+    )
+    # disabled: series args default 100/100; trail 0.05 dir 1 → 95.0
+    assert r_off["series"]["pll"][0] == pytest.approx(95.0)
+    # disabled: series args default 100/100; trail 0.08 dir -1 → min(110, 108) = 108.0
+    assert r_off["series"]["pll2"][0] == pytest.approx(108.0)
+    assert any(v != pytest.approx(95.0) for v in r_on["series"]["pll"][1:])
+
+

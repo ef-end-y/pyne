@@ -2285,6 +2285,45 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _profit_lock_level_inc_update(
+        self,
+        entry: Any,
+        current: Any,
+        trail_pct: Any,
+        direction: Any,
+    ) -> float:
+        """Incremental profit-lock stop matching full ``ta.profit_lock_level``.
+
+        Last samples of entry / current / trail_pct / direction. Empty or
+        missing last sample uses the same defaults as non-numeric:
+        100 / 100 / 0.05 / 1.0. ``trail_pct`` is clamped to ``[0, 1]``.
+        Long (``direction > 0``): ``max(entry*0.9, current*(1-trail_pct))``.
+        Short: ``min(entry*1.1, current*(1+trail_pct))``. One call-site
+        slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("profit_lock_level", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 95.0}
+            bucket[key] = st
+        e_last = self._series_last(entry)
+        c_last = self._series_last(current)
+        t_last = self._series_last(trail_pct)
+        d_last = self._series_last(direction)
+        e = e_last if isinstance(e_last, (int, float)) else 100.0
+        c = c_last if isinstance(c_last, (int, float)) else 100.0
+        t = t_last if isinstance(t_last, (int, float)) else 0.05
+        d = d_last if isinstance(d_last, (int, float)) else 1.0
+        t = max(0.0, min(1.0, t))
+        if d > 0:
+            val = max(e * 0.9, c - c * t)
+        else:
+            val = min(e * 1.1, c + c * t)
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
