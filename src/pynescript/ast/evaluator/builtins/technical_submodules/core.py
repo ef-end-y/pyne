@@ -1689,6 +1689,54 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _momentum_filter_inc_update(
+        self,
+        momentum: Any,
+        volume: Any,
+        period: int,
+    ) -> float:
+        """Incremental momentum filter matching full ``ta.momentum_filter``.
+
+        Last-N volume-weighted momentum. ``0.0`` while the window is short,
+        ``period<=0``, there are no paired numeric samples, or volume_sum is
+        0. ``vol_sum`` includes numeric volumes even when mom is non-numeric;
+        the numerator uses only paired numeric (mom, vol) samples. One
+        call-site slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n <= 0:
+            return 0.0
+        key = ("momentum_filter", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "m": deque(maxlen=n),
+                "v": deque(maxlen=n),
+                "value": 0.0,
+            }
+            bucket[key] = st
+        wm: deque[Any] = st["m"]
+        wv: deque[Any] = st["v"]
+        wm.append(self._series_last(momentum))
+        wv.append(self._series_last(volume))
+        if len(wm) < n or len(wv) < n:
+            st["value"] = 0.0
+            return 0.0
+        vol_sum = sum(v for v in wv if isinstance(v, (int, float)))
+        mom_data = [
+            (m, v)
+            for m, v in zip(wm, wv, strict=True)
+            if isinstance(m, (int, float)) and isinstance(v, (int, float))
+        ]
+        if not mom_data or vol_sum == 0:
+            st["value"] = 0.0
+            return 0.0
+        val = sum(m * v for m, v in mom_data) / vol_sum
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

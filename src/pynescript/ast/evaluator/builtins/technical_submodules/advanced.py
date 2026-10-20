@@ -954,14 +954,23 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.momentum_filter(momentum_raw, volume, period)
         Returns: Filtered momentum value
+
+        Bar-mode incremental last sample uses ``_momentum_filter_inc_update``.
         """
         msg = "ta.momentum_filter() requires 3 arguments"
         if len(args) < TERNARY:
             self._error(msg)
 
+        period = self._expect_int(args[2], msg)
+        if self._use_incremental_ta():
+            return self._momentum_filter_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                period,
+            )
+
         momentum = self._expect_list(args[0], msg)
         volume = self._expect_list(args[1], msg)
-        period = self._expect_int(args[2], msg)
 
         if len(momentum) < period or len(volume) < period or period <= 0:
             return 0.0

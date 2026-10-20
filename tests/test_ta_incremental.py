@@ -8279,3 +8279,229 @@ plot(s == "low" ? 1 : s == "medium" ? 2 : s == "high" ? 3 : 4, "reg14")
     assert r_off["series"]["reg5"][20] == pytest.approx(4.0)
     assert r_on["series"]["reg5"][40] == pytest.approx(1.0)
     assert r_off["series"]["reg5"][40] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# T2: momentum_filter incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _bar_walk_full_momentum_filter(
+    mom: list[Any],
+    vol: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(mom)):
+        out.append(
+            ev._builtin_ta_momentum_filter([mom[: i + 1], vol[: i + 1], period])
+        )
+    return out
+
+
+def _bar_walk_inc_momentum_filter(
+    mom: list[Any],
+    vol: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(mom)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._momentum_filter_inc_update(mom[: i + 1], vol[: i + 1], period)
+        )
+    return out
+
+
+def _bar_walk_inc_momentum_filter_last_sample(
+    mom: list[Any],
+    vol: list[Any],
+    period: int,
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(mom)):
+        ev._ta_call_i = 0
+        out.append(ev._momentum_filter_inc_update(mom[i], vol[i], period))
+    return out
+
+
+def test_incremental_momentum_filter_matches_full() -> None:
+    mom = _series(120)
+    vol = _vols(120)
+    period = 5
+    got = _bar_walk_inc_momentum_filter(mom, vol, period)
+    exp = _bar_walk_full_momentum_filter(mom, vol, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_momentum_filter_last_sample(mom, vol, period)
+    _assert_series_close(last, exp)
+
+
+def test_incremental_momentum_filter_warmup() -> None:
+    """Window shorter than period is ``0.0``, matching full recompute."""
+    mom = [1.0, 1.1]
+    vol = [100.0, 110.0]
+    period = 5
+    got = _bar_walk_inc_momentum_filter(mom, vol, period)
+    exp = _bar_walk_full_momentum_filter(mom, vol, period)
+    _assert_series_close(got, exp)
+    assert got == [0.0, 0.0]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._momentum_filter_inc_update([], [], 5) == 0.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._momentum_filter_inc_update(None, None, 5) == 0.0
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_momentum_filter([None], [None], 5)
+    exp_na = _bar_walk_full_momentum_filter([None], [None], 5)
+    _assert_series_close(got_na, exp_na)
+    assert got_na[0] == 0.0
+
+
+def test_incremental_momentum_filter_na_skips() -> None:
+    """Numeric volumes still enter vol_sum when mom is non-numeric.
+
+    Numerator uses only paired numeric (mom, vol) samples. Empty mom_data
+    or vol_sum == 0 → 0.0.
+    """
+    period = 3
+    mom: list[float | None] = [1.0, None, 2.0]
+    vol: list[float | None] = [10.0, 20.0, 30.0]
+    got = _bar_walk_inc_momentum_filter(mom, vol, period)
+    exp = _bar_walk_full_momentum_filter(mom, vol, period)
+    _assert_series_close(got, exp)
+    assert got[0] == 0.0
+    assert got[1] == 0.0
+    # vol_sum=60, paired (1,10)+(2,30)=70 → 70/60
+    assert got[2] == pytest.approx(70.0 / 60.0)
+    last = _bar_walk_inc_momentum_filter_last_sample(mom, vol, period)
+    _assert_series_close(last, exp)
+
+    mom_all_na: list[float | None] = [None, None, None]
+    vol_ok = [10.0, 20.0, 30.0]
+    got_na = _bar_walk_inc_momentum_filter(mom_all_na, vol_ok, period)
+    exp_na = _bar_walk_full_momentum_filter(mom_all_na, vol_ok, period)
+    _assert_series_close(got_na, exp_na)
+    assert got_na[-1] == 0.0
+
+    mom_ok = [1.0, 1.0, 1.0]
+    vol_zero = [0.0, 0.0, 0.0]
+    got_z = _bar_walk_inc_momentum_filter(mom_ok, vol_zero, period)
+    exp_z = _bar_walk_full_momentum_filter(mom_ok, vol_zero, period)
+    _assert_series_close(got_z, exp_z)
+    assert got_z[-1] == 0.0
+
+
+def test_incremental_momentum_filter_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    mom: list[float | None] = list(_series(40))
+    vol: list[float | None] = list(_vols(40))
+    mom[4] = None
+    vol[11] = None
+    ev = _IncTA()
+    for i in range(len(mom)):
+        ev._ta_call_i = 0
+        ev._momentum_filter_inc_update(mom[: i + 1], vol[: i + 1], 5)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_momentum_filter_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    mom = _series(30)
+    vol = _vols(30)
+    ev = _IncTA()
+    for i in range(len(mom)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_momentum_filter([mom[: i + 1], vol[: i + 1], 5])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_momentum_filter_two_call_sites_independent() -> None:
+    mom = _series(80)
+    vol = _vols(80)
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(mom)):
+        prefix_m = mom[: i + 1]
+        prefix_v = vol[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._momentum_filter_inc_update(prefix_m, prefix_v, 5))
+        b_out.append(ev._momentum_filter_inc_update(prefix_m, prefix_v, 14))
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(a_out, _bar_walk_full_momentum_filter(mom, vol, 5))
+    _assert_series_close(b_out, _bar_walk_full_momentum_filter(mom, vol, 14))
+    assert a_out != b_out
+
+
+def _momentum_filter_last_n(mom: list[Any], vol: list[Any], period: int) -> float:
+    """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
+    if len(mom) < period or len(vol) < period or period <= 0:
+        return 0.0
+    vol_sum = sum(v for v in vol[-period:] if isinstance(v, (int, float)))
+    mom_data = [
+        (mom[i], vol[i])
+        for i in range(-period, 0)
+        if isinstance(mom[i], (int, float)) and isinstance(vol[i], (int, float))
+    ]
+    if not mom_data or vol_sum == 0:
+        return 0.0
+    return sum(m * v for m, v in mom_data) / vol_sum
+
+
+def test_runtime_momentum_filter_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    src = """//@version=5
+indicator("momentum filter")
+f = ta.momentum_filter(close, volume, 5)
+g = ta.momentum_filter(close, volume, 14)
+plot(f, "mf5")
+plot(g, "mf14")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"mf5", "mf14"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses ``_expect_list`` on PineSeries (newest-first), so
+    # ``[-period:]`` is the oldest window — not last-sample. Incremental last
+    # sample is the chronological last-N formula (list-oracle / kernel).
+    closes = [b["close"] for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["mf5"]):
+        exp = _momentum_filter_last_n(closes[: i + 1], vols[: i + 1], 5)
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mf5 bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["mf14"]):
+        exp = _momentum_filter_last_n(closes[: i + 1], vols[: i + 1], 14)
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mf14 bar {i}: {val} != {exp}"
+    assert r_on["series"]["mf5"][0] == pytest.approx(0.0)
+    assert r_off["series"]["mf5"][0] == pytest.approx(0.0)
+    assert r_on["series"]["mf5"][4] != pytest.approx(0.0)
+    assert r_off["series"]["mf5"][4] != pytest.approx(0.0)
