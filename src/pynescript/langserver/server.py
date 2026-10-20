@@ -38,7 +38,7 @@
 - formatting / rangeFormatting / onTypeFormatting
 - inlayHint (+ resolve), semanticTokens/full, semanticTokens/range, foldingRange, selectionRange
 - documentColor / colorPresentation (``#hex`` literals)
-- documentLink (``http(s)`` URLs in comments and string literals)
+- documentLink (+ resolve tooltip) (``http(s)`` URLs in comments and string literals)
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
 
 Advertised capabilities come from :func:`pynescript.langserver.config.get_server_capabilities`
@@ -555,6 +555,11 @@ class PynescriptLanguageServer(LanguageServer):
             result = document_link_feature.handle_document_link(params, doc.source, tree=doc.ast)
             doc.feature_cache["document_link"] = result
             return result
+
+        @self.feature(lsp.DOCUMENT_LINK_RESOLVE)
+        def document_link_resolve(params: lsp.DocumentLink) -> lsp.DocumentLink:
+            """Handle documentLink/resolve request (fill tooltip)."""
+            return document_link_feature.handle_document_link_resolve(params)
 
         @self.feature(lsp.TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL)
         def text_semantic_tokens(

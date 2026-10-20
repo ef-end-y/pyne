@@ -31,6 +31,7 @@ from pynescript.langserver.features.definitions import handle_definition
 from pynescript.langserver.features.document_color import handle_color_presentation
 from pynescript.langserver.features.document_color import handle_document_color
 from pynescript.langserver.features.document_link import handle_document_link
+from pynescript.langserver.features.document_link import handle_document_link_resolve
 from pynescript.langserver.features.folding import handle_folding_range
 from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_on_type_formatting
@@ -2360,6 +2361,46 @@ class TestDocumentLinkHandler:
         for url in found:
             assert _link_at(result, src, url).target == url
 
+    def test_comment_url_has_target_and_resolve_fills_tooltip(self) -> None:
+        """// https://example.com still has target; resolve sets tooltip to it."""
+        src = '//@version=6\nindicator("T")\n// https://example.com\nplot(close)\n'
+        result = handle_document_link(_link_params(), src)
+        link = _link_at(result, src, "https://example.com")
+        assert link.target == "https://example.com"
+        assert link.tooltip is None
+        resolved = handle_document_link_resolve(link)
+        assert resolved.tooltip == "https://example.com"
+        assert resolved.target == "https://example.com"
+
+    def test_handle_document_link_resolve_keeps_existing_tooltip(self) -> None:
+        """Already-resolved tooltip is not overwritten."""
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=19),
+        )
+        link = lsp.DocumentLink(
+            range=rng,
+            target="https://example.com",
+            tooltip="keep me",
+        )
+        resolved = handle_document_link_resolve(link)
+        assert resolved is link
+        assert resolved.tooltip == "keep me"
+
+    def test_handle_document_link_resolve_empty_and_malformed(self) -> None:
+        """Empty / malformed links are returned unchanged and never raise."""
+        from types import SimpleNamespace
+
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=1),
+        )
+        empty = lsp.DocumentLink(range=rng)
+        assert handle_document_link_resolve(empty) is empty
+        assert empty.tooltip is None
+        bogus = SimpleNamespace(tooltip=None, target=None)
+        assert handle_document_link_resolve(bogus) is bogus  # type: ignore[arg-type]
+
 
 class TestInlayHintParameters:
     """Builtin calls get Parameter inlay hints from metadata / well-known names."""
@@ -2619,7 +2660,8 @@ class TestCapabilities:
         assert caps.folding_range_provider is True
         assert caps.selection_range_provider is True
         assert caps.color_provider is True
-        assert caps.document_link_provider is True
+        assert caps.document_link_provider is not None
+        assert caps.document_link_provider.resolve_provider is True
         assert caps.linked_editing_range_provider
         assert caps.document_on_type_formatting_provider is not None
         assert caps.document_on_type_formatting_provider.first_trigger_character == "\n"

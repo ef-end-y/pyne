@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP document-link resolve.** `documentLink/resolve` fills `tooltip` with the URL. Advertised via `documentLinkProvider.resolveProvider`.
 - **LSP 2-arg `ta.bbw(length, mult)` parameter-name inlays.** `ta.bbw(20, 2)` inlay as `length:`/`mult:` (not `source:`/`length:`). 1-arg `ta.bbw(20)` stays `length:`; 3-arg `ta.bbw(close, 20, 2)` stays `source:`/`length:`/`mult:`.
 - **LSP arity-aware well-known parameter names.** 1-arg `ta.cci`/`ta.adx`/`ta.mfi`/`ta.bbw` inlay as `length:`; 2-arg `ta.cci(close, 14)` stays `source:`/`length:`, 2-arg `ta.adx(14, 14)` stays `diLength:`/`adxSmoothing:`.
 - **LSP well-known parameter-name inlays for more builtins.** `textDocument/inlayHint` uses Pine v6 names (`ta.atr` `length`, `ta.correlation` `source1`/`source2`/`length`, `strategy.entry` `id`/`direction`/`qty`, `input.int` `defval`/`title`, plus `ta.cci`/`roc`/`mom`/`linreg`/`adx`/`mfi`/`bbw`/`dpo`/`crossover`/`crossunder`) when metadata snippets are generic `paramN`. Existing `ta.sma`/`ema`/… hints and assignment type hints are unchanged.

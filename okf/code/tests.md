@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-20T20:17:11Z
+  at: 2026-10-20T21:06:49Z
 sources:
   - id: tree
     resource: "tests"
@@ -65,7 +65,7 @@ okf_lock: generated
 * `test_indicators.py` — TestAccdistIndicator, TestIiiIndicator, TestNviPviIndicators, TestPhase7Integration, TestWadIndicator, TestWvadIndicator
 * `test_interp_compile_parity.py` — harness, test_close5_lookback_interp_compile_na_and_values, test_harness_cli_flags_registered, test_harness_compare_ignore_fill_keys, test_harness_compare_ignore_hline_keys, test_harness_constant_hline, test_harness_expected_error_classifier, test_harness_is_fill_background_key, test_harness_mismatch_detail_type_na_and_n_bad, test_harness_normalize_error_auto_fib, test_harness_series_allclose_nan_none, test_harness_summarize_buckets
 * `test_langserver.py` — TestApplyTextEdit, TestDiagnostics, TestTrailingIdent, TestWorkspace
-* `test_langserver_extras_coverage.py` — TestAsdlgen, TestAstMain, TestCollectWorkspaceSymbols, TestConfigExtras, TestDebounceSeconds, TestGenerateTools, TestInlayHints, TestJupyter, TestLangserverMain, TestMetadataDecrypt, TestNautilusStrategy, TestNodeTransformer
+* `test_langserver_extras_coverage.py` — TestAsdlgen, TestAstMain, TestCollectWorkspaceSymbols, TestConfigExtras, TestDebounceSeconds, TestDocumentLinkExtras, TestGenerateTools, TestInlayHints, TestJupyter, TestLangserverMain, TestMetadataDecrypt, TestNautilusStrategy
 * `test_lazy_calendar_plots.py` — TestLazyCalendarContext, TestLightPlots, TestRuntimeLazyCalendar
 * `test_lexer_corpus_fixes.py` — test_bare_name_equal_is_assign_not_reassign, test_bitwise_ops_shift_and_or, test_blank_lines_between_arrow_and_indented_method_body, test_bracket_wrap_any_indent_parity_with_parens, test_c_style_block_comment, test_color_literal_still_parses_after_hash_comment_rule, test_hash_line_comment_not_color, test_inline_block_comment, test_markdown_backticks_ignored, test_multiline_ternary_after_question_with_trailing_spaces, test_multiline_triple_quoted_string_roundtrip, test_multiline_type_new_nested_map_new
 * `test_library_export_import.py` — TestExportConstParse, TestLibraryExportConstRuntime, TestLibraryExportTypeAndEnum, TestLibraryImportRuntime, TestRuntimeGitPublishLibraries
