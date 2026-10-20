@@ -10552,3 +10552,276 @@ plot(g, "fg2")
     assert r_off["series"]["fg"][0] == pytest.approx(0.0)
     assert r_on["series"]["fg"][4] != pytest.approx(0.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: crowd_sentiment incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _crowd_sentiment_last_n(
+    price_agr: list[Any],
+    vol_agr: list[Any],
+    time_agr: list[Any],
+) -> float:
+    """Oracle formula on a chronological prefix (last sample, default 0.5)."""
+    p = price_agr[-1] if price_agr and isinstance(price_agr[-1], (int, float)) else 0.5
+    v = vol_agr[-1] if vol_agr and isinstance(vol_agr[-1], (int, float)) else 0.5
+    t = time_agr[-1] if time_agr and isinstance(time_agr[-1], (int, float)) else 0.5
+    return max(0.0, min(100.0, ((p + v + t) / 3) * 100))
+
+
+def _cs_series(n: int = 120) -> tuple[list[float], list[float], list[float]]:
+    """Price / volume / time agreement with mixed consensus regimes."""
+    price = [0.5 + 0.4 * math.sin(i / 7.0) for i in range(n)]
+    vol = [0.5 + 0.3 * math.sin(i / 5.0) for i in range(n)]
+    time_a = [0.5 + 0.35 * math.sin(i / 6.0) for i in range(n)]
+    return price, vol, time_a
+
+
+def _cs_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: close=price, open=vol, high=time agreement."""
+    bars: list[dict] = []
+    for i in range(n):
+        price = 0.5 + 0.4 * math.sin(i / 7.0)
+        vol = 0.5 + 0.3 * math.sin(i / 5.0)
+        time_a = 0.5 + 0.35 * math.sin(i / 6.0)
+        bars.append(
+            {
+                "open": vol,
+                "high": time_a,
+                "low": 0.5,
+                "close": price,
+                "volume": 1000 + i * 10,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_crowd_sentiment(
+    price_agr: list[Any],
+    vol_agr: list[Any],
+    time_agr: list[Any],
+) -> list[float]:
+    """Full-path oracle: last sample of each arg as a scalar (advanced.py formula)."""
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(price_agr)):
+        out.append(
+            ev._builtin_ta_crowd_sentiment([price_agr[i], vol_agr[i], time_agr[i]])
+        )
+    return out
+
+
+def _bar_walk_inc_crowd_sentiment(
+    price_agr: list[Any],
+    vol_agr: list[Any],
+    time_agr: list[Any],
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(price_agr)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._crowd_sentiment_inc_update(
+                price_agr[: i + 1], vol_agr[: i + 1], time_agr[: i + 1]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_crowd_sentiment_last_sample(
+    price_agr: list[Any],
+    vol_agr: list[Any],
+    time_agr: list[Any],
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(price_agr)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._crowd_sentiment_inc_update(price_agr[i], vol_agr[i], time_agr[i])
+        )
+    return out
+
+
+def test_incremental_crowd_sentiment_matches_full() -> None:
+    price, vol, time_a = _cs_series(120)
+    got = _bar_walk_inc_crowd_sentiment(price, vol, time_a)
+    exp = _bar_walk_full_crowd_sentiment(price, vol, time_a)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_crowd_sentiment_last_sample(price, vol, time_a)
+    _assert_series_close(last, exp)
+    oracle = [
+        _crowd_sentiment_last_n(price[: i + 1], vol[: i + 1], time_a[: i + 1])
+        for i in range(len(price))
+    ]
+    _assert_series_close(got, oracle)
+
+
+def test_incremental_crowd_sentiment_empty() -> None:
+    """Empty / missing last sample → defaults (0.5/0.5/0.5) → 50.0, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._crowd_sentiment_inc_update([], [], []) == pytest.approx(50.0)
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._crowd_sentiment_inc_update(None, None, None) == pytest.approx(50.0)
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_crowd_sentiment([None], [None], [None])
+    oracle_na = [_crowd_sentiment_last_n([None], [None], [None])]
+    _assert_series_close(got_na, oracle_na)
+    assert got_na[0] == pytest.approx(50.0)
+
+
+def test_incremental_crowd_sentiment_neutral() -> None:
+    """All-neutral last samples (0.5/0.5/0.5) mix to 50.0."""
+    price = [0.5, 0.5, 0.5]
+    vol = [0.5, 0.5, 0.5]
+    time_a = [0.5, 0.5, 0.5]
+    got = _bar_walk_inc_crowd_sentiment(price, vol, time_a)
+    exp = _bar_walk_full_crowd_sentiment(price, vol, time_a)
+    _assert_series_close(got, exp)
+    assert got[-1] == pytest.approx(50.0)
+
+
+def test_incremental_crowd_sentiment_non_numeric_last() -> None:
+    """Non-numeric last sample uses the same defaults as the full path."""
+    price: list[Any] = [0.4, 0.6, "x"]
+    vol: list[Any] = [0.3, 0.7, None]
+    time_a: list[Any] = [0.2, 0.8, None]
+    got = _bar_walk_inc_crowd_sentiment(price, vol, time_a)
+    exp = _bar_walk_full_crowd_sentiment(price, vol, time_a)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_crowd_sentiment_last_sample(price, vol, time_a)
+    _assert_series_close(last, exp)
+    # defaults 0.5/0.5/0.5 → 50.0
+    assert got[-1] == pytest.approx(50.0)
+
+
+def test_incremental_crowd_sentiment_clamp() -> None:
+    """Consensus is clamped to [0, 100]."""
+    price_hi = [0.5, 0.5, 2.0]
+    vol_hi = [0.5, 0.5, 2.0]
+    time_hi = [0.5, 0.5, 2.0]
+    got_hi = _bar_walk_inc_crowd_sentiment(price_hi, vol_hi, time_hi)
+    exp_hi = _bar_walk_full_crowd_sentiment(price_hi, vol_hi, time_hi)
+    _assert_series_close(got_hi, exp_hi)
+    assert got_hi[-1] == pytest.approx(100.0)
+
+    price_lo = [0.5, 0.5, -1.0]
+    vol_lo = [0.5, 0.5, -1.0]
+    time_lo = [0.5, 0.5, -1.0]
+    got_lo = _bar_walk_inc_crowd_sentiment(price_lo, vol_lo, time_lo)
+    exp_lo = _bar_walk_full_crowd_sentiment(price_lo, vol_lo, time_lo)
+    _assert_series_close(got_lo, exp_lo)
+    assert got_lo[-1] == pytest.approx(0.0)
+
+
+def test_incremental_crowd_sentiment_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    price, vol, time_a = _cs_series(40)
+    price_na: list[float | None] = list(price)
+    price_na[4] = None
+    ev = _IncTA()
+    for i in range(len(price_na)):
+        ev._ta_call_i = 0
+        ev._crowd_sentiment_inc_update(
+            price_na[: i + 1], vol[: i + 1], time_a[: i + 1]
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_crowd_sentiment_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    price, vol, time_a = _cs_series(30)
+    ev = _IncTA()
+    for i in range(len(price)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_crowd_sentiment(
+            [price[: i + 1], vol[: i + 1], time_a[: i + 1]]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_crowd_sentiment_two_call_sites_independent() -> None:
+    price, vol, time_a = _cs_series(80)
+    price_b = [1.0 - p for p in price]
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(price)):
+        prefix_p = price[: i + 1]
+        prefix_v = vol[: i + 1]
+        prefix_t = time_a[: i + 1]
+        prefix_pb = price_b[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._crowd_sentiment_inc_update(prefix_p, prefix_v, prefix_t))
+        b_out.append(ev._crowd_sentiment_inc_update(prefix_pb, prefix_v, prefix_t))
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(a_out, _bar_walk_full_crowd_sentiment(price, vol, time_a))
+    _assert_series_close(b_out, _bar_walk_full_crowd_sentiment(price_b, vol, time_a))
+    assert a_out != b_out
+
+
+def test_runtime_crowd_sentiment_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _cs_bars(80)
+    src = """//@version=5
+indicator("crowd sentiment")
+f = ta.crowd_sentiment(close, open, high)
+g = ta.crowd_sentiment(volume, close, open)
+plot(f, "cs")
+plot(g, "cs2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"cs", "cs2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses scalar isinstance on PineSeries (newest-first wrap),
+    # so series args default to 0.5 → 50.0 every bar. Incremental last sample is
+    # the chronological prefix formula (list-oracle / kernel). Do not require
+    # incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["cs"]):
+        exp = _crowd_sentiment_last_n(
+            closes[: i + 1], opens[: i + 1], highs[: i + 1]
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"cs bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["cs2"]):
+        exp = _crowd_sentiment_last_n(
+            vols[: i + 1], closes[: i + 1], opens[: i + 1]
+        )
+        assert val == pytest.approx(
+            exp, rel=1e-9, abs=1e-9
+        ), f"cs2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["cs"][0] == pytest.approx(50.0)
+    assert r_off["series"]["cs"][0] == pytest.approx(50.0)
+    assert r_on["series"]["cs"][4] != pytest.approx(50.0)
+

@@ -22,6 +22,7 @@
 - **Bar-mode incremental `ta.volume_thrust` (T2).** Last-sample kernel matches full recompute: last close vs prev close and volume vs volume_sma (`False` while empty).
 - **Bar-mode incremental `ta.liquidity_score` (T2).** Last-sample kernel matches full recompute: last-N volume/volatility/spread mix (`50.0` while short).
 - **Bar-mode incremental `ta.fear_greed_index` (T2).** Last-sample kernel matches full recompute: last rsi/vix/put_call/breadth mix, clamp [-100, 100].
+- **Bar-mode incremental `ta.crowd_sentiment` (T2).** Last-sample kernel matches full recompute: mean of three last samples × 100, clamp [0, 100].
 
 ### Fixed
 

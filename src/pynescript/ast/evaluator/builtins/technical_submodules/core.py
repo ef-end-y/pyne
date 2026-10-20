@@ -2102,6 +2102,37 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _crowd_sentiment_inc_update(
+        self,
+        price_agr: Any,
+        vol_agr: Any,
+        time_agr: Any,
+    ) -> float:
+        """Incremental crowd sentiment matching full ``ta.crowd_sentiment``.
+
+        Last samples of price / volume / time agreement. Empty or missing last
+        sample uses the same default as non-numeric: 0.5. Mix
+        ``((p + v + t) / 3) * 100``, clamp [0, 100]. One call-site slot every
+        bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("crowd_sentiment", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 50.0}
+            bucket[key] = st
+        p_last = self._series_last(price_agr)
+        v_last = self._series_last(vol_agr)
+        t_last = self._series_last(time_agr)
+        p = p_last if isinstance(p_last, (int, float)) else 0.5
+        v = v_last if isinstance(v_last, (int, float)) else 0.5
+        t = t_last if isinstance(t_last, (int, float)) else 0.5
+        consensus = ((p + v + t) / 3) * 100
+        val = max(0.0, min(100.0, consensus))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

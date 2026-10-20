@@ -1184,10 +1184,19 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.crowd_sentiment(price_agreement, volume_agreement, time_agreement)
         Returns: Score (0-100)
+
+        Bar-mode incremental last sample uses ``_crowd_sentiment_inc_update``.
         """
         msg = "ta.crowd_sentiment() requires 3 arguments"
         if len(args) < TERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._crowd_sentiment_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+            )
 
         price_agr = args[0] if isinstance(args[0], (int, float)) else 0.5
         vol_agr = args[1] if isinstance(args[1], (int, float)) else 0.5
