@@ -2419,6 +2419,51 @@ class TestInlayHintParameters:
         assert isinstance(resolved_param.label, str)
         assert not resolved_param.label.startswith(": ")
 
+    def _param_labels(self, source: str) -> list[str]:
+        hints = handle_inlay_hints(self._params(), source)
+        assert hints is not None
+        return [
+            h.label if isinstance(h.label, str) else ""
+            for h in hints
+            if h.kind == lsp.InlayHintKind.Parameter
+        ]
+
+    def test_atr_length_parameter(self) -> None:
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.atr(14))\n')
+        assert any("length" in label for label in labels)
+
+    def test_correlation_parameter_names(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.correlation(close, volume, 20))\n'
+        )
+        assert any("source1" in label for label in labels)
+        assert any("source2" in label for label in labels)
+        assert any("length" in label for label in labels)
+
+    def test_roc_and_crossover_well_known_names(self) -> None:
+        roc = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.roc(close, 9))\n'
+        )
+        assert any("source" in label for label in roc)
+        assert any("length" in label for label in roc)
+        cross = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.crossover(close, open))\n'
+        )
+        assert any("source1" in label for label in cross)
+        assert any("source2" in label for label in cross)
+
+    def test_strategy_entry_and_input_int_names(self) -> None:
+        entry = self._param_labels(
+            '//@version=6\nstrategy("T")\nstrategy.entry("L", strategy.long)\n'
+        )
+        assert any("id" in label for label in entry)
+        assert any("direction" in label for label in entry)
+        inp = self._param_labels(
+            '//@version=6\nindicator("T")\nn = input.int(5, "n")\n'
+        )
+        assert any("defval" in label for label in inp)
+        assert any("title" in label for label in inp)
+
 
 class TestInlayHintResolve:
     """inlayHint/resolve fills textEdits that insert the inferred type annotation."""

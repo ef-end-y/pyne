@@ -64,7 +64,8 @@ _SNIPPET_PLACEHOLDER = re.compile(r"\$\{(\d+):([^}]+)\}|\$\{(\d+)\}|\$(\d+)")
 _GENERIC_PARAM = re.compile(r"^(?:param|arg)\d*$", re.I)
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-# Pine-conventional names when metadata snippets are generic ``paramN``.
+# Pine v6 names when metadata snippets are generic ``paramN``. Multi-arity
+# entries use the longest common positional prefix (TV signatures).
 _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
     "ta.sma": ("source", "length"),
     "ta.ema": ("source", "length"),
@@ -74,6 +75,20 @@ _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
     "ta.hma": ("source", "length"),
     "ta.rsi": ("source", "length"),
     "ta.stdev": ("source", "length"),
+    "ta.atr": ("length",),
+    "ta.cci": ("source", "length"),
+    "ta.roc": ("source", "length"),
+    "ta.mom": ("source", "length"),
+    "ta.linreg": ("source", "length", "offset"),
+    "ta.adx": ("diLength", "adxSmoothing"),
+    "ta.mfi": ("source", "length"),
+    "ta.bbw": ("source", "length", "mult"),
+    "ta.dpo": ("length",),
+    "ta.correlation": ("source1", "source2", "length"),
+    "ta.crossover": ("source1", "source2"),
+    "ta.crossunder": ("source1", "source2"),
+    "strategy.entry": ("id", "direction", "qty"),
+    "input.int": ("defval", "title"),
 }
 
 # Built-in variable → return type. Only the ones the parser/builder treats as
@@ -306,20 +321,19 @@ def _arg_start_position(arg: ast.AST) -> tuple[int, int] | None:
 
 
 def _param_names_from_info(qualified: str, info: dict[str, Any]) -> list[str]:
-    """Parameter names: snippet placeholders, then detail, docs, well-known."""
+    """Parameter names: real snippet placeholders, else longest of detail/docs/well-known."""
     snippet_names = _names_from_snippet(info.get("snippet") or "")
     if snippet_names and not any(_GENERIC_PARAM.fullmatch(n) for n in snippet_names):
         return snippet_names
-    detail_names = _names_from_call_signature(info.get("detail") or "")
-    if detail_names:
-        return detail_names
-    doc_names = _names_from_documentation(info.get("documentation") or "", qualified)
-    if doc_names:
-        return doc_names
-    known = _WELL_KNOWN_PARAMS.get(qualified)
-    if known:
-        return list(known)
-    return snippet_names
+    # Generic ``paramN`` snippets fall through. Prefer the longest positional
+    # prefix so well-known 2-arg names beat a 1-arg docs match (e.g. ``ta.cci``).
+    candidates = [
+        _names_from_call_signature(info.get("detail") or ""),
+        _names_from_documentation(info.get("documentation") or "", qualified),
+        list(_WELL_KNOWN_PARAMS.get(qualified) or ()),
+    ]
+    best = max(candidates, key=len)
+    return best if best else snippet_names
 
 
 def _names_from_snippet(snippet: str) -> list[str]:
