@@ -507,7 +507,9 @@ plot(ta.atr(3), title="catr")
         1-arg ``ta.stoch(n)`` / 2-arg ``ta.stoch(k, d)`` (%K) /
         2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)`` /
         3-arg ``ta.percentile_nearest_rank(source, n, percentage)`` /
-        3-arg ``ta.percentile_linear_interpolation(source, n, percentage)``
+        3-arg ``ta.percentile_linear_interpolation(source, n, percentage)`` /
+        1-arg ``ta.dpo(n)`` / 2-arg ``ta.crossover`` / ``ta.crossunder`` of
+        OHLCV names
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
         ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
@@ -515,6 +517,8 @@ plot(ta.atr(3), title="catr")
         ``ta.bbw``, 4-arg ``ta.stoch(source, high, low, length)``, nested
         ``ta.pivothigh`` / ``ta.pivotlow``, nested
         ``ta.percentile_nearest_rank`` / ``ta.percentile_linear_interpolation``,
+        nested ``ta.dpo`` / 2-arg ``ta.dpo``, nested ``ta.crossover`` /
+        ``ta.crossunder``,
         and nested ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
@@ -548,6 +552,8 @@ plot(request.security(syminfo.tickerid, "60", ta.pivothigh(ta.sma(close, 5), 2, 
 plot(request.security(syminfo.tickerid, "60", ta.pivotlow(ta.ema(close, 5), 2, 2)), title="pln")
 plot(request.security(syminfo.tickerid, "60", ta.percentile_nearest_rank(ta.sma(close, 5), 20, 50)), title="pnrn")
 plot(request.security(syminfo.tickerid, "60", ta.percentile_linear_interpolation(ta.ema(close, 5), 20, 50)), title="plin")
+plot(request.security(syminfo.tickerid, "60", ta.crossover(ta.sma(close, 5), open)), title="xon")
+plot(request.security(syminfo.tickerid, "60", ta.crossunder(close, ta.ema(open, 5))), title="xun")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -770,6 +776,26 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(hlc3, 10, 50.0)"))
         assert m is not None and m.name == "percentile_nearest_rank" and m.source == "hlc3"
         assert m.length == 10 and m.extra == 50
+        m = match_htf_simple_ta_ast(_expr("ta.dpo(21)"))
+        assert m is not None and m.name == "dpo" and m.source == "close" and m.length == 21
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.dpo(3)"))
+        assert m is not None and m.name == "dpo" and m.source == "close" and m.length == 3
+        m = match_htf_simple_ta_ast(_expr("ta.crossover(close, open)"))
+        assert m is not None and m.name == "crossover" and m.source == "close" and m.length == 0
+        assert m.extra == 1
+        m = match_htf_simple_ta_ast(_expr("ta.crossunder(high, low)"))
+        assert m is not None and m.name == "crossunder" and m.source == "high" and m.length == 0
+        assert m.extra == 3
+        m = match_htf_simple_ta_ast(_expr("ta.crossover(hl2, hlc3)"))
+        assert m is not None and m.name == "crossover" and m.source == "hl2" and m.length == 0
+        assert m.extra == 6
+        m = match_htf_simple_ta_ast(_expr("ta.crossunder(ohlc4, volume)"))
+        assert m is not None and m.name == "crossunder" and m.source == "ohlc4" and m.length == 0
+        assert m.extra == 4
+        m = match_htf_simple_ta_ast(_expr("ta.crossover(close, hlcc4)"))
+        assert m is not None and m.name == "crossover" and m.source == "close" and m.length == 0
+        assert m.extra == 8
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -801,6 +827,14 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(close, 20, 50.5)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.percentile_linear_interpolation(close, 20)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(close, 20, -1)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.dpo(ta.sma(close, 5))")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.dpo(close, 21)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.dpo()")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.crossover(ta.sma(close, 5), open)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.crossunder(close, ta.ema(open, 5))")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.crossover(close)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.crossover(close, 50)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.crossunder(close, open, 1)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -2212,6 +2246,71 @@ plot(ta.percentile_nearest_rank(close, 3, 50), title="cpnr")
             abs(float(hpnr[5 * 24 + i]) - float(cpnr_day5[i])) > 1e-6
             for i in range(24)
             if not _is_na(cpnr_day5[i])
+        )
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_dpo_crossover_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 1-arg dpo / OHLCV cross."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.dpo(3)), title="hdpo")
+plot(request.security(syminfo.tickerid, "D", ta.crossover(close, open)), title="hxo")
+plot(request.security(syminfo.tickerid, "D", ta.crossunder(close, open)), title="hxu")
+plot(ta.dpo(3), title="cdpo")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hdpo = out["series"]["hdpo"]
+        hxo = out["series"]["hxo"]
+        hxu = out["series"]["hxu"]
+        daily_opens: list[float] = []
+        daily_closes: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_opens.append(float(chunk[0]["open"]))
+            daily_closes.append(float(chunk[-1]["close"]))
+        # dpo(3) needs 3 unique HTF samples; unique 2 completes at chart 72.
+        # crossover needs 2 unique samples; unique 1 completes at chart 48.
+        assert all(_is_na(x) for x in hdpo[1:72])
+        assert all(_is_na(x) for x in hxo[1:48])
+        assert all(_is_na(x) for x in hxu[1:48])
+        day5_dpo = hdpo[5 * 24 : 6 * 24]
+        day5_xo = hxo[5 * 24 : 6 * 24]
+        day5_xu = hxu[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_dpo)
+        assert all(not _is_na(x) for x in day5_xo)
+        assert all(not _is_na(x) for x in day5_xu)
+        dpo_ref = float(day5_dpo[0])
+        xo_ref = float(day5_xo[0])
+        xu_ref = float(day5_xu[0])
+        for v in day5_dpo:
+            assert abs(float(v) - dpo_ref) < 1e-9
+        for v in day5_xo:
+            assert abs(float(v) - xo_ref) < 1e-9
+        for v in day5_xu:
+            assert abs(float(v) - xu_ref) < 1e-9
+        win = daily_closes[-3:]
+        sma = sum(win) / 3.0
+        disp = 3 // 2 + 1
+        expect_dpo = daily_closes[-disp] - sma
+        assert math.isfinite(expect_dpo)
+        assert abs(float(hdpo[-1]) - expect_dpo) < 1e-9
+        pa, pb = daily_closes[-2], daily_opens[-2]
+        ca, cb = daily_closes[-1], daily_opens[-1]
+        expect_xo = 1.0 if (pa <= pb and ca > cb) else 0.0
+        expect_xu = 1.0 if (pa >= pb and ca < cb) else 0.0
+        assert abs(float(hxo[-1]) - expect_xo) < 1e-9
+        assert abs(float(hxu[-1]) - expect_xu) < 1e-9
+        cdpo_day5 = out["series"]["cdpo"][5 * 24 : 6 * 24]
+        assert any(
+            abs(float(hdpo[5 * 24 + i]) - float(cdpo_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(cdpo_day5[i])
         )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
