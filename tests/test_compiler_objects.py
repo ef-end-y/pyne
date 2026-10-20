@@ -98,6 +98,25 @@ plot(s.sl_value, title="sl")
         assert "error" not in ri, ri.get("error")
         assert ri["series"]["be"] == [0] * 8 or all(float(x) == 0.0 for x in ri["series"]["be"])
 
+    def test_udt_keyword_args_bind_by_field_name(self) -> None:
+        """``Type.new(flag=true, b=close)`` must not shift onto earlier fields."""
+        src = """//@version=6
+indicator("udt-kw")
+type Box
+    float a = 1.0
+    bool flag = false
+    float b = 2.0
+x = Box.new(flag=true, b=close)
+plot(x.flag ? x.a + x.b : -1.0, title="p")
+"""
+        code = transpile(src)
+        assert "'flag': True" in code
+        assert "'a': 1.0" in code or "'a': 1" in code
+        compiled = compile_script(src)
+        o, h, l, c, v = _ohlcv(20)
+        out = compiled.run(o, h, l, c, v)
+        np.testing.assert_allclose(out["p"], c + 1.0)
+
 
 class TestMapCompile:
     def test_map_put_get(self) -> None:

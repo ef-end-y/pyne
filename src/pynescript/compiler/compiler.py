@@ -604,6 +604,8 @@ class CompilerVisitor(NodeVisitor):
     def __init__(self, *, force_object_mode: bool = False):
         super().__init__()
         self.arrays: set[str] = set()
+        # Temp series for history on a call/expression (``ta.lowest(x, n)[k]``).
+        self._hist_expr_n = 0
         self.plots: list[dict] = []
         # Pine ident → last plot()/hline() title (`u = plot(high)` → fill(u, l)).
         self._plot_var_titles: dict[str, str] = {}
@@ -670,6 +672,9 @@ class CompilerVisitor(NodeVisitor):
         # Numeric/mixed tuples (``f() => [1, 2]``): still sequence-marked so
         # ``a = f()`` is a handle, but multi-unpack stays float series.
         self.func_returns_tuple: set[str] = set()
+        # Per-element kinds of a tuple return ("udt" / "string" / "seq" / "num").
+        # A UDT or string element must not be stored through safe_float.
+        self.func_tuple_kinds: dict[str, tuple[str, ...]] = {}
         # Last expr is ``Type.new(...)`` / UDT handle — never float(dict).
         self.func_returns_udt: set[str] = set()
         self.local_sequence_vars: set[str] = set()
@@ -1721,6 +1726,28 @@ class CompilerVisitor(NodeVisitor):
         if isinstance(last_ast, (ast.Assign, ast.ReAssign)):
             return last_ast.value
         return None
+
+    def _tuple_elem_kind(self, expr) -> str:
+        """Kind of one tuple-return element: udt, string, seq, or num."""
+        if expr is None:
+            return "num"
+        if isinstance(expr, ast.Tuple) or self._ast_expr_is_sequence(expr):
+            return "seq"
+        if isinstance(expr, ast.Name):
+            if expr.id in self.udt_vars:
+                return "udt"
+            if expr.id in self.string_series or expr.id in self.string_scalars:
+                return "string"
+            if expr.id in self.local_sequence_vars:
+                return "seq"
+            return "num"
+        if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+            return "string"
+        if self._looks_like_udt_ctor(expr) or self._call_returns_udt(expr):
+            return "udt"
+        if self._is_stringy_value(expr) or self._call_returns_string(expr):
+            return "string"
+        return "num"
 
     def _func_body_returns_udt(self, last_ast) -> bool:
         """True when the UDF result is a UDT instance (``Type.new(...)`` / handle)."""
@@ -3141,6 +3168,29 @@ class CompilerVisitor(NodeVisitor):
                 return f"{py}_arr[__bar_idx] = safe_float({expr})"
             return f"{py}_arr[__bar_idx] = {expr}"
 
+        def _store_kept(name: str, expr: str, kind: str) -> str:
+            """UDT / string / sequence tuple element: keep the value, no safe_float."""
+            self.object_mode = True
+            py = _target_py(name)
+            if self.in_function:
+                self.local_vars.add(name)
+                if kind == "udt":
+                    self._note_udt_var(name)
+                elif kind == "string":
+                    self.string_scalars.add(name)
+                else:
+                    self.local_sequence_vars.add(name)
+                return f"{py} = {expr}"
+            if kind == "seq":
+                return _store_sequence(name, expr)
+            if kind == "string":
+                self.string_series.add(name)
+            else:
+                self._note_udt_var(name)
+            arr_n = self._series_arr_name(name)
+            self.arrays.add(arr_n)
+            return f"{arr_n}[__bar_idx] = {expr}"
+
         def _store_sequence(name: str, expr: str) -> str:
             """Array/list handle → scalar (or UDF local), never float64 series."""
             self.object_mode = True
@@ -3350,6 +3400,18 @@ class CompilerVisitor(NodeVisitor):
                     and uf_name not in getattr(self, "func_returns_udt", set())
                     and not is_import_method
                 )
+                kinds = getattr(self, "func_tuple_kinds", {}).get(uf_name) if uf_name else None
+                if kinds and any(k != "num" for k in kinds):
+                    # [udt, udt, string] = f() must not safe_float the objects away.
+                    lines = [f"__tup = {call_code}"]
+                    for i, name in enumerate(names):
+                        kind = kinds[i] if i < len(kinds) else "num"
+                        expr = _elem_expr(i)
+                        if kind == "num":
+                            lines.append(_store_numeric(name, expr))
+                        else:
+                            lines.append(_store_kept(name, expr, kind))
+                    return "\n".join(lines)
                 numeric_udf = bool(uf_name and uf_name in getattr(self, "func_returns_numeric", set()))
                 if not numeric_udf and not numeric_tuple_udf:
                     self.object_mode = True
@@ -6462,15 +6524,20 @@ class CompilerVisitor(NodeVisitor):
             return f"numba_vwma_inc(close_arr, vol_arr, {self._emit_period(length)}, __bar_idx, {st})"
         if func_name == "ta_mfi":
             # ta.mfi(length) | ta.mfi(source, length) | ta.mfi(h, l, c, v, length)
+            # ``hlc3`` is an expression, not a series array. Treating it as the
+            # length dropped the real period and scored MFI on a daily stub.
             st = self._alloc_fixed_state("mfi", 3)
-            if len(args) >= 5 and _is_series_arr(args[0]):
+            if len(args) >= 5:
                 return (
                     f"numba_mfi_inc({_arr(args[0])}, {_arr(args[1])}, {_arr(args[2])}, "
-                    f"{_arr(args[3])}, int({args[4]}), __bar_idx, {st})"
+                    f"{_arr(args[3])}, {self._emit_period(args[4])}, __bar_idx, {st})"
                 )
-            if len(args) >= 2 and _is_series_arr(args[0]):
+            if len(args) >= 2:
                 src = _arr(args[0])
-                return f"numba_mfi_inc({src}, {src}, {src}, vol_arr, int({args[1]}), __bar_idx, {st})"
+                return (
+                    f"numba_mfi_inc({src}, {src}, {src}, vol_arr, "
+                    f"{self._emit_period(args[1])}, __bar_idx, {st})"
+                )
             length = args[0] if args else "14"
             return f"numba_mfi_inc(high_arr, low_arr, close_arr, vol_arr, {self._emit_period(length)}, __bar_idx, {st})"
         if func_name == "ta_rising":
@@ -7530,18 +7597,31 @@ class CompilerVisitor(NodeVisitor):
         self.object_mode = True
         fields = self.udt_types.get(type_name, [])
         defaults = self.udt_field_defaults.get(type_name, {})
-        args: list[str] = []
+        positional: list[str] = []
+        named: dict[str, str] = {}
         for arg in node.args:
             if hasattr(arg, "value"):
-                args.append(self.visit(arg.value))
+                expr = self.visit(arg.value)
             else:
-                args.append(self.visit(arg))
+                expr = self.visit(arg)
+            name = getattr(arg, "name", None)
+            if name:
+                named[str(name)] = expr
+            else:
+                positional.append(expr)
         items = [f"'__type__': {type_name!r}"]
-        for i, f in enumerate(fields):
-            # Omitted ctor args use the type-body default. ``np.nan`` for
-            # missing bools is ``True`` under ``bool()`` and flips BE/flags.
-            if i < len(args):
-                v = args[i]
+        pos_i = 0
+        for f in fields:
+            # Named args bind to that field. Positionals fill the remaining
+            # fields in declaration order. A keyword must not slide onto the
+            # next field (``Type.new(res=array.new())`` used to overwrite
+            # ``valid``). Omitted args use the type-body default. ``np.nan``
+            # for missing bools is ``True`` under ``bool()`` and flips flags.
+            if f in named:
+                v = named[f]
+            elif pos_i < len(positional):
+                v = positional[pos_i]
+                pos_i += 1
             else:
                 v = defaults.get(f, "np.nan")
             items.append(f"{f!r}: {v}")
@@ -8504,11 +8584,12 @@ class CompilerVisitor(NodeVisitor):
         return False
 
     def _scalar_history_fallback(self, value_expr: str, offset_expr: str) -> str:
-        """History on a non-series value.
+        """History on a literal or a value that is not a per-bar numeric series.
 
         Literals/constants are bar-invariant → return the value when the offset
-        is in range, else na. Function results / strategy stubs / other scalars
-        cannot be rewound without a temp series → na (avoids getitem TypeError).
+        is in range, else na. Script-level numeric calls use a temp series
+        (see :meth:`visit_Subscript`). UDF calls and non-numeric values stay na
+        so a float is never indexed.
         """
         off = self._safe_history_offset(offset_expr)
         if self._is_numeric_or_bool_literal(value_expr):
@@ -8639,6 +8720,22 @@ class CompilerVisitor(NodeVisitor):
                 f"if (__bar_idx >= ({off}) and "
                 f"(__bar_idx - ({off})) < len({hist_arr})) else np.nan))"
             )
+
+        # Per-bar numeric calls and arithmetic have no series of their own.
+        # Store this bar, then read the offset: ``ta.lowest(src, len)[off]``
+        # is that lowest from ``off`` bars ago. Literals stay in the fallback.
+        # A UDF would share one buffer and advance incremental TA once per call.
+        if (
+            not self.in_function
+            and not self._is_numeric_or_bool_literal(arr)
+            and not arr.startswith(("'", '"', "{", "str("))
+            and "'__type__'" not in arr
+        ):
+            buf = f"__hexpr{self._hist_expr_n}_arr"
+            self._hist_expr_n += 1
+            self.arrays.add(buf)
+            off = self._safe_history_offset(slice_val)
+            return f"numba_history_store({buf}, __bar_idx, ({arr}), {off})"
 
         # Strategy / broker scalars, call results, arithmetic, literals, …
         return self._scalar_history_fallback(arr, slice_val)
@@ -9410,10 +9507,15 @@ class CompilerVisitor(NodeVisitor):
         if isinstance(last_ret, ast.Tuple) and not self._ast_expr_is_sequence(last_ret):
             # Numeric/mixed tuple return: ``a = f()`` is a handle; ``[p, q] = f()``
             # still unpacks into float series (see _visit_tuple_assign).
+            # A UDT or string element is remembered so that unpack keeps the value.
             self.func_returns_tuple.add(pine_name)
             self.func_returns_tuple.add(func_name)
             self.func_returns_sequence.add(pine_name)
             self.func_returns_sequence.add(func_name)
+            kinds = tuple(self._tuple_elem_kind(el) for el in last_ret.elts)
+            if any(k != "num" for k in kinds):
+                self.func_tuple_kinds[pine_name] = kinds
+                self.func_tuple_kinds[func_name] = kinds
         if self._func_body_returns_udt(last_ast):
             self.func_returns_udt.add(pine_name)
             self.func_returns_udt.add(func_name)
