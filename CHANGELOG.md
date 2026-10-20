@@ -12,6 +12,7 @@
 - **Bar-mode incremental `ta.momentum_filter` (T2).** Last-sample kernel matches full recompute: last-N volume-weighted momentum (`0.0` while the window is short or volume_sum is 0).
 - **Bar-mode incremental `ta.acceleration_factor` (T2).** Last-sample kernel matches full recompute: last-(period+1) momentum, clamp to [-2, 2], 0.0 while short or old_mom ~ 0.
 - **Bar-mode incremental `ta.mean_reversion_score` (T2).** Last-sample kernel matches full recompute: last close/sma/stdev vs period warmup, score 0–100 (`50.0` while short or stdev is 0).
+- **Bar-mode incremental `ta.market_condition` (T2).** Last-sample kernel matches full recompute: last close/atr vs SMA/stdev windows → `"ranging"` / `"volatile"` / `"trending_up"` / `"trending_down"` (`"ranging"` while short).
 
 ### Fixed
 

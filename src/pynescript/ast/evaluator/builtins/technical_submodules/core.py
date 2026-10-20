@@ -1824,6 +1824,63 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _market_condition_inc_update(
+        self,
+        close: Any,
+        atr: Any,
+        sma_period: int,
+        stdev_period: int,
+    ) -> str:
+        """Incremental market condition matching full ``ta.market_condition``.
+
+        Last-N close deque (``maxlen=max(sma_period, stdev_period)``) plus last
+        ATR sample. ``"ranging"`` while the window is short or either period
+        is ``<=0``. After warmup, last close/atr vs ``_sma`` / ``_stdev`` on
+        the chronological close window: stdev > atr*1.5 → ``"volatile"``;
+        close > sma and atr > 0.5 → ``"trending_up"``; close < sma and
+        atr > 0.5 → ``"trending_down"``; else ``"ranging"``. Non-numeric last
+        close → 0, last atr → 1.0. One call-site slot every bar, including
+        warmup / na.
+        """
+        sma_n = int(sma_period) if sma_period is not None else 0
+        stdev_n = int(stdev_period) if stdev_period is not None else 0
+        slot = self._ta_next_slot()
+        if sma_n <= 0 or stdev_n <= 0:
+            return "ranging"
+        win = max(sma_n, stdev_n)
+        key = ("market_condition", slot, sma_n, stdev_n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"w": deque(maxlen=win), "atr": None, "value": "ranging"}
+            bucket[key] = st
+        w: deque[Any] = st["w"]
+        w.append(self._series_last(close))
+        st["atr"] = self._series_last(atr)
+        if len(w) < win:
+            st["value"] = "ranging"
+            return "ranging"
+        close_window = list(w)
+        c_last = close_window[-1]
+        a_last = st["atr"]
+        current_close = c_last if isinstance(c_last, (int, float)) else 0
+        current_atr = a_last if isinstance(a_last, (int, float)) else 1.0
+        sma_list = self._sma(close_window, sma_n)
+        current_sma = (
+            sma_list[-1] if sma_list and sma_list[-1] is not None else current_close
+        )
+        stdev_val = self._stdev(close_window, stdev_n)
+        if stdev_val and stdev_val > (current_atr * 1.5):
+            val = "volatile"
+        elif current_close > current_sma and current_atr > 0.5:
+            val = "trending_up"
+        elif current_close < current_sma and current_atr > 0.5:
+            val = "trending_down"
+        else:
+            val = "ranging"
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

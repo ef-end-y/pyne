@@ -270,15 +270,27 @@ class AdvancedIndicators(TechnicalHelpers):
         return {"high": high_val, "low": low_val, "mid": mid_val}
 
     def _builtin_ta_market_condition(self, args: list[Any]) -> str:
-        """Market Condition Detection."""
+        """Market Condition Detection.
+
+        Bar-mode incremental last sample uses ``_market_condition_inc_update``.
+        """
         if len(args) < QUATERNARY:
             msg = "ta.market_condition() requires 4 arguments"
             self._error(msg)
 
-        close_list = args[0] if isinstance(args[0], list) else [args[0]]
-        atr_list = args[1] if isinstance(args[1], list) else [args[1]]
         sma_period = self._expect_int(args[2], "sma_period must be integer")
         stdev_period = self._expect_int(args[3], "stdev_period must be integer")
+
+        if self._use_incremental_ta():
+            return self._market_condition_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                sma_period,
+                stdev_period,
+            )
+
+        close_list = args[0] if isinstance(args[0], list) else [args[0]]
+        atr_list = args[1] if isinstance(args[1], list) else [args[1]]
 
         if len(close_list) < max(sma_period, stdev_period):
             return "ranging"

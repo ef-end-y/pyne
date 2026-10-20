@@ -9015,3 +9015,278 @@ plot(g, "mrs5")
     assert r_off["series"]["mrs3"][0] == pytest.approx(50.0)
     assert r_on["series"]["mrs3"][2] != pytest.approx(50.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: market_condition incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _market_condition_last_n(
+    close: list[Any],
+    atr: list[Any],
+    sma_period: int,
+    stdev_period: int,
+) -> str:
+    """Oracle formula on a chronological prefix (same as full ``ta.market_condition``)."""
+    if sma_period <= 0 or stdev_period <= 0:
+        return "ranging"
+    if len(close) < max(sma_period, stdev_period):
+        return "ranging"
+    current_close = close[-1] if isinstance(close[-1], (int, float)) else 0
+    current_atr = atr[-1] if isinstance(atr[-1], (int, float)) else 1.0
+    ev = _FullTA()
+    sma_list = ev._sma(close, sma_period)
+    current_sma = sma_list[-1] if sma_list and sma_list[-1] is not None else current_close
+    stdev_val = ev._stdev(close, stdev_period)
+    if stdev_val and stdev_val > (current_atr * 1.5):
+        return "volatile"
+    if current_close > current_sma and current_atr > 0.5:
+        return "trending_up"
+    if current_close < current_sma and current_atr > 0.5:
+        return "trending_down"
+    return "ranging"
+
+
+def _mc_code(label: str) -> float:
+    return {"ranging": 1.0, "volatile": 2.0, "trending_up": 3.0, "trending_down": 4.0}[label]
+
+
+def _mc_series(n: int = 120) -> tuple[list[float], list[float]]:
+    close = _series(n)
+    atr = [0.8 + (i % 6) * 0.15 for i in range(n)]
+    return close, atr
+
+
+def _bar_walk_full_market_condition(
+    close: list[Any],
+    atr: list[Any],
+    sma_period: int,
+    stdev_period: int,
+) -> list[str]:
+    ev = _FullTA()
+    out: list[str] = []
+    for i in range(len(close)):
+        out.append(
+            ev._builtin_ta_market_condition(
+                [close[: i + 1], atr[: i + 1], sma_period, stdev_period]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_market_condition(
+    close: list[Any],
+    atr: list[Any],
+    sma_period: int,
+    stdev_period: int,
+) -> list[str]:
+    ev = _IncTA()
+    out: list[str] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._market_condition_inc_update(
+                close[: i + 1], atr[: i + 1], sma_period, stdev_period
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_market_condition_last_sample(
+    close: list[Any],
+    atr: list[Any],
+    sma_period: int,
+    stdev_period: int,
+) -> list[str]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[str] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._market_condition_inc_update(close[i], atr[i], sma_period, stdev_period)
+        )
+    return out
+
+
+def test_incremental_market_condition_matches_full() -> None:
+    close, atr = _mc_series(120)
+    sma_period, stdev_period = 3, 5
+    got = _bar_walk_inc_market_condition(close, atr, sma_period, stdev_period)
+    exp = _bar_walk_full_market_condition(close, atr, sma_period, stdev_period)
+    assert got == exp
+    last = _bar_walk_inc_market_condition_last_sample(close, atr, sma_period, stdev_period)
+    assert last == exp
+    oracle = [
+        _market_condition_last_n(close[: i + 1], atr[: i + 1], sma_period, stdev_period)
+        for i in range(len(close))
+    ]
+    assert got == oracle
+
+
+def test_incremental_market_condition_warmup() -> None:
+    """Window shorter than max(sma, stdev), empty, None, or period<=0 is ``ranging``."""
+    close = [100.0, 101.0]
+    atr = [1.0, 1.1]
+    sma_period, stdev_period = 5, 3
+    got = _bar_walk_inc_market_condition(close, atr, sma_period, stdev_period)
+    exp = _bar_walk_full_market_condition(close, atr, sma_period, stdev_period)
+    assert got == exp
+    assert got == ["ranging", "ranging"]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._market_condition_inc_update([], [], 5, 3) == "ranging"
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._market_condition_inc_update(None, None, 5, 3) == "ranging"
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._market_condition_inc_update(1.0, 1.0, 0, 5) == "ranging"
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._market_condition_inc_update(1.0, 1.0, 5, 0) == "ranging"
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._market_condition_inc_update(1.0, 1.0, -3, 5) == "ranging"
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_market_condition([None], [None], 5, 3)
+    exp_na = _bar_walk_full_market_condition([None], [None], 5, 3)
+    assert got_na == exp_na
+    assert got_na[0] == "ranging"
+
+
+def test_incremental_market_condition_classifies() -> None:
+    """Last close/atr vs SMA/stdev windows: ranging / volatile / trending_up / down."""
+    cases: list[tuple[list[float], list[float], int, int, str]] = [
+        ([98.0, 99.0, 100.0, 101.0, 102.0], [1.0] * 5, 3, 2, "trending_up"),
+        ([102.0, 101.0, 100.0, 99.0, 98.0], [1.0] * 5, 3, 2, "trending_down"),
+        ([100.0, 101.0, 100.0, 101.0, 100.0], [0.5] * 5, 3, 2, "ranging"),
+        ([100.0, 50.0, 150.0, 50.0, 150.0], [1.0] * 5, 3, 5, "volatile"),
+    ]
+    for close, atr, sma_p, stdev_p, label in cases:
+        got = _bar_walk_inc_market_condition(close, atr, sma_p, stdev_p)
+        exp = _bar_walk_full_market_condition(close, atr, sma_p, stdev_p)
+        assert got == exp, f"{label}: {got} vs {exp}"
+        last = _bar_walk_inc_market_condition_last_sample(close, atr, sma_p, stdev_p)
+        assert last == exp
+        assert got[-1] == label
+        assert got[0] == "ranging"
+
+
+def test_incremental_market_condition_non_numeric_last() -> None:
+    """Non-numeric last close → 0; last atr → 1.0 (same as full path)."""
+    sma_period, stdev_period = 3, 2
+    close: list[Any] = [100.0, 101.0, 102.0, "x"]
+    atr: list[Any] = [1.0, 1.0, 1.0, None]
+    got = _bar_walk_inc_market_condition(close, atr, sma_period, stdev_period)
+    exp = _bar_walk_full_market_condition(close, atr, sma_period, stdev_period)
+    assert got == exp
+    last = _bar_walk_inc_market_condition_last_sample(close, atr, sma_period, stdev_period)
+    assert last == exp
+    assert got[-1] == _market_condition_last_n(close, atr, sma_period, stdev_period)
+
+
+def test_incremental_market_condition_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    close: list[float | None]
+    close, atr = _mc_series(40)
+    close_na: list[float | None] = list(close)
+    close_na[4] = None
+    ev = _IncTA()
+    for i in range(len(close_na)):
+        ev._ta_call_i = 0
+        ev._market_condition_inc_update(
+            close_na[: i + 1], atr[: i + 1], 5, 3
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_market_condition_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    close, atr = _mc_series(30)
+    ev = _IncTA()
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_market_condition(
+            [close[: i + 1], atr[: i + 1], 5, 3]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_market_condition_two_call_sites_independent() -> None:
+    close, atr = _mc_series(80)
+    ev = _IncTA()
+    a_out: list[str] = []
+    b_out: list[str] = []
+    for i in range(len(close)):
+        prefix_c = close[: i + 1]
+        prefix_a = atr[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._market_condition_inc_update(prefix_c, prefix_a, 3, 2)
+        )
+        b_out.append(
+            ev._market_condition_inc_update(prefix_c, prefix_a, 5, 8)
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    assert a_out == _bar_walk_full_market_condition(close, atr, 3, 2)
+    assert b_out == _bar_walk_full_market_condition(close, atr, 5, 8)
+    assert a_out != b_out
+
+
+def test_runtime_market_condition_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    src = """//@version=5
+indicator("market condition")
+f = ta.market_condition(close, volume, 3, 2)
+g = ta.market_condition(close, volume, 5, 8)
+plot(f == "ranging" ? 1 : f == "volatile" ? 2 : f == "trending_up" ? 3 : 4, "mc32")
+plot(g == "ranging" ? 1 : g == "volatile" ? 2 : g == "trending_up" ? 3 : 4, "mc58")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"mc32", "mc58"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses newest-first PineSeries wrapped as a 1-list, so
+    # last-sample is not chronological. Incremental last sample is the
+    # chronological prefix formula (list-oracle / kernel). Do not require
+    # incremental == disabled for every bar.
+    closes = [b["close"] for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["mc32"]):
+        exp = _mc_code(_market_condition_last_n(closes[: i + 1], vols[: i + 1], 3, 2))
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mc32 bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["mc58"]):
+        exp = _mc_code(_market_condition_last_n(closes[: i + 1], vols[: i + 1], 5, 8))
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mc58 bar {i}: {val} != {exp}"
+    assert r_on["series"]["mc32"][0] == pytest.approx(1.0)
+    assert r_off["series"]["mc32"][0] == pytest.approx(1.0)
+    assert r_on["series"]["mc32"][2] != pytest.approx(1.0)
+
