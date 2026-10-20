@@ -1146,10 +1146,20 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.fear_greed_index(rsi, vix_proxy, put_call_ratio, breadth)
         Returns: Score (-100 to 100)
+
+        Bar-mode incremental last sample uses ``_fear_greed_index_inc_update``.
         """
         msg = "ta.fear_greed_index() requires 4 arguments"
         if len(args) < QUATERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._fear_greed_index_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
 
         rsi = self._expect_list(args[0], msg)
         vix = self._expect_list(args[1], msg)

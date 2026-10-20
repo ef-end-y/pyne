@@ -2064,6 +2064,44 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _fear_greed_index_inc_update(
+        self,
+        rsi: Any,
+        vix: Any,
+        put_call: Any,
+        breadth: Any,
+    ) -> float:
+        """Incremental fear greed index matching full ``ta.fear_greed_index``.
+
+        Last samples of rsi / vix / put_call / breadth. Empty or missing last
+        sample uses the same defaults as non-numeric: 50 / 2 / 1 / 0.5. Mix
+        ``(rsi_fear + vix_fear + pc_fear + b_fear) / 4``, clamp [-100, 100].
+        One call-site slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("fear_greed_index", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 0.0}
+            bucket[key] = st
+        rsi_last = self._series_last(rsi)
+        vix_last = self._series_last(vix)
+        pc_last = self._series_last(put_call)
+        b_last = self._series_last(breadth)
+        rsi_val = rsi_last if isinstance(rsi_last, (int, float)) else 50.0
+        vix_val = vix_last if isinstance(vix_last, (int, float)) else 2.0
+        pc_val = pc_last if isinstance(pc_last, (int, float)) else 1.0
+        b_val = b_last if isinstance(b_last, (int, float)) else 0.5
+        rsi_fear = (rsi_val - 50) * 1.0
+        vix_fear = (vix_val - 2.0) * 10.0
+        pc_fear = (1.0 - pc_val) * 50.0
+        b_fear = (b_val - 0.5) * 100.0
+        fear_index = (rsi_fear + vix_fear + pc_fear + b_fear) / 4
+        val = max(-100.0, min(100.0, fear_index))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

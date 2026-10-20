@@ -10250,3 +10250,305 @@ plot(g, "liq14")
     assert r_off["series"]["liq5"][0] == pytest.approx(50.0)
     assert r_on["series"]["liq5"][4] != pytest.approx(50.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: fear_greed_index incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _fear_greed_index_last_n(
+    rsi: list[Any],
+    vix: list[Any],
+    put_call: list[Any],
+    breadth: list[Any],
+) -> float:
+    """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
+    rsi_val = rsi[-1] if rsi and isinstance(rsi[-1], (int, float)) else 50.0
+    vix_val = vix[-1] if vix and isinstance(vix[-1], (int, float)) else 2.0
+    pc_val = put_call[-1] if put_call and isinstance(put_call[-1], (int, float)) else 1.0
+    b_val = breadth[-1] if breadth and isinstance(breadth[-1], (int, float)) else 0.5
+    rsi_fear = (rsi_val - 50) * 1.0
+    vix_fear = (vix_val - 2.0) * 10.0
+    pc_fear = (1.0 - pc_val) * 50.0
+    b_fear = (b_val - 0.5) * 100.0
+    fear_index = (rsi_fear + vix_fear + pc_fear + b_fear) / 4
+    return max(-100.0, min(100.0, fear_index))
+
+
+def _fg_series(n: int = 120) -> tuple[list[float], list[float], list[float], list[float]]:
+    """RSI / VIX / put-call / breadth with mixed fear and greed regimes."""
+    rsi = [50.0 + 20.0 * math.sin(i / 7.0) for i in range(n)]
+    vix = [2.0 + 1.5 * math.sin(i / 5.0) for i in range(n)]
+    put_call = [1.0 + 0.4 * math.sin(i / 4.0) for i in range(n)]
+    breadth = [0.5 + 0.3 * math.sin(i / 6.0) for i in range(n)]
+    return rsi, vix, put_call, breadth
+
+
+def _fg_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: close=rsi, open=vix, high=put_call, low=breadth."""
+    bars: list[dict] = []
+    for i in range(n):
+        rsi = 50.0 + 20.0 * math.sin(i / 7.0)
+        vix = 2.0 + 1.5 * math.sin(i / 5.0)
+        pc = 1.0 + 0.4 * math.sin(i / 4.0)
+        breadth = 0.5 + 0.3 * math.sin(i / 6.0)
+        bars.append(
+            {
+                "open": vix,
+                "high": pc,
+                "low": breadth,
+                "close": rsi,
+                "volume": 1000 + i * 10,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_fear_greed_index(
+    rsi: list[Any],
+    vix: list[Any],
+    put_call: list[Any],
+    breadth: list[Any],
+) -> list[float]:
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(rsi)):
+        out.append(
+            ev._builtin_ta_fear_greed_index(
+                [rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_fear_greed_index(
+    rsi: list[Any],
+    vix: list[Any],
+    put_call: list[Any],
+    breadth: list[Any],
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(rsi)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._fear_greed_index_inc_update(
+                rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_fear_greed_index_last_sample(
+    rsi: list[Any],
+    vix: list[Any],
+    put_call: list[Any],
+    breadth: list[Any],
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(rsi)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._fear_greed_index_inc_update(rsi[i], vix[i], put_call[i], breadth[i])
+        )
+    return out
+
+
+def test_incremental_fear_greed_index_matches_full() -> None:
+    rsi, vix, put_call, breadth = _fg_series(120)
+    got = _bar_walk_inc_fear_greed_index(rsi, vix, put_call, breadth)
+    exp = _bar_walk_full_fear_greed_index(rsi, vix, put_call, breadth)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_fear_greed_index_last_sample(rsi, vix, put_call, breadth)
+    _assert_series_close(last, exp)
+    oracle = [
+        _fear_greed_index_last_n(
+            rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]
+        )
+        for i in range(len(rsi))
+    ]
+    _assert_series_close(got, oracle)
+
+
+def test_incremental_fear_greed_index_empty() -> None:
+    """Empty / missing last sample → defaults (50/2/1/0.5) → 0.0, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._fear_greed_index_inc_update([], [], [], []) == pytest.approx(0.0)
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._fear_greed_index_inc_update(None, None, None, None) == pytest.approx(0.0)
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_fear_greed_index([None], [None], [None], [None])
+    oracle_na = [_fear_greed_index_last_n([None], [None], [None], [None])]
+    _assert_series_close(got_na, oracle_na)
+    assert got_na[0] == pytest.approx(0.0)
+
+
+def test_incremental_fear_greed_index_neutral() -> None:
+    """All-neutral last samples (50/2/1/0.5) mix to 0.0."""
+    rsi = [50.0, 50.0, 50.0]
+    vix = [2.0, 2.0, 2.0]
+    put_call = [1.0, 1.0, 1.0]
+    breadth = [0.5, 0.5, 0.5]
+    got = _bar_walk_inc_fear_greed_index(rsi, vix, put_call, breadth)
+    exp = _bar_walk_full_fear_greed_index(rsi, vix, put_call, breadth)
+    _assert_series_close(got, exp)
+    assert got[-1] == pytest.approx(0.0)
+
+
+def test_incremental_fear_greed_index_non_numeric_last() -> None:
+    """Non-numeric last sample uses the same defaults as the full path."""
+    rsi: list[Any] = [40.0, 60.0, "x"]
+    vix: list[Any] = [1.5, 3.0, None]
+    put_call: list[Any] = [0.8, 1.2, None]
+    breadth: list[Any] = [0.4, 0.6, None]
+    got = _bar_walk_inc_fear_greed_index(rsi, vix, put_call, breadth)
+    exp = _bar_walk_full_fear_greed_index(rsi, vix, put_call, breadth)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_fear_greed_index_last_sample(rsi, vix, put_call, breadth)
+    _assert_series_close(last, exp)
+    # defaults 50/2/1/0.5 → 0.0
+    assert got[-1] == pytest.approx(0.0)
+
+
+def test_incremental_fear_greed_index_clamp() -> None:
+    """Index is clamped to [-100, 100]."""
+    rsi_hi = [50.0, 50.0, 200.0]
+    vix_hi = [2.0, 2.0, 50.0]
+    pc_hi = [1.0, 1.0, -10.0]
+    b_hi = [0.5, 0.5, 10.0]
+    got_hi = _bar_walk_inc_fear_greed_index(rsi_hi, vix_hi, pc_hi, b_hi)
+    exp_hi = _bar_walk_full_fear_greed_index(rsi_hi, vix_hi, pc_hi, b_hi)
+    _assert_series_close(got_hi, exp_hi)
+    assert got_hi[-1] == pytest.approx(100.0)
+
+    rsi_lo = [50.0, 50.0, -200.0]
+    vix_lo = [2.0, 2.0, -50.0]
+    pc_lo = [1.0, 1.0, 20.0]
+    b_lo = [0.5, 0.5, -10.0]
+    got_lo = _bar_walk_inc_fear_greed_index(rsi_lo, vix_lo, pc_lo, b_lo)
+    exp_lo = _bar_walk_full_fear_greed_index(rsi_lo, vix_lo, pc_lo, b_lo)
+    _assert_series_close(got_lo, exp_lo)
+    assert got_lo[-1] == pytest.approx(-100.0)
+
+
+def test_incremental_fear_greed_index_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    rsi, vix, put_call, breadth = _fg_series(40)
+    rsi_na: list[float | None] = list(rsi)
+    rsi_na[4] = None
+    ev = _IncTA()
+    for i in range(len(rsi_na)):
+        ev._ta_call_i = 0
+        ev._fear_greed_index_inc_update(
+            rsi_na[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_fear_greed_index_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    rsi, vix, put_call, breadth = _fg_series(30)
+    ev = _IncTA()
+    for i in range(len(rsi)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_fear_greed_index(
+            [rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_fear_greed_index_two_call_sites_independent() -> None:
+    rsi, vix, put_call, breadth = _fg_series(80)
+    rsi_b = [100.0 - r for r in rsi]
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(rsi)):
+        prefix_r = rsi[: i + 1]
+        prefix_v = vix[: i + 1]
+        prefix_p = put_call[: i + 1]
+        prefix_b = breadth[: i + 1]
+        prefix_rb = rsi_b[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._fear_greed_index_inc_update(prefix_r, prefix_v, prefix_p, prefix_b)
+        )
+        b_out.append(
+            ev._fear_greed_index_inc_update(prefix_rb, prefix_v, prefix_p, prefix_b)
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(
+        a_out, _bar_walk_full_fear_greed_index(rsi, vix, put_call, breadth)
+    )
+    _assert_series_close(
+        b_out, _bar_walk_full_fear_greed_index(rsi_b, vix, put_call, breadth)
+    )
+    assert a_out != b_out
+
+
+def test_runtime_fear_greed_index_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _fg_bars(80)
+    src = """//@version=5
+indicator("fear greed")
+f = ta.fear_greed_index(close, open, high, low)
+g = ta.fear_greed_index(volume, close, open, high)
+plot(f, "fg")
+plot(g, "fg2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"fg", "fg2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses ``_expect_list`` on PineSeries (newest-first), so
+    # last-sample on the reversed list is the oldest bar — not chronological
+    # last-sample. Incremental last sample is the chronological prefix formula
+    # (list-oracle / kernel). Do not require incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["fg"]):
+        exp = _fear_greed_index_last_n(
+            closes[: i + 1], opens[: i + 1], highs[: i + 1], lows[: i + 1]
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"fg bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["fg2"]):
+        exp = _fear_greed_index_last_n(
+            vols[: i + 1], closes[: i + 1], opens[: i + 1], highs[: i + 1]
+        )
+        assert val == pytest.approx(
+            exp, rel=1e-9, abs=1e-9
+        ), f"fg2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["fg"][0] == pytest.approx(0.0)
+    assert r_off["series"]["fg"][0] == pytest.approx(0.0)
+    assert r_on["series"]["fg"][4] != pytest.approx(0.0)
+
