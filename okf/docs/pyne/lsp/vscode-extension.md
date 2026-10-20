@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "VS Code Extension"
-description: "PYNE VS Code extension: HOOX branding, TextMate grammar, LanguageClient wiring, settings, and VSIX build."
+description: "PYNE VS Code extension: LanguageClient host for pyne-lsp, TextMate grammar, settings, and VSIX 0.4.4."
 resource: "docs/pyne/lsp/vscode-extension.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-20T18:53:06Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/vscode-extension.mdx"
@@ -27,6 +27,7 @@ Repo path `docs/pyne/lsp/vscode-extension.mdx`.
 * Interface surface
   * Package identity
   * Language contribution
+  * Hosted pyne-lsp methods (not reimplemented in TypeScript)
   * Activation
   * Settings (pynescript.)
   * Commands
@@ -37,3 +38,8 @@ Repo path `docs/pyne/lsp/vscode-extension.mdx`.
 * Worked example — extension development
 * Failure modes
 * See also
+
+# Mentions
+
+* [src/pynescript](/code/src/pynescript.md)
+* [src/pynescript/langserver](/code/src/pynescript/langserver.md)
