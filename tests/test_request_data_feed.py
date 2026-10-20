@@ -72,6 +72,30 @@ def _daily_bars(n: int = 40, start: float = 100.0) -> list[dict]:
     return _bars(n, start=start, step_ms=86_400_000)
 
 
+def _expect_pivot_confirm(
+    src: list[float], left: int, right: int, *, is_high: bool
+) -> float | None:
+    """Last-sample ``ta.pivothigh`` / ``ta.pivotlow`` on a chronological unique series."""
+    need = left + right + 1
+    if len(src) < need:
+        return None
+    center_i = len(src) - 1 - right
+    val = src[center_i]
+    lo = center_i - left
+    hi = center_i + right
+    for j in range(lo, hi + 1):
+        if j == center_i:
+            continue
+        other = src[j]
+        left_side = j < center_i
+        if is_high:
+            if (other > val) if left_side else (other >= val):
+                return None
+        elif (other < val) if left_side else (other <= val):
+            return None
+    return val
+
+
 def _is_na(v: object) -> bool:
     if v is None:
         return True
@@ -480,12 +504,14 @@ plot(ta.atr(3), title="catr")
         0-arg ``ta.nvi()`` / 0-arg ``ta.pvi()`` / 0-arg ``ta.accdist()`` /
         0-arg ``ta.wad()`` / 0-arg ``ta.tr()`` / 2-arg ``ta.tsi(short, long)`` /
         2-arg ``ta.bbw(n, mult)`` / 3-arg ``ta.bbw(source, n, mult)`` /
-        1-arg ``ta.stoch(n)`` / 2-arg ``ta.stoch(k, d)`` (%K)
+        1-arg ``ta.stoch(n)`` / 2-arg ``ta.stoch(k, d)`` (%K) /
+        2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
         ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
         3-arg ``ta.tsi(source, short, long)``, nested ``ta.bbw``, 1-arg
-        ``ta.bbw``, 4-arg ``ta.stoch(source, high, low, length)``, and nested
+        ``ta.bbw``, 4-arg ``ta.stoch(source, high, low, length)``, nested
+        ``ta.pivothigh`` / ``ta.pivotlow``, and nested
         ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
@@ -515,6 +541,8 @@ plot(request.security(syminfo.tickerid, "60", ta.tr(high, low, close)), title="t
 plot(request.security(syminfo.tickerid, "60", ta.tsi(close, 13, 25)), title="tsi3")
 plot(request.security(syminfo.tickerid, "60", ta.bbw(ta.sma(close, 5), 5, 2)), title="bbwn")
 plot(request.security(syminfo.tickerid, "60", ta.stoch(close, high, low, 5)), title="stoch4")
+plot(request.security(syminfo.tickerid, "60", ta.pivothigh(ta.sma(close, 5), 2, 2)), title="phn")
+plot(request.security(syminfo.tickerid, "60", ta.pivotlow(ta.ema(close, 5), 2, 2)), title="pln")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -527,6 +555,8 @@ plot(request.security(syminfo.tickerid, "60", ta.stoch(close, high, low, 5)), ti
         assert all(_is_na(x) for x in out["series"]["tsi3"])
         assert all(_is_na(x) for x in out["series"]["bbwn"])
         assert all(_is_na(x) for x in out["series"]["stoch4"])
+        assert all(_is_na(x) for x in out["series"]["phn"])
+        assert all(_is_na(x) for x in out["series"]["pln"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -712,6 +742,18 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.stoch(14, 3)"))
         assert m is not None and m.name == "stoch" and m.source is None and m.length == 14
         assert m.extra == 3
+        m = match_htf_simple_ta_ast(_expr("ta.pivothigh(2, 2)"))
+        assert m is not None and m.name == "pivothigh" and m.source == "high" and m.length == 2
+        assert m.extra == 2
+        m = match_htf_simple_ta_ast(_expr("ta.pivotlow(2, 2)"))
+        assert m is not None and m.name == "pivotlow" and m.source == "low" and m.length == 2
+        assert m.extra == 2
+        m = match_htf_simple_ta_ast(_expr("ta.pivothigh(close, 2, 2)"))
+        assert m is not None and m.name == "pivothigh" and m.source == "close" and m.length == 2
+        assert m.extra == 2
+        m = match_htf_simple_ta_ast(_expr("ta.pivotlow(hl2, 3, 1)"))
+        assert m is not None and m.name == "pivotlow" and m.source == "hl2" and m.length == 3
+        assert m.extra == 1
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -734,6 +776,10 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.bbw(close, 20, 2.5)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.stoch(close, high, low, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.stoch(ta.sma(close, 5), high, low, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.pivothigh(ta.sma(close, 5), 2, 2)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.pivotlow(ta.ema(close, 5), 2, 2)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.pivothigh(2)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.pivotlow()")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -2033,6 +2079,62 @@ plot(ta.stoch(3), title="cstoch")
             for i in range(24)
             if not _is_na(cstoch_day5[i])
         )
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_pivot_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 2-arg pivothigh / pivotlow."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        # Force a daily pivot at unique[4] (day 4) so left=2, right=2 confirms
+        # once unique[6] completes (chart bar 168 = start of forming day 7).
+        for b in bars[4 * 24 : 5 * 24]:
+            b["high"] = float(b["high"]) + 200.0
+            b["low"] = max(float(b["low"]) - 200.0, 0.01)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.pivothigh(2, 2)), title="hph")
+plot(request.security(syminfo.tickerid, "D", ta.pivotlow(2, 2)), title="hpl")
+plot(ta.pivothigh(2, 2), title="cph")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hph = out["series"]["hph"]
+        hpl = out["series"]["hpl"]
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+        # pivot(2,2) needs 5 unique HTF bars; unique 4 completes at chart 120,
+        # but the day-4 extreme confirms only after unique 6 (chart 168).
+        assert all(_is_na(x) for x in hph[1:168])
+        assert all(_is_na(x) for x in hpl[1:168])
+        day7_ph = hph[7 * 24 :]
+        day7_pl = hpl[7 * 24 :]
+        assert all(not _is_na(x) for x in day7_ph)
+        assert all(not _is_na(x) for x in day7_pl)
+        ph_ref = float(day7_ph[0])
+        pl_ref = float(day7_pl[0])
+        for v in day7_ph:
+            assert abs(float(v) - ph_ref) < 1e-9
+        for v in day7_pl:
+            assert abs(float(v) - pl_ref) < 1e-9
+        expect_ph = _expect_pivot_confirm(daily_highs, 2, 2, is_high=True)
+        expect_pl = _expect_pivot_confirm(daily_lows, 2, 2, is_high=False)
+        assert expect_ph is not None and math.isfinite(expect_ph)
+        assert expect_pl is not None and math.isfinite(expect_pl)
+        assert abs(float(hph[-1]) - expect_ph) < 1e-9
+        assert abs(float(hpl[-1]) - expect_pl) < 1e-9
+        cph_day7 = out["series"]["cph"][7 * 24 :]
+        assert any(
+            abs(float(hph[7 * 24 + i]) - float(cph_day7[i])) > 1e-6
+            for i in range(len(day7_ph))
+            if not _is_na(cph_day7[i])
+        ) or all(_is_na(x) for x in cph_day7)
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

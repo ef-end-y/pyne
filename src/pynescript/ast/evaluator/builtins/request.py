@@ -150,6 +150,8 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "tsi",
         "bbw",
         "stoch",
+        "pivothigh",
+        "pivotlow",
     }
 )
 
@@ -169,9 +171,10 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw/stoch "
+    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw/stoch/"
+    "pivothigh/pivotlow "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf/stoch "
-    "and 2-arg ta.stoch(k, d) on coarser TF "
+    "and 2-arg ta.stoch(k, d) / ta.pivothigh(left, right) / ta.pivotlow(left, right) on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -201,10 +204,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch
-    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); else None
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow
+    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -285,6 +288,10 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.stoch(14, 3)`` — two positive int literals; same %K (``length`` is
       kPeriod, ``extra`` is dPeriod, unused for %K). 4-arg
       ``ta.stoch(source, high, low, length)`` stays unmatched.
+    - ``ta.pivothigh(2, 2)`` / ``ta.pivotlow(2, 2)`` — two non-negative int
+      literals; ``source`` is HTF high / low, ``length`` is left, ``extra``
+      is right. Optional 3-arg ``ta.pivothigh(close, left, right)`` when
+      source is an OHLCV Name. Nested source unmatched.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -307,6 +314,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       stays unmatched.
 
     Nested calls (``ta.sma(ta.ema(...), n)`` / ``ta.highest(ta.sma(...), n)`` /
+    ``ta.pivothigh(ta.sma(...), n, n)`` / ``ta.pivotlow(ta.ema(...), n, n)`` /
     ``ta.median(ta.sma(...), n)`` / ``ta.mode(ta.sma(...), n)`` /
     ``ta.cog(ta.sma(...), n)`` / ``ta.highestbars(ta.sma(...), n)`` /
     ``ta.kama(ta.sma(...), n)`` / ``ta.rising(ta.sma(...), n)`` /
@@ -323,7 +331,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
     2-arg ``ta.nvi`` / ``ta.pvi``, 4-arg ``ta.accdist`` / ``ta.wad``,
     3-arg ``ta.tr`` / ``ta.tsi``, 1-arg ``ta.bbw``, 4-arg ``ta.stoch``,
-    5-arg ``ta.cmf``,
+    nested ``ta.pivothigh`` / ``ta.pivotlow``, 5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -429,6 +437,26 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if k is None or d is None:
             return None
         return HtfSimpleTaExpr("stoch", None, k, extra=d)
+
+    if fname in ("pivothigh", "pivotlow"):
+        default_src = "high" if fname == "pivothigh" else "low"
+        if len(arg_nodes) == 2:  # noqa: PLR2004 - 2-arg (left, right)
+            left = _const_nonneg_int(arg_nodes[0].value)
+            right = _const_nonneg_int(arg_nodes[1].value)
+            if left is None or right is None:
+                return None
+            return HtfSimpleTaExpr(fname, default_src, left, extra=right)
+        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, left, right)
+            return None
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        left = _const_nonneg_int(arg_nodes[1].value)
+        right = _const_nonneg_int(arg_nodes[2].value)
+        if src is None or left is None or right is None:
+            return None
+        return HtfSimpleTaExpr(fname, src, left, extra=right)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2664,6 +2692,88 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = 100.0 * (fv_c - ll) / (hh - ll)
         return out
 
+    @staticmethod
+    def _htf_pivot_confirm(
+        window: list[float | None], left: int, right: int, *, is_high: bool
+    ) -> float | None:
+        """Match interpret ``_pivot_confirm_window`` on a chronological prefix.
+
+        Center is ``right`` before the newest sample. A tie on the left still
+        confirms; the right side must be a strict extreme.
+        """
+        need = left + right + 1
+        if left < 0 or right < 0 or len(window) < need:
+            return None
+        center_i = len(window) - 1 - right
+        val = window[center_i]
+        if val is None:
+            return None
+        try:
+            fv = float(val)
+        except (TypeError, ValueError):
+            return None
+        if fv != fv:
+            return None
+        lo = center_i - left
+        hi = center_i + right
+        for j in range(lo, hi + 1):
+            if j == center_i:
+                continue
+            other = window[j]
+            if other is None:
+                continue
+            try:
+                ov = float(other)
+            except (TypeError, ValueError):
+                continue
+            if ov != ov:
+                continue
+            left_side = j < center_i
+            if is_high:
+                if (ov > fv) if left_side else (ov >= fv):
+                    return None
+            elif (ov < fv) if left_side else (ov <= fv):
+                return None
+        return fv
+
+    def _htf_pivothigh_full_series(
+        self, src: list[float | None], left: int, right: int
+    ) -> list[float | None]:
+        """Full-list pivothigh on unique HTF source via prefix walk.
+
+        Matches interpret last-sample ``_pivothigh_inc_update`` /
+        ``_pivot_confirm_window``. Does not call ``_ta_next_slot``.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or left < 0 or right < 0:
+            return out
+        need = left + right + 1
+        for i in range(n):
+            if i + 1 < need:
+                continue
+            out[i] = self._htf_pivot_confirm(src[: i + 1], left, right, is_high=True)
+        return out
+
+    def _htf_pivotlow_full_series(
+        self, src: list[float | None], left: int, right: int
+    ) -> list[float | None]:
+        """Full-list pivotlow on unique HTF source via prefix walk.
+
+        Matches interpret last-sample ``_pivotlow_inc_update`` /
+        ``_pivot_confirm_window``. Does not call ``_ta_next_slot``.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or left < 0 or right < 0:
+            return out
+        need = left + right + 1
+        for i in range(n):
+            if i + 1 < need:
+                continue
+            out[i] = self._htf_pivot_confirm(src[: i + 1], left, right, is_high=False)
+        return out
+
     def _htf_adx_full_series(
         self,
         highs: list[float | None],
@@ -3253,6 +3363,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if name == "ao":
             fast, slow = self._htf_ao_periods(expr)
             return self._htf_ao_full_series(unique, fast=fast, slow=slow)
+        if name in ("pivothigh", "pivotlow"):
+            field = expr.source or ("high" if name == "pivothigh" else "low")
+            src = self._htf_source_series(unique, field)
+            left = int(expr.length)
+            right = int(expr.extra) if expr.extra is not None else 0
+            if name == "pivothigh":
+                return self._htf_pivothigh_full_series(src, left, right)
+            return self._htf_pivotlow_full_series(src, left, right)
         if name == "vwap":
             field = expr.source or "hlc3"
             src = self._htf_source_series(unique, field)
@@ -3628,6 +3746,13 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                     src.append(None if v != v else v)
             fast, slow = self._htf_ao_periods(expression)
             return _last_of(self._htf_ao_from_hl2(src, fast, slow) if src else None)
+        if name in ("pivothigh", "pivotlow"):
+            field = expression.source or ("high" if name == "pivothigh" else "low")
+            src = self._series_chrono_values(field)
+            right = int(expression.extra) if expression.extra is not None else 0
+            if name == "pivothigh":
+                return _last_of(self._htf_pivothigh_full_series(src, period, right))
+            return _last_of(self._htf_pivotlow_full_series(src, period, right))
         if name == "obv":
             closes = self._series_chrono_values("close")
             vol = self._series_chrono_values("volume")
@@ -5088,7 +5213,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     ``vwap`` / ``cum`` and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` /
     ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` / ``ta.change`` /
     ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` /
-    1-arg ``ta.stoch`` / 2-arg ``ta.stoch(k, d)`` on HTF
+    1-arg ``ta.stoch`` / 2-arg ``ta.stoch(k, d)`` /
+    2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)`` on HTF
     bars match interpret exactly.
     """
 
@@ -5340,6 +5466,9 @@ def compile_htf_security_value(  # noqa: PLR0913
             src = field_s or "hl2"
             if length > 0 and offset > 0:
                 extra = int(offset)
+        elif name in ("pivothigh", "pivotlow"):
+            src = field_s or ("high" if name == "pivothigh" else "low")
+            extra = int(offset)
         elif name == "vwap":
             src = field_s or "hlc3"
         elif name == "cum":
