@@ -256,6 +256,28 @@ class TestSeriesRoutes:
         assert status["count"] == 3
         assert status["newest"] == NOW - MIN
 
+    def test_purge_drops_the_series_and_leaves_others_alone(self, client):
+        res = client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(3), "source": "axis-local"})
+        assert res.status_code == 200
+        other = {**KEY_BODY, "symbol": "ETH/USDT"}
+        client.post("/data/series/provide", json={**other, "bars": closed_bars(2), "source": "axis-local"})
+
+        purge = client.delete("/data/series?exchange=binance&symbol=BTC/USDT&interval=1m")
+        assert purge.status_code == 200
+        body = purge.get_json()
+        assert body["status"] == "success"
+        assert body["key"] == "binance|spot|BTC/USDT|1m"
+        assert body["removed"] == 3
+
+        assert client.get("/data/series?exchange=binance&symbol=BTC/USDT&interval=1m").get_json()["count"] == 0
+        # The cache is shared — a purge is per key.
+        assert client.get("/data/series?exchange=binance&symbol=ETH/USDT&interval=1m").get_json()["count"] == 2
+
+    def test_purge_of_an_unknown_series_is_a_no_op(self, client):
+        res = client.delete("/data/series?exchange=binance&symbol=NOSUCH/USDT&interval=1m")
+        assert res.status_code == 200
+        assert res.get_json()["removed"] == 0
+
     def test_provide_over_5000_bars_is_413(self, client):
         res = client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(5001)})
         assert res.status_code == 413

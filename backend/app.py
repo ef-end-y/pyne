@@ -818,6 +818,7 @@ def _health_payload() -> dict[str, Any]:
         "DELETE /session/<session_id>": "Release a session (else idle TTL)",
         # Engine-owned data plane: bars live in the PYNE store, not the request.
         "GET /data/series": "Stored OHLCV series bounds (engine-owned data)",
+        "DELETE /data/series": "Drop one stored series (client dataset flush)",
         "GET /data/series/bars": "Newest stored bars for a series (chart paint)",
         "POST /data/series/provide": "Upload closed bars into the series store (max 5000)",
         "POST /data/series/fetch": "Fetch history via CCXT into the series store",

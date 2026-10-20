@@ -2,6 +2,7 @@
 
 ### Added
 
+- **`DELETE /data/series` drops one stored series.** The engine's series store is its cache of the venue's OHLCV; a client that flushed its own dataset could not drop the engine's copy, so the engine kept serving the old (stale, holed) window. The route takes the same key fields as `GET /data/series` and removes the series' bars plus its metadata row. Per key only — the store is shared, so a purge never touches another series.
 - **LSP on-type formatting.** `textDocument/onTypeFormatting` formats the just-completed line after newline using the same NodeUnparser as range formatting. Empty or unparsed documents return `[]`. Advertised via `documentOnTypeFormattingProvider` (trigger `\n`).
 - **LSP linked editing ranges.** `textDocument/linkedEditingRange` returns same-document ranges for the user ident under the cursor (keywords and builtin namespaces stay unlinked). Advertised via `linkedEditingRangeProvider`.
 - **LSP semantic tokens range.** `textDocument/semanticTokens/range` returns the same token legend as `/full`, clipped to the requested range. Empty or unparsed documents return an empty `data` array. Advertised via `semanticTokensProvider.range`.

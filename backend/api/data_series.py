@@ -436,6 +436,20 @@ def series_status():
     return jsonify({"status": "success", **series_store.get_store().status(key)}), 200
 
 
+@bp.route("/series", methods=["DELETE"])
+@require_api_key
+def series_purge():
+    """Drop every stored bar of one series (the engine's cache of the venue).
+
+    A client that flushed its own dataset uses this to drop the engine's copy
+    too, so the next read starts from the venue again. Per key only: the
+    store is shared, so a purge never touches another series.
+    """
+    key = _key_from_args(request.args)
+    result = series_store.get_store().purge(key)
+    return jsonify({"status": "success", **result}), 200
+
+
 @bp.route("/series/bars", methods=["GET"])
 @require_api_key
 def series_bars():

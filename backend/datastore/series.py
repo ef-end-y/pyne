@@ -328,6 +328,27 @@ class SeriesStore:
         updated = len(existing)
         return {"added": len(rows) - updated, "updated": updated, **state}
 
+    def purge(self, key: SeriesKey) -> dict[str, Any]:
+        """Drop every stored bar of one series (and its metadata row).
+
+        The store is the engine's cache of the venue's OHLCV — a client that
+        wants a clean slate (a dataset flush) drops the series it owns and
+        re-uploads / re-fetches it. Other series are untouched: the cache is
+        shared, so a purge is always per key.
+        """
+        with self._lock:
+            conn = self._conn
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                count = int(conn.execute("SELECT COUNT(*) FROM bars WHERE key = ?", (key.text,)).fetchone()[0])
+                conn.execute("DELETE FROM bars WHERE key = ?", (key.text,))
+                conn.execute("DELETE FROM series WHERE key = ?", (key.text,))
+                conn.execute("COMMIT")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+        return {"key": key.text, "removed": count}
+
     def _trim_locked(self, key_text: str) -> None:
         """Drop the oldest bars when a series exceeds ``MAX_SERIES_BARS``. Caller holds the lock."""
         count = int(self._conn.execute("SELECT COUNT(*) FROM bars WHERE key = ?", (key_text,)).fetchone()[0])
