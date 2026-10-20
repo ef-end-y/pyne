@@ -149,6 +149,7 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "tr",
         "tsi",
         "bbw",
+        "stoch",
     }
 )
 
@@ -168,8 +169,9 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw "
-    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf on coarser TF "
+    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw/stoch "
+    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf/stoch "
+    "and 2-arg ta.stoch(k, d) on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -199,10 +201,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw
-    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; else None
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch
+    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -279,6 +281,10 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       via ``_const_int_ge``). Nested ``ta.bbw(ta.sma(...), n, 2)`` stays unmatched.
     - ``ta.bbw(20, 2)`` — two positive int literals; ``source="close"``,
       ``length`` is length, ``extra`` is mult. 1-arg ``ta.bbw`` stays unmatched.
+    - ``ta.stoch(14)`` — length-only form (HTF high/low/close, %K only).
+    - ``ta.stoch(14, 3)`` — two positive int literals; same %K (``length`` is
+      kPeriod, ``extra`` is dPeriod, unused for %K). 4-arg
+      ``ta.stoch(source, high, low, length)`` stays unmatched.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -316,7 +322,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
     2-arg ``ta.nvi`` / ``ta.pvi``, 4-arg ``ta.accdist`` / ``ta.wad``,
-    3-arg ``ta.tr`` / ``ta.tsi``, 1-arg ``ta.bbw``, 5-arg ``ta.cmf``,
+    3-arg ``ta.tr`` / ``ta.tsi``, 1-arg ``ta.bbw``, 4-arg ``ta.stoch``,
+    5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -410,6 +417,18 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if src is None or length is None or mult is None:
             return None
         return HtfSimpleTaExpr("bbw", src, length, extra=mult)
+
+    if fname == "stoch":
+        if len(arg_nodes) == 1:
+            length = _const_positive_int(arg_nodes[0].value)
+            return HtfSimpleTaExpr("stoch", None, length) if length else None
+        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (k, d)
+            return None
+        k = _const_positive_int(arg_nodes[0].value)
+        d = _const_positive_int(arg_nodes[1].value)
+        if k is None or d is None:
+            return None
+        return HtfSimpleTaExpr("stoch", None, k, extra=d)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2606,6 +2625,45 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if fv != fv else fv
         return out
 
+    def _htf_stoch_full_series(
+        self,
+        highs: list[float | None],
+        lows: list[float | None],
+        closes: list[float | None],
+        period: int,
+    ) -> list[float | None]:
+        """Full-list Stochastic %K on unique HTF high/low/close.
+
+        Prefix walk matching interpret last-sample ``_stoch_k`` (window short
+        → na; ``hh == ll`` → 50.0). Does not call ``_ta_next_slot``.
+        """
+        n = min(len(highs), len(lows), len(closes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0 or period <= 0:
+            return out
+        for i in range(n):
+            if i + 1 < period:
+                continue
+            start = i + 1 - period
+            hs = self._htf_finite_window(highs[start : i + 1])
+            ls = self._htf_finite_window(lows[start : i + 1])
+            c = closes[i]
+            if hs is None or ls is None or c is None:
+                continue
+            try:
+                fv_c = float(c)
+            except (TypeError, ValueError):
+                continue
+            if fv_c != fv_c:
+                continue
+            hh = max(hs)
+            ll = min(ls)
+            if hh == ll:
+                out[i] = 50.0
+                continue
+            out[i] = 100.0 * (fv_c - ll) / (hh - ll)
+        return out
+
     def _htf_adx_full_series(
         self,
         highs: list[float | None],
@@ -3364,11 +3422,13 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 return self._htf_swma_full_series(src)
             return self._htf_rsi_full_series(src, period)
 
-        # atr / wpr / adx: length-only; uses HTF high/low/close.
+        # atr / wpr / adx / stoch: length-only; uses HTF high/low/close.
         # mfi / cmf: length-only; uses HTF high/low/close/volume.
         highs = self._htf_source_series(unique, "high")
         lows = self._htf_source_series(unique, "low")
         closes = self._htf_source_series(unique, "close")
+        if name == "stoch":
+            return self._htf_stoch_full_series(highs, lows, closes, period)
         if name == "wpr":
             return self._htf_wpr_full_series(highs, lows, closes, period)
         if name == "adx":
@@ -3609,12 +3669,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return _last_of(self._htf_bbw_full_series(src, period, extra))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
-        if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and expression.source is None):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch") or (name == "range" and expression.source is None):
             highs = self._series_chrono_values("high")
             lows = self._series_chrono_values("low")
             closes = self._series_chrono_values("close")
             if name == "range":
                 return _last_of(self._htf_hl_range_full_series(highs, lows, period))
+            if name == "stoch":
+                return _last_of(self._htf_stoch_full_series(highs, lows, closes, period))
             if name == "wpr":
                 return _last_of(self._htf_wpr_full_series(highs, lows, closes, period))
             if name == "adx":
@@ -4303,6 +4365,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           is fixed 4-period; 0-arg ``ta.ao()`` is SMA(hl2,5)−SMA(hl2,34);
           1-arg ``ta.ao(fast)`` uses HTF hl2 with slow=34; 2-arg
           ``ta.ao(fast, slow)`` uses HTF hl2 at those periods;
+          1-arg ``ta.stoch(n)`` / 2-arg ``ta.stoch(k, d)`` is %K on HTF
+          high/low/close (dPeriod stored unused);
           3-arg ``ta.linreg(source, n, offset)`` honors ``extra`` as offset;
           2-arg ``ta.kama`` uses Kaufman fast=2, slow=30;
           1-arg ``ta.cum(source)`` is the running sum on unique HTF bars;
@@ -5023,7 +5087,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     ``lowestbars`` / ``kama`` / ``rising`` / ``falling`` / ``swma`` / ``ao`` /
     ``vwap`` / ``cum`` and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` /
     ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` / ``ta.change`` /
-    ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` on HTF
+    ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` /
+    1-arg ``ta.stoch`` / 2-arg ``ta.stoch(k, d)`` on HTF
     bars match interpret exactly.
     """
 
@@ -5267,8 +5332,10 @@ def compile_htf_security_value(  # noqa: PLR0913
         except (TypeError, ValueError):
             return float("nan")
         extra: int | None = None
-        if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and field_s is None):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch") or (name == "range" and field_s is None):
             src = None
+            if name == "stoch" and offset > 0:
+                extra = int(offset)
         elif name == "ao":
             src = field_s or "hl2"
             if length > 0 and offset > 0:

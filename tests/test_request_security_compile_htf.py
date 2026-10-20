@@ -700,6 +700,36 @@ plot(ta.bbw(close, 3, 2), title="cbbw")
         hbbw_day5 = sc["series"]["bbw"][5 * 24 : 6 * 24]
         assert any(abs(float(hbbw_day5[i]) - float(cbbw_day5[i])) > 1e-6 for i in range(24) if not _is_na(cbbw_day5[i]))
 
+    def test_htf_stoch_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 1-arg / 2-arg ta.stoch %K: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.stoch(3)), title="stoch")
+plot(request.security(syminfo.tickerid, "D", ta.stoch(3, 2)), title="stoch2")
+plot(ta.stoch(3), title="cstoch")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("stoch", "stoch2"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][5 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day5 = sc["series"]["stoch"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        for v in sc["series"]["stoch2"][5 * 24 : 6 * 24]:
+            assert abs(float(v) - ref) < 1e-9
+        cstoch_day5 = sc["series"]["cstoch"][5 * 24 : 6 * 24]
+        hstoch_day5 = sc["series"]["stoch"][5 * 24 : 6 * 24]
+        assert any(
+            abs(float(hstoch_day5[i]) - float(cstoch_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(cstoch_day5[i])
+        )
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -799,6 +829,7 @@ plot(request.security(syminfo.tickerid, "60", ta.wad(high, low, close, volume)),
 plot(request.security(syminfo.tickerid, "60", ta.tr(high, low, close)), title="tr3")
 plot(request.security(syminfo.tickerid, "60", ta.tsi(close, 13, 25)), title="tsi3")
 plot(request.security(syminfo.tickerid, "60", ta.bbw(ta.sma(close, 5), 5, 2)), title="bbwn")
+plot(request.security(syminfo.tickerid, "60", ta.stoch(close, high, low, 5)), title="stoch4")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5)), title="cmf5")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low, volume, 5)), title="cmfn")
 """
@@ -822,10 +853,12 @@ plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low
         assert all(_is_na(x) for x in sc["series"]["tr3"])
         assert all(_is_na(x) for x in sc["series"]["tsi3"])
         assert all(_is_na(x) for x in sc["series"]["bbwn"])
+        assert all(_is_na(x) for x in sc["series"]["stoch4"])
         assert all(_is_na(x) for x in sc["series"]["cmf5"])
         assert all(_is_na(x) for x in sc["series"]["cmfn"])
         _assert_series_match(si, sc, "tr3")
         _assert_series_match(si, sc, "bbwn")
+        _assert_series_match(si, sc, "stoch4")
         _assert_series_match(si, sc, "tsi3")
         _assert_series_match(si, sc, "cci1")
         _assert_series_match(si, sc, "cci4")
