@@ -33,6 +33,7 @@ from pynescript.langserver.features.document_color import handle_document_color
 from pynescript.langserver.features.document_link import handle_document_link
 from pynescript.langserver.features.folding import handle_folding_range
 from pynescript.langserver.features.formatting import handle_formatting
+from pynescript.langserver.features.formatting import handle_on_type_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
 from pynescript.langserver.features.highlight import handle_document_highlight
 from pynescript.langserver.features.hover import handle_hover
@@ -927,6 +928,69 @@ plot(ta.sma(close,length))
 
         result = handle_range_formatting(params, source)
         assert result is not None
+
+    def test_handle_on_type_formatting(self) -> None:
+        """After newline, format the just-completed compact assignment line."""
+        source = """//@version=5
+indicator("Test")
+length=14
+plot(ta.sma(close,length))
+"""
+        params = lsp.DocumentOnTypeFormattingParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=3, character=0),
+            ch="\n",
+            options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+        )
+
+        result = handle_on_type_formatting(params, source)
+        assert result is not None
+        assert len(result) == 1
+        edit = result[0]
+        assert edit.range.start.line == 2
+        assert edit.range.start.character == 0
+        assert edit.range.end.line == 2
+        assert edit.range.end.character == len("length=14")
+        assert edit.new_text == "length = 14"
+
+    def test_handle_on_type_formatting_empty(self) -> None:
+        """Empty source yields no on-type edits."""
+        params = lsp.DocumentOnTypeFormattingParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=0, character=0),
+            ch="\n",
+            options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+        )
+        assert handle_on_type_formatting(params, "") == []
+        assert handle_on_type_formatting(params, None) == []
+
+    def test_handle_on_type_formatting_unknown_ch(self) -> None:
+        """Triggers other than newline are ignored."""
+        source = """//@version=5
+indicator("Test")
+length=14
+"""
+        params = lsp.DocumentOnTypeFormattingParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=2, character=9),
+            ch=";",
+            options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+        )
+        assert handle_on_type_formatting(params, source) == []
+
+    def test_handle_on_type_formatting_unparsed(self) -> None:
+        """Explicit tree=None (workspace parse failure) yields no edits."""
+        source = """//@version=5
+indicator("Test")
+length=14
+"""
+        params = lsp.DocumentOnTypeFormattingParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=3, character=0),
+            ch="\n",
+            options=lsp.FormattingOptions(tab_size=4, insert_spaces=True),
+        )
+        assert handle_on_type_formatting(params, source, tree=None) == []
 
 
 class TestSemanticTokensHandler:
@@ -2325,6 +2389,8 @@ class TestCapabilities:
         assert caps.color_provider is True
         assert caps.document_link_provider is True
         assert caps.linked_editing_range_provider
+        assert caps.document_on_type_formatting_provider is not None
+        assert caps.document_on_type_formatting_provider.first_trigger_character == "\n"
 
 
 def _decode_semantic_tokens(data: list[int]) -> list[tuple[int, int, int, int, int]]:

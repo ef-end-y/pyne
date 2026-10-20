@@ -30,7 +30,7 @@ Modules:
 - :mod:`.hover` — ``textDocument/hover``
 - :mod:`.signature_help` — ``textDocument/signatureHelp``
 - :mod:`.diagnostics` — lint → LSP diagnostic conversion helpers
-- :mod:`.formatting` — ``textDocument/formatting``, ``rangeFormatting``
+- :mod:`.formatting` — ``textDocument/formatting``, ``rangeFormatting``, ``onTypeFormatting``
 - :mod:`.definitions` — ``textDocument/definition``
 - :mod:`.references` — ``textDocument/references``
 - :mod:`.highlight` — ``textDocument/documentHighlight``

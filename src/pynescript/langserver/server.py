@@ -35,7 +35,7 @@
 - completion (+ resolve), hover, signatureHelp, definition, references
 - documentHighlight, linkedEditingRange, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
-- formatting / rangeFormatting
+- formatting / rangeFormatting / onTypeFormatting
 - inlayHint, semanticTokens/full, semanticTokens/range, foldingRange, selectionRange
 - documentColor / colorPresentation (``#hex`` literals)
 - documentLink (``http(s)`` URLs in comments and string literals)
@@ -453,6 +453,17 @@ class PynescriptLanguageServer(LanguageServer):
             if not doc:
                 return formatting_feature.handle_range_formatting(params, None)
             return formatting_feature.handle_range_formatting(params, doc.source, tree=doc.ast)
+
+        @self.feature(lsp.TEXT_DOCUMENT_ON_TYPE_FORMATTING)
+        def text_on_type_formatting(
+            params: lsp.DocumentOnTypeFormattingParams,
+        ) -> list[lsp.TextEdit] | None:
+            """Handle textDocument/onTypeFormatting request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return formatting_feature.handle_on_type_formatting(params, None)
+            return formatting_feature.handle_on_type_formatting(params, doc.source, tree=doc.ast)
 
         @self.feature(lsp.TEXT_DOCUMENT_INLAY_HINT)
         def text_inlay_hints(

@@ -78,6 +78,9 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
         ),
         document_formatting_provider=True,
         document_range_formatting_provider=True,
+        document_on_type_formatting_provider=lsp.DocumentOnTypeFormattingOptions(
+            first_trigger_character="\n",
+        ),
         folding_range_provider=True,
         selection_range_provider=True,
         color_provider=True,

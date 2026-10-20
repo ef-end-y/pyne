@@ -775,6 +775,8 @@ class TestConfigExtras:
         assert caps.completion_provider and caps.completion_provider.resolve_provider is True
         assert caps.inlay_hint_provider is not None
         assert caps.linked_editing_range_provider
+        assert caps.document_on_type_formatting_provider is not None
+        assert caps.document_on_type_formatting_provider.first_trigger_character == "\n"
 
     def test_token_legends(self) -> None:
         from pynescript.langserver.config import semantic_token_modifiers

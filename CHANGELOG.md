@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP on-type formatting.** `textDocument/onTypeFormatting` formats the just-completed line after newline using the same NodeUnparser as range formatting. Empty or unparsed documents return `[]`. Advertised via `documentOnTypeFormattingProvider` (trigger `\n`).
 - **LSP linked editing ranges.** `textDocument/linkedEditingRange` returns same-document ranges for the user ident under the cursor (keywords and builtin namespaces stay unlinked). Advertised via `linkedEditingRangeProvider`.
 - **LSP semantic tokens range.** `textDocument/semanticTokens/range` returns the same token legend as `/full`, clipped to the requested range. Empty or unparsed documents return an empty `data` array. Advertised via `semanticTokensProvider.range`.
 - **Bar-mode incremental `ta.volatility_regime` (T2).** Last-sample kernel matches full recompute: last-N numeric ATR samples → `"low"` / `"medium"` / `"high"` / `"extreme"` (`"medium"` while the window is short).
