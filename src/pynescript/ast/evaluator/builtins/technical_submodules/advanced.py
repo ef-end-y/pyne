@@ -540,16 +540,28 @@ class AdvancedIndicators(TechnicalHelpers):
     # -- Tier 6: Market Microstructure ---------------------------------------
 
     def _builtin_ta_order_flow_imbalance(self, args: list[Any]) -> float:
-        """Order Flow Imbalance."""
+        """Order Flow Imbalance.
+
+        Bar-mode incremental last sample uses ``_order_flow_imbalance_inc_update``.
+        """
         msg = "ta.order_flow_imbalance() requires 5 arguments"
         if len(args) < QUINARY:
             self._error(msg)
+
+        period = self._expect_int(args[4], msg)
+        if self._use_incremental_ta():
+            return self._order_flow_imbalance_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+                period,
+            )
 
         high = self._expect_list(args[0], msg)
         low = self._expect_list(args[1], msg)
         close = self._expect_list(args[2], msg)
         volume = self._expect_list(args[3], msg)
-        period = self._expect_int(args[4], msg)
 
         if len(high) < period or len(low) < period or period <= 0:
             return 0.0

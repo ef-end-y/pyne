@@ -9290,3 +9290,340 @@ plot(g == "ranging" ? 1 : g == "volatile" ? 2 : g == "trending_up" ? 3 : 4, "mc5
     assert r_off["series"]["mc32"][0] == pytest.approx(1.0)
     assert r_on["series"]["mc32"][2] != pytest.approx(1.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: order_flow_imbalance incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _order_flow_imbalance_last_n(
+    high: list[Any],
+    low: list[Any],
+    close: list[Any],
+    volume: list[Any],
+    period: int,
+) -> float:
+    """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
+    if len(high) < period or len(low) < period or period <= 0:
+        return 0.0
+    buy_vol = 0.0
+    sell_vol = 0.0
+    for idx in range(-period, 0):
+        h_val = high[idx] if isinstance(high[idx], (int, float)) else 0
+        low_val = low[idx] if isinstance(low[idx], (int, float)) else 0
+        c_val = close[idx] if isinstance(close[idx], (int, float)) else 0
+        v_val = volume[idx] if isinstance(volume[idx], (int, float)) else 0
+        if h_val > low_val:
+            midpoint = (h_val + low_val) / 2
+            if c_val > midpoint:
+                buy_vol += v_val
+            else:
+                sell_vol += v_val
+    total = buy_vol + sell_vol
+    if total == 0:
+        return 0.0
+    return (buy_vol - sell_vol) / total
+
+
+def _ofi_series(n: int = 120) -> tuple[list[float], list[float], list[float], list[float]]:
+    """OHLCV with mixed buy/sell bars (close vs high/low midpoint)."""
+    close = _series(n)
+    high: list[float] = []
+    low: list[float] = []
+    for i, c in enumerate(close):
+        if i % 3 == 0:
+            high.append(c + 0.5)
+            low.append(c - 1.5)  # mid = c - 0.5; close > mid → buy
+        elif i % 3 == 1:
+            high.append(c + 1.5)
+            low.append(c - 0.5)  # mid = c + 0.5; close < mid → sell
+        else:
+            high.append(c + 1.0)
+            low.append(c - 1.0)  # mid = c; close > mid is False → sell
+    return high, low, close, _vols(n)
+
+
+def _ofi_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV with mixed buy/sell for Runtime bar-mode tests."""
+    bars: list[dict] = []
+    for i in range(n):
+        c = 100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0
+        if i % 2 == 0:
+            high, low = c + 0.4, c - 1.2  # mid = c - 0.4; close > mid → buy
+        else:
+            high, low = c + 1.2, c - 0.4  # mid = c + 0.4; close < mid → sell
+        bars.append(
+            {
+                "open": c - 0.3,
+                "high": high,
+                "low": low,
+                "close": c,
+                "volume": 1000 + i * 10,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_order_flow_imbalance(
+    high: list[Any],
+    low: list[Any],
+    close: list[Any],
+    volume: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(high)):
+        out.append(
+            ev._builtin_ta_order_flow_imbalance(
+                [high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_order_flow_imbalance(
+    high: list[Any],
+    low: list[Any],
+    close: list[Any],
+    volume: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(high)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._order_flow_imbalance_inc_update(
+                high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_order_flow_imbalance_last_sample(
+    high: list[Any],
+    low: list[Any],
+    close: list[Any],
+    volume: list[Any],
+    period: int,
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(high)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._order_flow_imbalance_inc_update(
+                high[i], low[i], close[i], volume[i], period
+            )
+        )
+    return out
+
+
+def test_incremental_order_flow_imbalance_matches_full() -> None:
+    high, low, close, volume = _ofi_series(120)
+    period = 5
+    got = _bar_walk_inc_order_flow_imbalance(high, low, close, volume, period)
+    exp = _bar_walk_full_order_flow_imbalance(high, low, close, volume, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_order_flow_imbalance_last_sample(
+        high, low, close, volume, period
+    )
+    _assert_series_close(last, exp)
+    oracle = [
+        _order_flow_imbalance_last_n(
+            high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period
+        )
+        for i in range(len(high))
+    ]
+    _assert_series_close(got, oracle)
+
+
+def test_incremental_order_flow_imbalance_warmup() -> None:
+    """Window shorter than period, empty, None, or period<=0 is ``0.0``."""
+    high = [100.0, 101.0]
+    low = [95.0, 96.0]
+    close = [98.0, 99.0]
+    volume = [100.0, 110.0]
+    period = 5
+    got = _bar_walk_inc_order_flow_imbalance(high, low, close, volume, period)
+    exp = _bar_walk_full_order_flow_imbalance(high, low, close, volume, period)
+    _assert_series_close(got, exp)
+    assert got == [0.0, 0.0]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._order_flow_imbalance_inc_update([], [], [], [], 5) == 0.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._order_flow_imbalance_inc_update(None, None, None, None, 5) == 0.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._order_flow_imbalance_inc_update(1.0, 0.5, 0.8, 10.0, 0) == 0.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._order_flow_imbalance_inc_update(1.0, 0.5, 0.8, 10.0, -3) == 0.0
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_order_flow_imbalance([None], [None], [None], [None], 5)
+    exp_na = _bar_walk_full_order_flow_imbalance([None], [None], [None], [None], 5)
+    _assert_series_close(got_na, exp_na)
+    assert got_na[0] == 0.0
+
+
+def test_incremental_order_flow_imbalance_zero_range() -> None:
+    """Zero high-low range skips the bar; all-zero range or volume total 0 -> 0.0."""
+    period = 3
+    high = [100.0, 100.0, 100.0]
+    low = [100.0, 100.0, 100.0]
+    close = [100.0, 100.0, 100.0]
+    volume = [10.0, 20.0, 30.0]
+    got = _bar_walk_inc_order_flow_imbalance(high, low, close, volume, period)
+    exp = _bar_walk_full_order_flow_imbalance(high, low, close, volume, period)
+    _assert_series_close(got, exp)
+    assert got[-1] == 0.0
+    last = _bar_walk_inc_order_flow_imbalance_last_sample(
+        high, low, close, volume, period
+    )
+    _assert_series_close(last, exp)
+
+    # Mixed: first bar zero-range (skipped), rest buy vs sell.
+    high_m = [100.0, 102.0, 101.0]
+    low_m = [100.0, 98.0, 99.0]
+    close_m = [100.0, 101.0, 99.5]  # bar1 close>mid buy 20; bar2 close<mid sell 30
+    vol_m = [10.0, 20.0, 30.0]
+    got_m = _bar_walk_inc_order_flow_imbalance(high_m, low_m, close_m, vol_m, period)
+    exp_m = _bar_walk_full_order_flow_imbalance(high_m, low_m, close_m, vol_m, period)
+    _assert_series_close(got_m, exp_m)
+    assert got_m[0] == 0.0
+    assert got_m[1] == 0.0
+    assert got_m[2] == pytest.approx((20.0 - 30.0) / 50.0)
+
+    high_ok = [101.0, 102.0, 103.0]
+    low_ok = [99.0, 100.0, 101.0]
+    close_ok = [101.0, 102.0, 103.0]
+    vol_zero = [0.0, 0.0, 0.0]
+    got_z = _bar_walk_inc_order_flow_imbalance(high_ok, low_ok, close_ok, vol_zero, period)
+    exp_z = _bar_walk_full_order_flow_imbalance(high_ok, low_ok, close_ok, vol_zero, period)
+    _assert_series_close(got_z, exp_z)
+    assert got_z[-1] == 0.0
+
+
+def test_incremental_order_flow_imbalance_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    high, low, close, volume = _ofi_series(40)
+    high_na: list[float | None] = list(high)
+    high_na[4] = None
+    ev = _IncTA()
+    for i in range(len(high_na)):
+        ev._ta_call_i = 0
+        ev._order_flow_imbalance_inc_update(
+            high_na[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], 5
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_order_flow_imbalance_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    high, low, close, volume = _ofi_series(30)
+    ev = _IncTA()
+    for i in range(len(high)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_order_flow_imbalance(
+            [high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], 5]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_order_flow_imbalance_two_call_sites_independent() -> None:
+    high, low, close, volume = _ofi_series(80)
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(high)):
+        prefix_h = high[: i + 1]
+        prefix_l = low[: i + 1]
+        prefix_c = close[: i + 1]
+        prefix_v = volume[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._order_flow_imbalance_inc_update(
+                prefix_h, prefix_l, prefix_c, prefix_v, 5
+            )
+        )
+        b_out.append(
+            ev._order_flow_imbalance_inc_update(
+                prefix_h, prefix_l, prefix_c, prefix_v, 14
+            )
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(
+        a_out, _bar_walk_full_order_flow_imbalance(high, low, close, volume, 5)
+    )
+    _assert_series_close(
+        b_out, _bar_walk_full_order_flow_imbalance(high, low, close, volume, 14)
+    )
+    assert a_out != b_out
+
+
+def test_runtime_order_flow_imbalance_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ofi_bars(80)
+    src = """//@version=5
+indicator("order flow imbalance")
+f = ta.order_flow_imbalance(high, low, close, volume, 5)
+g = ta.order_flow_imbalance(high, low, close, volume, 14)
+plot(f, "ofi5")
+plot(g, "ofi14")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"ofi5", "ofi14"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses ``_expect_list`` on PineSeries (newest-first), so
+    # ``[-period:]`` is the oldest window — not last-sample. Incremental last
+    # sample is the chronological last-N formula (list-oracle / kernel). Do
+    # not require incremental == disabled for every bar.
+    highs = [b["high"] for b in bars]
+    lows = [b["low"] for b in bars]
+    closes = [b["close"] for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["ofi5"]):
+        exp = _order_flow_imbalance_last_n(
+            highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], 5
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"ofi5 bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["ofi14"]):
+        exp = _order_flow_imbalance_last_n(
+            highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], 14
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"ofi14 bar {i}: {val} != {exp}"
+    assert r_on["series"]["ofi5"][0] == pytest.approx(0.0)
+    assert r_off["series"]["ofi5"][0] == pytest.approx(0.0)
+    assert r_on["series"]["ofi5"][4] != pytest.approx(0.0)
+

@@ -1881,6 +1881,70 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _order_flow_imbalance_inc_update(
+        self,
+        high: Any,
+        low: Any,
+        close: Any,
+        volume: Any,
+        period: int,
+    ) -> float:
+        """Incremental order flow imbalance matching full ``ta.order_flow_imbalance``.
+
+        Last-N high/low/close/volume deques. ``0.0`` while the window is short,
+        ``period<=0``, or buy+sell volume total is 0. Bars with ``high<=low``
+        (zero range / non-numeric coerced to 0) skip. Else close above the
+        high/low midpoint counts as buy volume, otherwise sell. One call-site
+        slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n <= 0:
+            return 0.0
+        key = ("order_flow_imbalance", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "h": deque(maxlen=n),
+                "l": deque(maxlen=n),
+                "c": deque(maxlen=n),
+                "v": deque(maxlen=n),
+                "value": 0.0,
+            }
+            bucket[key] = st
+        wh: deque[Any] = st["h"]
+        wl: deque[Any] = st["l"]
+        wc: deque[Any] = st["c"]
+        wv: deque[Any] = st["v"]
+        wh.append(self._series_last(high))
+        wl.append(self._series_last(low))
+        wc.append(self._series_last(close))
+        wv.append(self._series_last(volume))
+        if len(wh) < n or len(wl) < n:
+            st["value"] = 0.0
+            return 0.0
+        buy_vol = 0.0
+        sell_vol = 0.0
+        for h_raw, l_raw, c_raw, v_raw in zip(wh, wl, wc, wv, strict=True):
+            h_val = h_raw if isinstance(h_raw, (int, float)) else 0
+            low_val = l_raw if isinstance(l_raw, (int, float)) else 0
+            c_val = c_raw if isinstance(c_raw, (int, float)) else 0
+            v_val = v_raw if isinstance(v_raw, (int, float)) else 0
+            if h_val > low_val:
+                midpoint = (h_val + low_val) / 2
+                if c_val > midpoint:
+                    buy_vol += v_val
+                else:
+                    sell_vol += v_val
+        total = buy_vol + sell_vol
+        if total == 0:
+            st["value"] = 0.0
+            return 0.0
+        val = (buy_vol - sell_vol) / total
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
