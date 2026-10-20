@@ -2492,9 +2492,26 @@ class TestInlayHintParameters:
         mfi = self._param_labels('//@version=6\nindicator("T")\nplot(ta.mfi(14))\n')
         assert any("length" in label for label in mfi)
         assert not any("source" in label for label in mfi)
-        bbw = self._param_labels('//@version=6\nindicator("T")\nplot(ta.bbw(14))\n')
+        bbw = self._param_labels('//@version=6\nindicator("T")\nplot(ta.bbw(20))\n')
         assert any("length" in label for label in bbw)
         assert not any("source" in label for label in bbw)
+
+    def test_bbw_two_arg_is_length_mult_not_source(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.bbw(20, 2))\n'
+        )
+        assert any("length" in label for label in labels)
+        assert any("mult" in label for label in labels)
+        assert labels and "source" not in labels[0]
+        assert not any("source" in label for label in labels)
+
+    def test_bbw_three_arg_source_length_mult(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.bbw(close, 20, 2))\n'
+        )
+        assert any("source" in label for label in labels)
+        assert any("length" in label for label in labels)
+        assert any("mult" in label for label in labels)
 
 
 class TestInlayHintResolve:

@@ -67,7 +67,8 @@ _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # Pine v6 names when metadata snippets are generic ``paramN``. Multi-arity
 # entries use the longest common positional prefix (TV signatures). 1-arg
 # ``ta.cci(14)`` / ``ta.adx(14)`` / ``ta.mfi(14)`` / ``ta.bbw(14)`` are
-# length-only (not ``source`` / ``diLength``).
+# length-only (not ``source`` / ``diLength``). 2-arg ``ta.bbw(20, 2)`` is
+# ``length`` / ``mult`` (not a prefix of ``source`` / ``length`` / ``mult``).
 _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
     "ta.sma": ("source", "length"),
     "ta.ema": ("source", "length"),
@@ -94,7 +95,7 @@ _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
 }
 
 # 1-arg overloads whose single positional is ``length`` (typical price / OHLC
-# from context). 2-arg forms keep the map above.
+# from context). 2-arg forms keep the map above except ``ta.bbw(length, mult)``.
 _LENGTH_ONLY_1ARG: frozenset[str] = frozenset(
     {"ta.adx", "ta.cci", "ta.mfi", "ta.bbw"}
 )
@@ -335,13 +336,16 @@ def _param_names_from_info(
     """Parameter names: real snippet placeholders, else longest of detail/docs/well-known.
 
     *argc* is ``len(call.args)``. 1-arg ``ta.cci`` / ``ta.adx`` / ``ta.mfi`` /
-    ``ta.bbw`` use ``length``; well-known names are sliced to *argc*.
+    ``ta.bbw`` use ``length``; 2-arg ``ta.bbw`` uses ``length`` / ``mult``;
+    well-known names are sliced to *argc*.
     """
     snippet_names = _names_from_snippet(info.get("snippet") or "")
     if snippet_names and not any(_GENERIC_PARAM.fullmatch(n) for n in snippet_names):
         return snippet_names
     if argc == 1 and qualified in _LENGTH_ONLY_1ARG:
         return ["length"]
+    if argc == 2 and qualified == "ta.bbw":
+        return ["length", "mult"]
     # Generic ``paramN`` snippets fall through. Prefer the longest positional
     # prefix so well-known 2-arg names beat a 1-arg docs match (e.g. ``ta.cci``).
     candidates = [
@@ -355,6 +359,8 @@ def _param_names_from_info(
 
 def _well_known_names(qualified: str, argc: int) -> list[str]:
     """Arity-sliced well-known Pine v6 names; extra slots are not shown."""
+    if argc == 2 and qualified == "ta.bbw":
+        return ["length", "mult"]
     names = list(_WELL_KNOWN_PARAMS.get(qualified) or ())
     if argc > 0:
         return names[:argc]
