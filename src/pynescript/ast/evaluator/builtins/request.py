@@ -180,6 +180,7 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "wvad",
         "uo",
         "apo",
+        "emv",
     }
 )
 
@@ -202,14 +203,15 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw/stoch/"
     "pivothigh/pivotlow/percentile_nearest_rank/percentile_linear_interpolation/dpo/"
     "crossover/crossunder/cross/correlation/vpt/pvt/wvad "
-    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf/stoch "
+    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf/stoch/emv "
     "and 2-arg ta.stoch(k, d) / ta.pivothigh(left, right) / ta.pivotlow(left, right) "
     "and 3-arg ta.percentile_nearest_rank / ta.percentile_linear_interpolation "
     "and 1-arg ta.dpo(n) / 2-arg ta.dpo(source, n) / 2-arg ta.crossover / ta.crossunder "
     "/ ta.cross of OHLCV names "
     "and 3-arg ta.correlation of two OHLCV names "
     "and 0-arg ta.vpt/ta.pvt / 1-arg ta.wvad "
-    "and 3-arg ta.uo(n1, n2, n3) / 3-arg ta.apo(source, fast, slow) on coarser TF "
+    "and 3-arg ta.uo(n1, n2, n3) / 3-arg ta.apo(source, fast, slow) / 1-arg ta.emv "
+    "on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -239,9 +241,9 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation | vpt | wvad | uo | apo
-    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), 0-arg tr (h/l/c), and 3-arg uo (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a; 3-arg apo is source Name
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20); 3-arg uo stores n1; 3-arg apo stores slow
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation | vpt | wvad | uo | apo | emv
+    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), 0-arg tr (h/l/c), 3-arg uo (h/l/c), and 1-arg emv (h/l/v); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a; 3-arg apo is source Name
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20); 3-arg uo stores n1; 3-arg apo stores slow; 1-arg emv stores n
     extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); 3-arg uo: n2*1000+n3 (1 <= n2,n3 <= 999); 3-arg apo: fast; else None
 
 
@@ -310,6 +312,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.apo(close, 10, 20)`` — 3-arg ``(source, fast, slow)`` when source is
       an OHLCV Name. ``length`` is slow, ``extra`` is fast (like ``ta.ao``).
       Nested unmatched.
+    - ``ta.emv(14)`` — length-only form (uses HTF high/low/volume). Nested
+      unmatched. Window short → na.
     - ``ta.obv()`` — 0-arg (HTF close+volume, running signed volume).
       ``length`` is stored as 0. 2-arg ``ta.obv(close, volume)`` stays unmatched.
     - ``ta.nvi()`` — 0-arg (HTF close+volume, seed 1000, multiply on volume
@@ -405,7 +409,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     nested ``ta.dpo``, nested ``ta.crossover`` / ``ta.crossunder`` / ``ta.cross``,
     nested / 2-arg / length < 2 ``ta.correlation``,
     nested ``ta.vpt``, 4-arg ``ta.wvad``, nested ``ta.uo``, nested ``ta.apo``,
-    5-arg ``ta.cmf``,
+    nested ``ta.emv``, 5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -444,6 +448,10 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
             return None
         length = _const_positive_int(arg_nodes[0].value)
         return HtfSimpleTaExpr("wvad", None, length) if length else None
+
+    if fname == "emv":
+        length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
+        return HtfSimpleTaExpr("emv", None, length) if length else None
 
     if fname in ("vpt", "pvt"):
         if not arg_nodes:
@@ -3875,6 +3883,52 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 out[i] = 0.0
         return out
 
+    def _htf_emv_full_series(
+        self,
+        highs: list[float | None],
+        lows: list[float | None],
+        volumes: list[float | None],
+        period: int,
+    ) -> list[float | None]:
+        """Full-list EMV via prefix walk of ``_emv`` on unique HTF high/low/volume.
+
+        1-arg ``ta.emv(n)``; window short → na. Nested unmatched.
+        Does not call ``_ta_next_slot`` (compile host has no incremental slots).
+        """
+        n = min(len(highs), len(lows), len(volumes))
+        out: list[float | None] = [None] * max(len(highs), n)
+        if n == 0 or period <= 0:
+            return out
+        emv_fn = getattr(self, "_emv", None)
+        if not callable(emv_fn):
+            return out
+
+        def _nums(seq: list[float | None]) -> list[float]:
+            acc: list[float] = []
+            for v in seq[:n]:
+                if v is None:
+                    acc.append(0.0)
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    acc.append(0.0)
+                    continue
+                acc.append(0.0 if fv != fv else fv)
+            return acc
+
+        hs = _nums(highs)
+        ls = _nums(lows)
+        vs = _nums(volumes)
+        for i in range(n):
+            try:
+                v = emv_fn(hs[: i + 1], ls[: i + 1], vs[: i + 1], period)
+                fv = float(v) if v is not None else float("nan")
+            except (TypeError, ValueError):
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
     def _htf_uo_full_series(
         self,
         highs: list[float | None],
@@ -4195,6 +4249,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
 
         # atr / wpr / adx / stoch: length-only; uses HTF high/low/close.
         # mfi / cmf / wvad: length-only; uses HTF high/low/close/volume.
+        # emv: length-only; uses HTF high/low/volume.
         highs = self._htf_source_series(unique, "high")
         lows = self._htf_source_series(unique, "low")
         closes = self._htf_source_series(unique, "close")
@@ -4213,6 +4268,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if name == "wvad":
             vol = self._htf_source_series(unique, "volume")
             return self._htf_wvad_full_series(highs, lows, closes, vol, period)
+        if name == "emv":
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_emv_full_series(highs, lows, vol, period)
         atr_fn = getattr(self, "_atr", None)
         out: list[float | None] = [None] * n
         if not callable(atr_fn):
@@ -4492,7 +4550,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return _last_of(self._htf_correlation_full_series(src_a, src_b, period))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
-        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch", "wvad") or (name == "range" and expression.source is None):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch", "wvad", "emv") or (
+            name == "range" and expression.source is None
+        ):
             highs = self._series_chrono_values("high")
             lows = self._series_chrono_values("low")
             closes = self._series_chrono_values("close")
@@ -4513,6 +4573,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             if name == "wvad":
                 vol = self._series_chrono_values("volume")
                 return _last_of(self._htf_wvad_full_series(highs, lows, closes, vol, period))
+            if name == "emv":
+                vol = self._series_chrono_values("volume")
+                return _last_of(self._htf_emv_full_series(highs, lows, vol, period))
             atr_fn = getattr(self, "_atr", None)
             if not callable(atr_fn) or not closes:
                 return na
@@ -5190,7 +5253,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           close+volume; 1-arg ``ta.wvad(n)`` uses HTF high/low/close/volume;
           3-arg ``ta.uo(n1, n2, n3)`` uses HTF high/low/close (extra packs
           n2*1000+n3); 3-arg ``ta.apo(source, fast, slow)`` uses HTF source
-          (extra=fast, length=slow);
+          (extra=fast, length=slow); 1-arg ``ta.emv(n)`` uses HTF
+          high/low/volume;
           1-arg ``ta.highest(n)`` /
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
           high / low; 1-arg ``ta.range(n)`` is HTF high−low; 1-arg ``ta.swma``
@@ -5921,7 +5985,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` / ``ta.change`` /
     ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` /
     0-arg ``ta.vpt`` / ``ta.pvt`` / 1-arg ``ta.wvad`` /
-    3-arg ``ta.uo`` / 3-arg ``ta.apo`` /
+    3-arg ``ta.uo`` / 3-arg ``ta.apo`` / 1-arg ``ta.emv`` /
     1-arg ``ta.stoch`` / 2-arg ``ta.stoch(k, d)`` /
     2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)`` /
     1-arg ``ta.dpo`` / 2-arg ``ta.dpo(source, n)`` / 2-arg ``ta.crossover`` /
@@ -5998,6 +6062,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         self._wad = VolumeIndicators._wad.__get__(self, type(self))
         self._wvad = VolumeIndicators._wvad.__get__(self, type(self))
         self._vpt = VolumeIndicators._vpt.__get__(self, type(self))
+        self._emv = VolumeIndicators._emv.__get__(self, type(self))
         self._uo_avg = TechnicalHelpers._uo_avg.__get__(self, type(self))
         self._uo_last = TechnicalHelpers._uo_last.__get__(self, type(self))
 
@@ -6174,7 +6239,9 @@ def compile_htf_security_value(  # noqa: PLR0913
         except (TypeError, ValueError):
             return float("nan")
         extra: int | None = None
-        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch", "wvad") or (name == "range" and field_s is None):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch", "wvad", "emv") or (
+            name == "range" and field_s is None
+        ):
             src = None
             if name == "stoch" and offset > 0:
                 extra = int(offset)

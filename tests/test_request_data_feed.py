@@ -512,7 +512,8 @@ plot(ta.atr(3), title="catr")
         ``ta.crossover`` / ``ta.crossunder`` / ``ta.cross`` of
         OHLCV names / 3-arg ``ta.correlation`` of two OHLCV names /
         0-arg ``ta.vpt()`` / ``ta.pvt()`` / 1-arg ``ta.wvad(n)`` /
-        3-arg ``ta.uo(n1, n2, n3)`` / 3-arg ``ta.apo(source, fast, slow)``
+        3-arg ``ta.uo(n1, n2, n3)`` / 3-arg ``ta.apo(source, fast, slow)`` /
+        1-arg ``ta.emv(n)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
         ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
@@ -523,7 +524,7 @@ plot(ta.atr(3), title="catr")
         nested ``ta.dpo``, nested ``ta.crossover`` /
         ``ta.crossunder`` / ``ta.cross``, nested ``ta.correlation``,
         nested ``ta.vpt``, 4-arg ``ta.wvad``, nested ``ta.uo``, nested
-        ``ta.apo``, and nested ``ta.adx`` / ``ta.mfi`` stay na.
+        ``ta.apo``, nested ``ta.emv``, and nested ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
 
@@ -566,6 +567,7 @@ plot(request.security(syminfo.tickerid, "60", ta.vpt(ta.sma(close, 5))), title="
 plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume)), title="wvad4")
 plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume, 5)), title="wvad5")
 plot(request.security(syminfo.tickerid, "60", ta.apo(ta.sma(close, 5), 10, 20)), title="apon")
+plot(request.security(syminfo.tickerid, "60", ta.emv(close)), title="emvn")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -867,6 +869,10 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.apo(hl2, 3, 5)"))
         assert m is not None and m.name == "apo" and m.source == "hl2" and m.length == 5
         assert m.extra == 3
+        m = match_htf_simple_ta_ast(_expr("ta.emv(14)"))
+        assert m is not None and m.name == "emv" and m.source is None and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.emv(3)"))
+        assert m is not None and m.name == "emv" and m.source is None and m.length == 3
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.adx(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.adx(ta.sma(close, 14), 14)")) is None
@@ -928,6 +934,9 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.apo(ta.sma(close, 5), 10, 20)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.apo(close, 10)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.apo(10, 20)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.emv()")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.emv(close)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.emv(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
@@ -2620,6 +2629,50 @@ plot(ta.apo(close, 2, 3), title="capo")
         capo_day5 = out["series"]["capo"][5 * 24 : 6 * 24]
         assert any(abs(float(huo[5 * 24 + i]) - float(cuo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cuo_day5[i]))
         assert any(abs(float(hapo[5 * 24 + i]) - float(capo_day5[i])) > 1e-6 for i in range(24) if not _is_na(capo_day5[i]))
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_emv_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 1-arg ta.emv."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.volume import VolumeIndicators
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.emv(3)), title="hemv")
+plot(ta.emv(3), title="cemv")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hemv = out["series"]["hemv"]
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        daily_vols: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+        # emv(3) needs 3 valid unique HTF samples; bar 0 is na so unique 3
+        # completes at chart 96.
+        assert all(_is_na(x) for x in hemv[1:96])
+        day5_emv = hemv[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_emv)
+        emv_ref = float(day5_emv[0])
+        for v in day5_emv:
+            assert abs(float(v) - emv_ref) < 1e-9
+        expect_emv = VolumeIndicators()._emv(daily_highs, daily_lows, daily_vols, 3)
+        assert expect_emv is not None
+        assert math.isfinite(float(expect_emv))
+        assert abs(float(hemv[-1]) - float(expect_emv)) < 1e-9
+        cemv_day5 = out["series"]["cemv"][5 * 24 : 6 * 24]
+        assert any(
+            abs(float(hemv[5 * 24 + i]) - float(cemv_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(cemv_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

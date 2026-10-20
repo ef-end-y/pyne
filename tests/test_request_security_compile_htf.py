@@ -952,6 +952,32 @@ plot(ta.apo(close, 2, 3), title="capo")
             if not _is_na(capo_day5[i])
         ) or all(_is_na(x) for x in capo_day5)
 
+    def test_htf_emv_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 1-arg ta.emv: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.emv(3)), title="emv")
+plot(ta.emv(3), title="cemv")
+"""
+        si, sc = _run_both(src, bars)
+        _assert_series_match(si, sc, "emv")
+        finite = [x for x in sc["series"]["emv"][5 * 24 :] if not _is_na(x)]
+        assert len(finite) > 0
+        assert math.isfinite(float(finite[-1]))
+        day5 = sc["series"]["emv"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        cemv_day5 = sc["series"]["cemv"][5 * 24 : 6 * 24]
+        hemv_day5 = sc["series"]["emv"][5 * 24 : 6 * 24]
+        assert any(
+            abs(float(hemv_day5[i]) - float(cemv_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(cemv_day5[i])
+        ) or all(_is_na(x) for x in cemv_day5)
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -1068,6 +1094,7 @@ plot(request.security(syminfo.tickerid, "60", ta.vpt(ta.sma(close, 5))), title="
 plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume)), title="wvad4")
 plot(request.security(syminfo.tickerid, "60", ta.wvad(high, low, close, volume, 5)), title="wvad5")
 plot(request.security(syminfo.tickerid, "60", ta.apo(ta.sma(close, 5), 10, 20)), title="apon")
+plot(request.security(syminfo.tickerid, "60", ta.emv(close)), title="emvn")
 """
         si, sc = _run_both(src, bars)
         assert all(_is_na(x) for x in sc["series"]["cci1"])
@@ -1106,6 +1133,7 @@ plot(request.security(syminfo.tickerid, "60", ta.apo(ta.sma(close, 5), 10, 20)),
         assert all(_is_na(x) for x in sc["series"]["wvad4"])
         assert all(_is_na(x) for x in sc["series"]["wvad5"])
         assert all(_is_na(x) for x in sc["series"]["apon"])
+        assert all(_is_na(x) for x in sc["series"]["emvn"])
         _assert_series_match(si, sc, "tr3")
         _assert_series_match(si, sc, "bbwn")
         _assert_series_match(si, sc, "stoch4")
