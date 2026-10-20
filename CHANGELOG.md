@@ -28,6 +28,7 @@
 - **Bar-mode incremental `ta.crowd_sentiment` (T2).** Last-sample kernel matches full recompute: mean of three last samples × 100, clamp [0, 100].
 - **Bar-mode incremental `ta.smart_money_flow` (T2).** Last-sample kernel matches full recompute: volume-scaled signed flow from last price_change vs time_since_high/low, clamp [-1, 1].
 - **Bar-mode incremental `ta.trend_confirmation_score` (T2).** Last-sample kernel matches full recompute: five last samples mixed, clamp [0, 100].
+- **Bar-mode incremental `ta.atr_stop` (T2).** Last-sample kernel matches full recompute: last close ± last ATR × multiplier.
 
 ### Fixed
 

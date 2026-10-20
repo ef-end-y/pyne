@@ -11542,3 +11542,274 @@ plot(g, "tcs2")
     assert r_off["series"]["tcs"][0] == pytest.approx(33.5)
     assert any(v != pytest.approx(33.5) for v in r_on["series"]["tcs"][1:])
 
+
+# ---------------------------------------------------------------------------
+# T2: atr_stop incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+_ATR_STOP_OFF: dict[str, float | None] = {"long_stop": None, "short_stop": None}
+
+
+def _atr_stop_last_n(
+    atr: list[Any],
+    closes: list[Any],
+    multiplier: Any = 2.0,
+) -> dict[str, float | None]:
+    """Oracle formula on a chronological prefix (last ATR, last close, default mult 2.0)."""
+    a = atr[-1] if atr and isinstance(atr[-1], (int, float)) else None
+    if a is None or a <= 0:
+        return {"long_stop": None, "short_stop": None}
+    if not closes:
+        return {"long_stop": None, "short_stop": None}
+    c = closes[-1]
+    if not isinstance(c, (int, float)):
+        return {"long_stop": None, "short_stop": None}
+    m = multiplier if isinstance(multiplier, (int, float)) else 2.0
+    return {"long_stop": c - (a * m), "short_stop": c + (a * m)}
+
+
+def _atr_stop_series(n: int = 120) -> tuple[list[float], list[float]]:
+    """ATR (always > 0) and close path with mild trend + oscillation."""
+    atr = [1.5 + 0.8 * math.sin(i / 7.0) for i in range(n)]
+    closes = [100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0 for i in range(n)]
+    return atr, closes
+
+
+def _atr_stop_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: high/low used as ATR sources, close is the stop anchor."""
+    bars: list[dict] = []
+    for i in range(n):
+        c = 100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0
+        bars.append(
+            {
+                "open": c - 0.3,
+                "high": 1.5 + 0.8 * math.sin(i / 7.0),
+                "low": 2.0 + 0.5 * math.sin(i / 6.0),
+                "close": c,
+                "volume": 1000 + i,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_atr_stop(
+    atr: list[Any],
+    closes: list[Any],
+    multiplier: Any = 2.0,
+) -> list[dict[str, float | None]]:
+    """Full-path oracle: last ATR sample as a scalar (volatility.py formula)."""
+    ev = _FullTA()
+    out: list[dict[str, float | None]] = []
+    for i in range(len(atr)):
+        ev.current_series = {"close": closes[: i + 1]}
+        out.append(ev._builtin_ta_atr_stop([atr[i], multiplier]))
+    return out
+
+
+def _bar_walk_inc_atr_stop(
+    atr: list[Any],
+    closes: list[Any],
+    multiplier: Any = 2.0,
+) -> list[dict[str, float | None]]:
+    ev = _IncTA()
+    out: list[dict[str, float | None]] = []
+    for i in range(len(atr)):
+        ev._ta_call_i = 0
+        ev.current_series = {"close": closes[: i + 1]}
+        out.append(ev._atr_stop_inc_update(atr[: i + 1], multiplier))
+    return out
+
+
+def _bar_walk_inc_atr_stop_last_sample(
+    atr: list[Any],
+    closes: list[Any],
+    multiplier: Any = 2.0,
+) -> list[dict[str, float | None]]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[dict[str, float | None]] = []
+    for i in range(len(atr)):
+        ev._ta_call_i = 0
+        ev.current_series = {"close": closes[i]}
+        out.append(ev._atr_stop_inc_update(atr[i], multiplier))
+    return out
+
+
+def test_incremental_atr_stop_matches_full() -> None:
+    atr, closes = _atr_stop_series(120)
+    got = _bar_walk_inc_atr_stop(atr, closes, 2.0)
+    exp = _bar_walk_full_atr_stop(atr, closes, 2.0)
+    _assert_pattern_close(got, exp)
+    last = _bar_walk_inc_atr_stop_last_sample(atr, closes, 2.0)
+    _assert_pattern_close(last, exp)
+    oracle = [_atr_stop_last_n(atr[: i + 1], closes[: i + 1], 2.0) for i in range(len(atr))]
+    _assert_pattern_close(got, oracle)
+    assert any(v["long_stop"] is not None for v in got)
+
+
+def test_incremental_atr_stop_empty() -> None:
+    """Empty / non-numeric / <=0 ATR or no close → None stops, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._atr_stop_inc_update([], 2.0) == _ATR_STOP_OFF
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._atr_stop_inc_update(None, 2.0) == _ATR_STOP_OFF
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    ev.current_series = {"close": [100.0]}
+    assert ev._atr_stop_inc_update("x", 2.0) == _ATR_STOP_OFF
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._atr_stop_inc_update(0.0, 2.0) == _ATR_STOP_OFF
+    ev._ta_call_i = 0
+    assert ev._atr_stop_inc_update(-1.5, 2.0) == _ATR_STOP_OFF
+
+    got_na = _bar_walk_inc_atr_stop([None], [100.0], 2.0)
+    oracle_na = [_atr_stop_last_n([None], [100.0], 2.0)]
+    _assert_pattern_close(got_na, oracle_na)
+    assert got_na[0] == _ATR_STOP_OFF
+
+    # Positive ATR but no close series → None stops.
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._atr_stop_inc_update(1.5, 2.0) == _ATR_STOP_OFF
+    assert ev._ta_call_i == 1
+
+
+def test_incremental_atr_stop_default_multiplier() -> None:
+    """Missing / non-numeric multiplier defaults to 2.0."""
+    atr, closes = [2.0], [100.0]
+    got = _bar_walk_inc_atr_stop(atr, closes, None)
+    exp = _bar_walk_full_atr_stop(atr, closes, None)
+    _assert_pattern_close(got, exp)
+    assert got[-1]["long_stop"] == pytest.approx(96.0)
+    assert got[-1]["short_stop"] == pytest.approx(104.0)
+    last = _bar_walk_inc_atr_stop_last_sample(atr, closes, "x")
+    _assert_pattern_close(last, exp)
+
+
+def test_incremental_atr_stop_non_numeric_last() -> None:
+    """Non-numeric last ATR sample yields None stops, matching the oracle."""
+    atr: list[Any] = [1.5, 2.0, "x"]
+    closes: list[Any] = [100.0, 101.0, 102.0]
+    got = _bar_walk_inc_atr_stop(atr, closes, 2.0)
+    exp = _bar_walk_full_atr_stop(atr, closes, 2.0)
+    _assert_pattern_close(got, exp)
+    last = _bar_walk_inc_atr_stop_last_sample(atr, closes, 2.0)
+    _assert_pattern_close(last, exp)
+    assert got[-1] == _ATR_STOP_OFF
+    assert got[0]["long_stop"] == pytest.approx(97.0)
+
+
+def test_incremental_atr_stop_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    atr, closes = _atr_stop_series(40)
+    atr_na: list[float | None] = list(atr)
+    atr_na[4] = None
+    ev = _IncTA()
+    for i in range(len(atr_na)):
+        ev._ta_call_i = 0
+        ev.current_series = {"close": closes[: i + 1]}
+        ev._atr_stop_inc_update(atr_na[: i + 1], 2.0)
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_atr_stop_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    atr, closes = _atr_stop_series(30)
+    ev = _IncTA()
+    for i in range(len(atr)):
+        ev._ta_call_i = 0
+        ev.current_series = {"close": closes[: i + 1]}
+        ev._builtin_ta_atr_stop([atr[: i + 1], 2.0])
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_atr_stop_two_call_sites_independent() -> None:
+    atr, closes = _atr_stop_series(80)
+    ev = _IncTA()
+    a_out: list[dict[str, float | None]] = []
+    b_out: list[dict[str, float | None]] = []
+    for i in range(len(atr)):
+        prefix_a = atr[: i + 1]
+        ev._ta_call_i = 0
+        ev.current_series = {"close": closes[: i + 1]}
+        a_out.append(ev._atr_stop_inc_update(prefix_a, 2.0))
+        b_out.append(ev._atr_stop_inc_update(prefix_a, 3.0))
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_pattern_close(a_out, _bar_walk_full_atr_stop(atr, closes, 2.0))
+    _assert_pattern_close(b_out, _bar_walk_full_atr_stop(atr, closes, 3.0))
+    assert a_out != b_out
+
+
+def test_runtime_atr_stop_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _atr_stop_bars(80)
+    src = """//@version=5
+indicator("atr stop")
+f = ta.atr_stop(high, 2.0)
+g = ta.atr_stop(low, 3.0)
+plot(f.long_stop, "ls")
+plot(f.short_stop, "ss")
+plot(g.long_stop, "ls2")
+plot(g.short_stop, "ss2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"ls", "ss", "ls2", "ss2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses scalar isinstance on PineSeries (newest-first wrap),
+    # so series atr_value yields None stops every bar. Incremental last sample
+    # is the chronological prefix formula (list-oracle / kernel). Do not
+    # require incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["ls"]):
+        exp = _atr_stop_last_n(highs[: i + 1], closes[: i + 1], 2.0)
+        assert val == pytest.approx(
+            exp["long_stop"], rel=1e-9, abs=1e-9
+        ), f"ls bar {i}: {val} != {exp['long_stop']}"
+    for i, val in enumerate(r_on["series"]["ss"]):
+        exp = _atr_stop_last_n(highs[: i + 1], closes[: i + 1], 2.0)
+        assert val == pytest.approx(
+            exp["short_stop"], rel=1e-9, abs=1e-9
+        ), f"ss bar {i}: {val} != {exp['short_stop']}"
+    for i, val in enumerate(r_on["series"]["ls2"]):
+        exp = _atr_stop_last_n(lows[: i + 1], closes[: i + 1], 3.0)
+        assert val == pytest.approx(
+            exp["long_stop"], rel=1e-9, abs=1e-9
+        ), f"ls2 bar {i}: {val} != {exp['long_stop']}"
+    for i, val in enumerate(r_on["series"]["ss2"]):
+        exp = _atr_stop_last_n(lows[: i + 1], closes[: i + 1], 3.0)
+        assert val == pytest.approx(
+            exp["short_stop"], rel=1e-9, abs=1e-9
+        ), f"ss2 bar {i}: {val} != {exp['short_stop']}"
+    assert any(v is not None for v in r_on["series"]["ls"])
+

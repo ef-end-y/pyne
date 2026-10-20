@@ -556,10 +556,17 @@ class VolatilityIndicators(TechnicalHelpers):
 
         ta.atr_stop(atr_value, multiplier)
         Calculate stop levels based on ATR.
+        Bar-mode incremental last sample uses ``_atr_stop_inc_update``.
         """
         if len(args) < BINARY:
             msg = "ta.atr_stop() requires 2 arguments: atr_value, multiplier"
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._atr_stop_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+            )
 
         atr_val = float(args[0]) if isinstance(args[0], (int, float)) else None
         multiplier = float(args[1]) if isinstance(args[1], (int, float)) else 2.0

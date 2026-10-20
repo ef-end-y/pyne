@@ -2222,6 +2222,33 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _atr_stop_inc_update(
+        self,
+        atr_value: Any,
+        multiplier: Any,
+    ) -> dict[str, float | None]:
+        """Incremental ATR stop matching full ``ta.atr_stop``.
+
+        Last ATR sample and last chart close. Default multiplier 2.0.
+        Non-numeric / ``<= 0`` ATR or no close →
+        ``{long_stop: None, short_stop: None}``. One call-site slot every
+        bar, including empty.
+        """
+        self._ta_next_slot()
+        off: dict[str, float | None] = {"long_stop": None, "short_stop": None}
+        a_last = self._series_last(atr_value)
+        if not isinstance(a_last, (int, float)) or a_last <= 0:
+            return off
+        c_last = self._series_last(self._context_source("close"))
+        if not isinstance(c_last, (int, float)):
+            return off
+        m_last = self._series_last(multiplier)
+        m = float(m_last) if isinstance(m_last, (int, float)) else 2.0
+        return {
+            "long_stop": c_last - (a_last * m),
+            "short_stop": c_last + (a_last * m),
+        }
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
