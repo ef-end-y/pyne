@@ -310,6 +310,10 @@ class TestHoverHandler:
         assert result is not None
         assert isinstance(result, lsp.Hover)
         assert isinstance(result.contents, lsp.MarkupContent)
+        assert (
+            "https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma"
+            in result.contents.value
+        )
 
     def test_handle_hover_line_fill(self) -> None:
         """Hover over ``line.fill`` (alias of linefill.new)."""
@@ -325,6 +329,10 @@ class TestHoverHandler:
         assert result is not None
         assert isinstance(result.contents, lsp.MarkupContent)
         assert "line.fill" in result.contents.value
+        assert (
+            "https://www.tradingview.com/pine-script-reference/v6/#fun_line.fill"
+            in result.contents.value
+        )
 
     def test_handle_hover_no_symbol(self) -> None:
         """Test hover where there's no symbol."""
@@ -402,6 +410,7 @@ s = Side.buy
         text = result.contents.value.lower()
         assert "if" in text
         assert "condition" in text or "branch" in text
+        assert "pine-script-reference" not in result.contents.value
 
     def test_handle_hover_var_keyword(self) -> None:
         """Hover on ``var`` documents the persistent declaration mode."""
@@ -416,6 +425,7 @@ s = Side.buy
         text = result.contents.value.lower()
         assert "var" in text
         assert "persist" in text or "across bars" in text
+        assert "pine-script-reference" not in result.contents.value
 
     def test_handle_hover_series_qualifier(self) -> None:
         """Hover on ``series`` documents the type qualifier."""
@@ -430,6 +440,7 @@ s = Side.buy
         text = result.contents.value.lower()
         assert "series" in text
         assert "qualifier" in text or "bar" in text
+        assert "pine-script-reference" not in result.contents.value
 
     def test_handle_hover_float_type(self) -> None:
         """Hover on ``float`` in a typed decl is the type, not ``float(...)``."""
@@ -445,6 +456,7 @@ s = Side.buy
         assert "float" in text
         assert "type" in text
         assert "float(...)" not in result.contents.value
+        assert "pine-script-reference" not in result.contents.value
 
     def test_handle_hover_ta_module(self) -> None:
         """Hover on ``ta`` in ``ta.sma`` documents the namespace."""
@@ -459,6 +471,7 @@ s = Side.buy
         text = result.contents.value.lower()
         assert "ta" in text
         assert "namespace" in text or "technical" in text
+        assert "pine-script-reference" not in result.contents.value
 
     def test_handle_hover_line_namespace_and_type(self) -> None:
         """``line.fill`` module prefix is the namespace; bare ``line`` is the type."""
@@ -517,6 +530,7 @@ s = Side.buy
         assert "foo" in text
         assert "function" in text.lower()
         assert "foo(a)" in text
+        assert "https://www.tradingview.com/pine-script-reference/v6/" not in text
 
         use_params = lsp.HoverParams(
             text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
@@ -526,6 +540,27 @@ s = Side.buy
         assert use_hover is not None
         assert isinstance(use_hover.contents, lsp.MarkupContent)
         assert "foo(a)" in use_hover.contents.value
+        assert (
+            "https://www.tradingview.com/pine-script-reference/v6/"
+            not in use_hover.contents.value
+        )
+
+    def test_build_docs_link_only_dotted_labels(self) -> None:
+        """Docs links are dotted-namespace builtins only; empty / undotted stay blank."""
+        from pynescript.langserver.features.hover import _build_docs_link
+
+        sma = _build_docs_link("ta.sma")
+        assert sma == (
+            "[Pine v6: ta.sma](https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma)\n"
+        )
+        entry = _build_docs_link("strategy.entry")
+        assert "fun_strategy.entry" in entry
+        assert entry.endswith("\n")
+        fill = _build_docs_link("line.fill")
+        assert "fun_line.fill" in fill
+        assert _build_docs_link("") == ""
+        assert _build_docs_link("sma") == ""
+        assert _build_docs_link("   ") == ""
 
 
 class TestDefinitionHandler:

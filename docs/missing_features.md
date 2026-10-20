@@ -164,7 +164,7 @@ Engine parity improvements, observability tooling, and documentation refresh.
 
 - **T2 incremental** — `rsi_oversold_overbought`, `zigzag`, `volatility_regime`
 - **HTF allowlist** (D-06) — 1-arg `ta.adx(n)` / `ta.mfi(n)` (disk IR v36)
-- **LSP** — `textDocument/documentLink` for http(s) URLs in comments and strings, `textDocument/semanticTokens/range`
+- **LSP** — `textDocument/documentLink` for http(s) URLs in comments and strings, `textDocument/semanticTokens/range`, hover Pine v6 docs links
 
 ### 0.6.14 — HTF allowlist, incremental TA, LSP
 

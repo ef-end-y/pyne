@@ -591,10 +591,19 @@ def _build_see_also(info: dict) -> str:
 
 
 def _build_docs_link(name: str) -> str:
-    """Build a link to reference Pine documentation.
+    """Markdown link to the public Pine v6 function reference.
 
-    Note: reference Pine docs links require the full function reference.
-    This is a placeholder that shows how to structure the link.
+    Only dotted builtin labels with a namespace (``ta.sma``,
+    ``strategy.entry``, ``line.fill``) get a link. Empty, undotted
+    (``sma``), or whitespace-only names return ``""``.
     """
-    # Don't include external links in basic hover
-    return ""
+    label = (name or "").strip()
+    if not label or "." not in label:
+        return ""
+    namespace, _, member = label.partition(".")
+    if not namespace or not member:
+        return ""
+    return (
+        f"[Pine v6: {label}]"
+        f"(https://www.tradingview.com/pine-script-reference/v6/#fun_{label})\n"
+    )
