@@ -17,10 +17,14 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Inlay hints — ``textDocument/inlayHint`` (inferred declaration types).
+"""Inlay hints — ``textDocument/inlayHint`` and ``inlayHint/resolve``.
 
-Public handler: :func:`handle_inlay_hints`. Shows simple inferred types next to
-variable declarations, e.g.::
+Public handlers:
+
+- :func:`handle_inlay_hints` — inferred declaration types next to assignments
+- :func:`handle_inlay_hint_resolve` — fill ``text_edits`` that insert the type
+
+Shows simple inferred types next to variable declarations, e.g.::
 
     length = 14                       →   length: const int = 14
     rsi   = ta.rsi(close, 14)         →   rsi:   series float = ta.rsi(close, 14)
@@ -28,7 +32,7 @@ variable declarations, e.g.::
 
 Hints sit at the end of the target identifier (just before ``=``). Inference is
 shape-based on the RHS (literals, builtins, ``ta.*`` / ``input.*`` metadata);
-only confident cases are emitted. Capability: ``resolve_provider=False``.
+only confident cases are emitted. Capability: ``resolve_provider=True``.
 """
 
 from __future__ import annotations
@@ -100,6 +104,61 @@ def handle_inlay_hints(
     return hints
 
 
+def handle_inlay_hint_resolve(hint: lsp.InlayHint) -> lsp.InlayHint:
+    """Fill ``text_edits`` that insert the type annotation at the hint position.
+
+    Initial ``textDocument/inlayHint`` responses carry ``label`` / ``tooltip``
+    and stash the insert text on ``data`` so resolve does not re-parse. Already
+    resolved or empty/malformed hints are returned unchanged.
+
+    Args:
+        hint: The inlay hint to resolve (from the client, possibly with
+            ``data`` round-tripped from the initial response).
+
+    Returns:
+        The same hint with ``text_edits`` set to one insert at ``hint.position``.
+    """
+    try:
+        if getattr(hint, "text_edits", None) is not None:
+            return hint
+        insert = _insert_text_for_hint(hint)
+        if not insert:
+            return hint
+        position = getattr(hint, "position", None)
+        if position is None:
+            return hint
+        hint.text_edits = [
+            lsp.TextEdit(
+                range=lsp.Range(start=position, end=position),
+                new_text=insert,
+            )
+        ]
+        return hint
+    except Exception:
+        return hint
+
+
+def _insert_text_for_hint(hint: lsp.InlayHint) -> str:
+    """Insert text from ``hint.data`` (preferred) or the label string/parts."""
+    data = getattr(hint, "data", None)
+    if isinstance(data, str) and data:
+        return data
+    label = getattr(hint, "label", None)
+    if isinstance(label, str):
+        return label
+    if isinstance(label, (list, tuple)):
+        parts: list[str] = []
+        for part in label:
+            if isinstance(part, str):
+                parts.append(part)
+                continue
+            value = getattr(part, "value", None)
+            if isinstance(value, str):
+                parts.append(value)
+        return "".join(parts)
+    return ""
+
+
 def _collect_hints(
     node: ast.AST | None,
     source: str,
@@ -150,11 +209,13 @@ def _hint_for_assign(
     # Position the hint at the end of the target identifier (just before `=`).
     line = node.target.lineno - 1
     col = node.target.col_offset + len(node.target.id or "")
+    insert = f": {type_label}"
     return lsp.InlayHint(
         position=lsp.Position(line=line, character=col),
-        label=f": {type_label}",
+        label=insert,
         kind=lsp.InlayHintKind.Type,
         tooltip=f"Inferred type: {type_label}",
+        data=insert,
     )
 
 

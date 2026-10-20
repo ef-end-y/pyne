@@ -36,7 +36,7 @@
 - documentHighlight, linkedEditingRange, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting / onTypeFormatting
-- inlayHint, semanticTokens/full, semanticTokens/range, foldingRange, selectionRange
+- inlayHint (+ resolve), semanticTokens/full, semanticTokens/range, foldingRange, selectionRange
 - documentColor / colorPresentation (``#hex`` literals)
 - documentLink (``http(s)`` URLs in comments and string literals)
 - codeAction (Convert-to-v6 + W001 QuickFix) + ``pynescript.convertToV6`` executeCommand
@@ -481,6 +481,11 @@ class PynescriptLanguageServer(LanguageServer):
             result = inlay_hints_feature.handle_inlay_hints(params, doc.source, tree=doc.ast)
             doc.feature_cache["inlay_hints"] = result
             return result
+
+        @self.feature(lsp.INLAY_HINT_RESOLVE)
+        def inlay_hint_resolve(params: lsp.InlayHint) -> lsp.InlayHint:
+            """Handle inlayHint/resolve request (fill textEdits)."""
+            return inlay_hints_feature.handle_inlay_hint_resolve(params)
 
         @self.feature(lsp.TEXT_DOCUMENT_FOLDING_RANGE)
         def text_folding_range(
