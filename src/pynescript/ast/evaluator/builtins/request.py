@@ -140,6 +140,8 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "cum",
         "adx",
         "mfi",
+        "obv",
+        "cmf",
     }
 )
 
@@ -159,8 +161,8 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi "
-    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi on coarser TF "
+    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf "
+    "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -190,9 +192,9 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi
-    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c) and mfi (h/l/c/v); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum store 0 (cumulative)
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf
+    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), and 0-arg obv (close+volume); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv store 0 (cumulative)
     extra: int | None = None  # 1-arg/2-arg ao: fast; 3-arg linreg: offset; else None
 
 
@@ -248,6 +250,9 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.atr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.adx(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.mfi(14)`` — length-only form (uses HTF high/low/close/volume).
+    - ``ta.cmf(14)`` — length-only form (uses HTF high/low/close/volume).
+    - ``ta.obv()`` — 0-arg (HTF close+volume, running signed volume).
+      ``length`` is stored as 0. 2-arg ``ta.obv(close, volume)`` stays unmatched.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -276,13 +281,14 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.swma(ta.sma(...))`` / ``ta.vwap(ta.sma(...))`` /
     ``ta.cum(ta.sma(...))`` / ``ta.change(ta.sma(...))`` /
     ``ta.adx(ta.sma(...), n)`` / ``ta.mfi(ta.sma(...), n)`` /
-    ``ta.linreg(ta.sma(...), n, offset)``), multi-arg
+    ``ta.cmf(ta.sma(...))`` / ``ta.linreg(ta.sma(...), n, offset)``), multi-arg
     atr, 2-arg ``ta.adx(diLength, adxSmoothing)``, 4-arg ``ta.adx`` /
     ``ta.cci`` / ``ta.wpr``, 2-arg ``ta.mfi(source, length)``, 1-arg ``ta.median`` /
     ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
     ``ta.percentrank`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
     1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
-    2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``,
+    2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
+    5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -309,6 +315,15 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     if fname == "mfi":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
         return HtfSimpleTaExpr("mfi", None, length) if length else None
+
+    if fname == "cmf":
+        length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
+        return HtfSimpleTaExpr("cmf", None, length) if length else None
+
+    if fname == "obv":
+        if arg_nodes:
+            return None
+        return HtfSimpleTaExpr("obv", None, 0)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2555,6 +2570,100 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if fv != fv else fv
         return out
 
+    @staticmethod
+    def _htf_obv_full_series(
+        closes: list[float | None], volumes: list[float | None]
+    ) -> list[float | None]:
+        """Full-list OBV matching interpret ``ta.obv()`` on unique HTF bars.
+
+        ``_obv`` is last-sample: 0 until 3 samples, then accumulates signed
+        volume from index 2 (skips ``close[0]`` vs ``close[1]``). 2-arg
+        ``ta.obv(close, volume)`` stays unmatched.
+        """
+        n = min(len(closes), len(volumes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0:
+            return out
+        warmup = 3
+        total = 0.0
+        for i in range(n):
+            if i + 1 < warmup:
+                out[i] = 0.0
+                continue
+            cur = closes[i]
+            prev = closes[i - 1]
+            vol = volumes[i]
+            if cur is not None and prev is not None and vol is not None:
+                try:
+                    c = float(cur)
+                    p = float(prev)
+                    v = float(vol)
+                except (TypeError, ValueError):
+                    out[i] = total
+                    continue
+                if c == c and p == p and v == v:
+                    if c > p:
+                        total += v
+                    elif c < p:
+                        total -= v
+            out[i] = total
+        return out
+
+    def _htf_cmf_full_series(
+        self,
+        closes: list[float | None],
+        highs: list[float | None],
+        lows: list[float | None],
+        volumes: list[float | None],
+        period: int,
+    ) -> list[float | None]:
+        """Full-list CMF via interpret ``_cmf`` on unique HTF high/low/close/volume.
+
+        ``_cmf`` already returns a full list (partial windows from bar 0).
+        5-arg explicit-series stays unmatched.
+        """
+        n = min(len(closes), len(highs), len(lows), len(volumes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0 or period <= 0:
+            return out
+        cmf_fn = getattr(self, "_cmf", None)
+        if not callable(cmf_fn):
+            return out
+
+        def _nums(seq: list[float | None]) -> list[float]:
+            acc: list[float] = []
+            for v in seq[:n]:
+                if v is None:
+                    acc.append(0.0)
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    acc.append(0.0)
+                    continue
+                acc.append(0.0 if fv != fv else fv)
+            return acc
+
+        try:
+            raw = cmf_fn(_nums(closes), _nums(highs), _nums(lows), _nums(volumes), period)
+        except (TypeError, ValueError):
+            return out
+        if not raw:
+            return out
+        for i, v in enumerate(raw):
+            if i >= n:
+                break
+            if v is None:
+                out[i] = None
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                out[i] = None
+                continue
+            out[i] = None if fv != fv else fv
+        return out
+
     def _htf_rsi_full_series(self, closes: list[float | None], period: int) -> list[float | None]:
         """Full-list RSI on *closes* (Wilder RMA of gains/losses), bar-aligned."""
         n = len(closes)
@@ -2626,6 +2735,10 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             field = expr.source or "close"
             src = self._htf_source_series(unique, field)
             return self._htf_cum_full_series(src)
+        if name == "obv":
+            closes = self._htf_source_series(unique, "close")
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_obv_full_series(closes, vol)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -2746,7 +2859,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return self._htf_rsi_full_series(src, period)
 
         # atr / wpr / adx: length-only; uses HTF high/low/close.
-        # mfi: length-only; uses HTF high/low/close/volume.
+        # mfi / cmf: length-only; uses HTF high/low/close/volume.
         highs = self._htf_source_series(unique, "high")
         lows = self._htf_source_series(unique, "low")
         closes = self._htf_source_series(unique, "close")
@@ -2757,6 +2870,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if name == "mfi":
             vol = self._htf_source_series(unique, "volume")
             return self._htf_mfi_full_series(highs, lows, closes, vol, period)
+        if name == "cmf":
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_cmf_full_series(closes, highs, lows, vol, period)
         atr_fn = getattr(self, "_atr", None)
         out: list[float | None] = [None] * n
         if not callable(atr_fn):
@@ -2946,9 +3062,13 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                     src.append(None if v != v else v)
             fast, slow = self._htf_ao_periods(expression)
             return _last_of(self._htf_ao_from_hl2(src, fast, slow) if src else None)
+        if name == "obv":
+            closes = self._series_chrono_values("close")
+            vol = self._series_chrono_values("volume")
+            return _last_of(self._htf_obv_full_series(closes, vol))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
-        if name in ("atr", "wpr", "adx", "mfi") or (name == "range" and expression.source is None):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and expression.source is None):
             highs = self._series_chrono_values("high")
             lows = self._series_chrono_values("low")
             closes = self._series_chrono_values("close")
@@ -2961,6 +3081,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             if name == "mfi":
                 vol = self._series_chrono_values("volume")
                 return _last_of(self._htf_mfi_full_series(highs, lows, closes, vol, period))
+            if name == "cmf":
+                vol = self._series_chrono_values("volume")
+                return _last_of(self._htf_cmf_full_series(closes, highs, lows, vol, period))
             atr_fn = getattr(self, "_atr", None)
             if not callable(atr_fn) or not closes:
                 return na
@@ -3631,6 +3754,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           with bare OHLCV source + const length; 1-arg ``ta.cci(n)`` uses HTF hlc3;
           1-arg ``ta.wpr(n)`` uses HTF high/low/close; 1-arg ``ta.adx(n)`` uses HTF
           high/low/close; 1-arg ``ta.mfi(n)`` uses HTF high/low/close/volume;
+          0-arg ``ta.obv()`` uses HTF close+volume; 1-arg ``ta.cmf(n)`` uses HTF
+          high/low/close/volume;
           1-arg ``ta.highest(n)`` /
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
           high / low; 1-arg ``ta.range(n)`` is HTF high−low; 1-arg ``ta.swma``
@@ -4357,7 +4482,7 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     ``lowestbars`` / ``kama`` / ``rising`` / ``falling`` / ``swma`` / ``ao`` /
     ``vwap`` / ``cum`` and 1-arg ``ta.wpr`` / ``ta.highest`` / ``ta.lowest`` /
     ``ta.highestbars`` / ``ta.lowestbars`` / ``ta.range`` / ``ta.change`` /
-    ``ta.adx`` / ``ta.mfi`` on HTF
+    ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` on HTF
     bars match interpret exactly.
     """
 
@@ -4424,6 +4549,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
         self._tr = TechnicalHelpers._tr.__get__(self, type(self))
         self._adx = CommonIndicators._adx.__get__(self, type(self))
         self._mfi = VolumeIndicators._mfi.__get__(self, type(self))
+        self._obv = VolumeIndicators._obv.__get__(self, type(self))
+        self._cmf = VolumeIndicators._cmf.__get__(self, type(self))
 
     def set_bar_index(self, index: int) -> None:
         i = int(index)
@@ -4598,7 +4725,7 @@ def compile_htf_security_value(  # noqa: PLR0913
         except (TypeError, ValueError):
             return float("nan")
         extra: int | None = None
-        if name in ("atr", "wpr", "adx", "mfi") or (name == "range" and field_s is None):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and field_s is None):
             src = None
         elif name == "ao":
             src = field_s or "hl2"
@@ -4608,6 +4735,8 @@ def compile_htf_security_value(  # noqa: PLR0913
             src = field_s or "hlc3"
         elif name == "cum":
             src = field_s or "close"
+        elif name == "obv":
+            src = None
         else:
             src = field_s or "close"
             if name == "linreg" and offset:

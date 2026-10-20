@@ -476,9 +476,9 @@ plot(ta.atr(3), title="catr")
         3-arg ``ta.linreg(source, n, offset)`` /
         0-arg ``ta.vwap()`` / 1-arg ``ta.vwap(source)`` / 1-arg ``ta.cum(source)`` /
         1-arg ``ta.change(source)`` (length 1) / 1-arg ``ta.adx(n)`` /
-        1-arg ``ta.mfi(n)``
-        are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, and nested
-        ``ta.adx`` / ``ta.mfi`` stay na.
+        1-arg ``ta.mfi(n)`` / 0-arg ``ta.obv()`` / 1-arg ``ta.cmf(n)``
+        are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
+        ``ta.obv``, 5-arg ``ta.cmf``, and nested ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
 
@@ -496,6 +496,9 @@ plot(request.security(syminfo.tickerid, "60", ta.change(ta.sma(close, 5))), titl
 plot(request.security(syminfo.tickerid, "60", ta.adx(5, 5)), title="adx2")
 plot(request.security(syminfo.tickerid, "60", ta.adx(high, low, close, 5)), title="adx4")
 plot(request.security(syminfo.tickerid, "60", ta.mfi(ta.sma(close, 5), 5)), title="mfin")
+plot(request.security(syminfo.tickerid, "60", ta.obv(close, volume)), title="obv2")
+plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5)), title="cmf5")
+plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low, volume, 5)), title="cmfn")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -649,11 +652,19 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "adx" and m.source is None and m.length == 14
         m = match_htf_simple_ta_ast(_expr("ta.mfi(14)"))
         assert m is not None and m.name == "mfi" and m.source is None and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.obv()"))
+        assert m is not None and m.name == "obv" and m.source is None and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
+        assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.adx(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.adx(ta.sma(close, 14), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.mfi(close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.mfi(ta.sma(close, 14), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.obv(close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
@@ -1633,6 +1644,59 @@ plot(ta.mfi(3), title="cmfi")
         cmfi_day8 = out["series"]["cmfi"][8 * 24 : 9 * 24]
         assert any(abs(float(hadx[8 * 24 + i]) - float(cadx_day8[i])) > 1e-6 for i in range(24) if not _is_na(cadx_day8[i]))
         assert any(abs(float(hmfi[8 * 24 + i]) - float(cmfi_day8[i])) > 1e-6 for i in range(24) if not _is_na(cmfi_day8[i]))
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_obv_cmf_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 0-arg ta.obv / 1-arg ta.cmf."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.volume import VolumeIndicators
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.obv()), title="hobv")
+plot(request.security(syminfo.tickerid, "D", ta.cmf(3)), title="hcmf")
+plot(ta.obv(), title="cobv")
+plot(ta.cmf(3), title="ccmf")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hobv = out["series"]["hobv"]
+        hcmf = out["series"]["hcmf"]
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        daily_closes: list[float] = []
+        daily_vols: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+        # First completed HTF bar at chart 24; obv is 0 until 3 unique samples.
+        assert all(_is_na(x) for x in hobv[1:24])
+        assert all(_is_na(x) for x in hcmf[1:24])
+        day5_obv = hobv[5 * 24 : 6 * 24]
+        day5_cmf = hcmf[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_obv)
+        assert all(not _is_na(x) for x in day5_cmf)
+        obv_ref = float(day5_obv[0])
+        cmf_ref = float(day5_cmf[0])
+        for v in day5_obv:
+            assert abs(float(v) - obv_ref) < 1e-9
+        for v in day5_cmf:
+            assert abs(float(v) - cmf_ref) < 1e-9
+        expect_obv = float(VolumeIndicators()._obv(daily_closes, daily_vols))
+        expect_cmf = float(VolumeIndicators()._cmf(daily_closes, daily_highs, daily_lows, daily_vols, 3)[-1])
+        assert math.isfinite(expect_obv) and math.isfinite(expect_cmf)
+        assert abs(float(hobv[-1]) - expect_obv) < 1e-9
+        assert abs(float(hcmf[-1]) - expect_cmf) < 1e-9
+        cobv_day5 = out["series"]["cobv"][5 * 24 : 6 * 24]
+        ccmf_day5 = out["series"]["ccmf"][5 * 24 : 6 * 24]
+        assert any(abs(float(hobv[5 * 24 + i]) - float(cobv_day5[i])) > 1e-6 for i in range(24) if not _is_na(cobv_day5[i]))
+        assert any(abs(float(hcmf[5 * 24 + i]) - float(ccmf_day5[i])) > 1e-6 for i in range(24) if not _is_na(ccmf_day5[i]))
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
