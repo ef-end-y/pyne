@@ -2361,6 +2361,65 @@ class TestDocumentLinkHandler:
             assert _link_at(result, src, url).target == url
 
 
+class TestInlayHintParameters:
+    """Builtin calls get Parameter inlay hints from metadata / well-known names."""
+
+    SRC = '//@version=5\nindicator("T")\nlength = 14\nplot(ta.sma(close, 14))\n'
+    KWARGS_SRC = '//@version=5\nindicator("T")\nplot(ta.sma(close, length=14))\n'
+
+    def _params(self) -> lsp.InlayHintParams:
+        return lsp.InlayHintParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            range=lsp.Range(
+                start=lsp.Position(line=0, character=0),
+                end=lsp.Position(line=10, character=0),
+            ),
+        )
+
+    def test_empty_source(self) -> None:
+        assert handle_inlay_hints(self._params(), "") == []
+        assert handle_inlay_hints(self._params(), None) == []
+
+    def test_sma_parameter_names_and_assignment_type(self) -> None:
+        hints = handle_inlay_hints(self._params(), self.SRC)
+        assert hints is not None
+        param_hints = [h for h in hints if h.kind == lsp.InlayHintKind.Parameter]
+        labels = [h.label if isinstance(h.label, str) else "" for h in param_hints]
+        assert len(param_hints) >= 2
+        assert any("source" in label for label in labels)
+        assert any("length" in label for label in labels)
+        for hint in param_hints:
+            assert hint.data is None
+            assert isinstance(hint.label, str)
+            assert hint.label.endswith(" ")
+        type_labels = [h.label for h in hints if h.kind == lsp.InlayHintKind.Type]
+        assert ": const int" in type_labels
+
+    def test_named_kwargs_skipped(self) -> None:
+        hints = handle_inlay_hints(self._params(), self.KWARGS_SRC)
+        assert hints is not None
+        param_hints = [h for h in hints if h.kind == lsp.InlayHintKind.Parameter]
+        labels = [h.label if isinstance(h.label, str) else "" for h in param_hints]
+        assert any("source" in label for label in labels)
+        assert not any("length" in label for label in labels)
+
+    def test_resolve_type_hint_fills_edits_parameter_does_not(self) -> None:
+        hints = handle_inlay_hints(self._params(), self.SRC)
+        assert hints is not None
+        type_hints = [h for h in hints if h.kind == lsp.InlayHintKind.Type]
+        param_hints = [h for h in hints if h.kind == lsp.InlayHintKind.Parameter]
+        assert type_hints
+        assert param_hints
+        resolved_type = handle_inlay_hint_resolve(type_hints[0])
+        assert resolved_type.text_edits is not None
+        assert resolved_type.text_edits[0].new_text == ": const int"
+        resolved_param = handle_inlay_hint_resolve(param_hints[0])
+        assert not resolved_param.text_edits
+        # Parameter labels are "name: ", not insertable type annotations (": type").
+        assert isinstance(resolved_param.label, str)
+        assert not resolved_param.label.startswith(": ")
+
+
 class TestInlayHintResolve:
     """inlayHint/resolve fills textEdits that insert the inferred type annotation."""
 

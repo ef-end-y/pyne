@@ -178,7 +178,8 @@ class TestInlayHints:
 
         hints = handle_inlay_hints(_ih_params(), '//@version=6\nindicator("T")\nc = close\nn = input.int(5, "n")\n')
         assert hints is not None
-        assert {h.label for h in hints} == {": series float", ": input int"}
+        type_labels = {h.label for h in hints if h.kind == lsp.InlayHintKind.Type}
+        assert type_labels == {": series float", ": input int"}
 
     def test_unknown_rhs_no_hint(self) -> None:
         from pynescript.langserver.features.inlay_hints import handle_inlay_hints
@@ -246,6 +247,32 @@ class TestInlayHints:
         assert not empty.text_edits
         bogus = SimpleNamespace(text_edits=None, label=object(), position=None, data=None)
         assert handle_inlay_hint_resolve(bogus) is bogus  # type: ignore[arg-type]
+
+    def test_parameter_hints_on_ta_sma(self) -> None:
+        from pynescript.langserver.features.inlay_hints import handle_inlay_hints
+
+        src = '//@version=5\nindicator("T")\nlength = 14\nplot(ta.sma(close, 14))\n'
+        hints = handle_inlay_hints(_ih_params(), src)
+        assert hints is not None
+        param_hints = [h for h in hints if h.kind == lsp.InlayHintKind.Parameter]
+        labels = " ".join(h.label if isinstance(h.label, str) else "" for h in param_hints)
+        assert "source" in labels
+        assert "length" in labels
+        assert any(h.label == ": const int" for h in hints if h.kind == lsp.InlayHintKind.Type)
+        for hint in param_hints:
+            assert hint.data is None
+
+    def test_resolve_parameter_hint_does_not_insert(self) -> None:
+        from pynescript.langserver.features.inlay_hints import handle_inlay_hint_resolve
+        from pynescript.langserver.features.inlay_hints import handle_inlay_hints
+
+        src = '//@version=5\nindicator("T")\nplot(ta.sma(close, 14))\n'
+        hints = handle_inlay_hints(_ih_params(), src)
+        assert hints is not None
+        param_hints = [h for h in hints if h.kind == lsp.InlayHintKind.Parameter]
+        assert param_hints
+        resolved = handle_inlay_hint_resolve(param_hints[0])
+        assert not resolved.text_edits
 
 
 # ---------------------------------------------------------------------------

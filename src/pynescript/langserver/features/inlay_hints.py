@@ -21,7 +21,7 @@
 
 Public handlers:
 
-- :func:`handle_inlay_hints` — inferred declaration types next to assignments
+- :func:`handle_inlay_hints` — assignment types and builtin parameter names
 - :func:`handle_inlay_hint_resolve` — fill ``text_edits`` that insert the type
 
 Shows simple inferred types next to variable declarations, e.g.::
@@ -30,14 +30,22 @@ Shows simple inferred types next to variable declarations, e.g.::
     rsi   = ta.rsi(close, 14)         →   rsi:   series float = ta.rsi(close, 14)
     n     = input.int(5, "n")         →   n:     input int = input.int(5, "n")
 
-Hints sit at the end of the target identifier (just before ``=``). Inference is
+and parameter names before positional args of dotted builtins::
+
+    ta.sma(close, 14)                 →   ta.sma(source: close, length: 14)
+
+Type hints sit at the end of the target identifier (just before ``=``).
+Parameter hints sit at the start of each positional argument. Inference is
 shape-based on the RHS (literals, builtins, ``ta.*`` / ``input.*`` metadata);
-only confident cases are emitted. Capability: ``resolve_provider=True``.
+only confident cases are emitted. ``inlayHint/resolve`` inserts type
+annotations only — parameter hints have no ``data`` and resolve is a no-op.
+Capability: ``resolve_provider=True``.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 
 from typing import Any
 
@@ -50,6 +58,23 @@ from pynescript.langserver.providers.builtin_metadata import get_builtin
 
 logger = logging.getLogger(__name__)
 
+
+# Snippet placeholders ``${1:source}`` / ``${2}`` / ``$3``.
+_SNIPPET_PLACEHOLDER = re.compile(r"\$\{(\d+):([^}]+)\}|\$\{(\d+)\}|\$(\d+)")
+_GENERIC_PARAM = re.compile(r"^(?:param|arg)\d*$", re.I)
+_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Pine-conventional names when metadata snippets are generic ``paramN``.
+_WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
+    "ta.sma": ("source", "length"),
+    "ta.ema": ("source", "length"),
+    "ta.rma": ("source", "length"),
+    "ta.wma": ("source", "length"),
+    "ta.vwma": ("source", "length"),
+    "ta.hma": ("source", "length"),
+    "ta.rsi": ("source", "length"),
+    "ta.stdev": ("source", "length"),
+}
 
 # Built-in variable → return type. Only the ones the parser/builder treats as
 # plain `Name` nodes (so they can appear bare on the RHS of an Assign).
@@ -85,8 +110,8 @@ def handle_inlay_hints(
             Omit (default ``...``) to parse from *source*.
 
     Returns:
-        A list of `lsp.InlayHint` for variables whose type can be inferred, or
-        None if the document could not be parsed.
+        A list of `lsp.InlayHint` for inferred assignment types and builtin
+        parameter names, or None if the document could not be parsed.
     """
     if tree is ...:
         if not source:
@@ -100,7 +125,7 @@ def handle_inlay_hints(
         return None
 
     hints: list[lsp.InlayHint] = []
-    _collect_hints(tree, source or "", hints)
+    _collect_hints(tree, hints)
     return hints
 
 
@@ -109,7 +134,8 @@ def handle_inlay_hint_resolve(hint: lsp.InlayHint) -> lsp.InlayHint:
 
     Initial ``textDocument/inlayHint`` responses carry ``label`` / ``tooltip``
     and stash the insert text on ``data`` so resolve does not re-parse. Already
-    resolved or empty/malformed hints are returned unchanged.
+    resolved, empty/malformed, or parameter-name hints (no insertable type
+    annotation) are returned unchanged.
 
     Args:
         hint: The inlay hint to resolve (from the client, possibly with
@@ -121,8 +147,11 @@ def handle_inlay_hint_resolve(hint: lsp.InlayHint) -> lsp.InlayHint:
     try:
         if getattr(hint, "text_edits", None) is not None:
             return hint
+        # Parameter-name hints must not insert text into the call.
+        if getattr(hint, "kind", None) == lsp.InlayHintKind.Parameter:
+            return hint
         insert = _insert_text_for_hint(hint)
-        if not insert:
+        if not _is_type_annotation_insert(insert):
             return hint
         position = getattr(hint, "position", None)
         if position is None:
@@ -159,19 +188,25 @@ def _insert_text_for_hint(hint: lsp.InlayHint) -> str:
     return ""
 
 
+def _is_type_annotation_insert(text: str) -> bool:
+    """True when *text* is an assignment type annotation (``": const int"``)."""
+    return bool(text) and text.startswith(": ")
+
+
 def _collect_hints(
     node: ast.AST | None,
-    source: str,
     hints: list[lsp.InlayHint],
 ) -> None:
-    """Walk an AST node, adding inlay hints for inferable assignments."""
+    """Walk an AST node, adding type and parameter inlay hints."""
     if node is None:
         return
 
     if isinstance(node, ast.Assign):
-        hint = _hint_for_assign(node, source)
+        hint = _hint_for_assign(node)
         if hint is not None:
             hints.append(hint)
+    elif isinstance(node, ast.Call):
+        _collect_call_param_hints(node, hints)
 
     # Recurse into all child AST nodes (matches the simple visitor pattern used
     # elsewhere in the langserver; e.g. `_collect_workspace_symbols` in
@@ -181,14 +216,13 @@ def _collect_hints(
         if isinstance(child, list):
             for item in child:
                 if isinstance(item, ast.AST):
-                    _collect_hints(item, source, hints)
+                    _collect_hints(item, hints)
         elif isinstance(child, ast.AST):
-            _collect_hints(child, source, hints)
+            _collect_hints(child, hints)
 
 
 def _hint_for_assign(
     node: ast.Assign,
-    source: str,
 ) -> lsp.InlayHint | None:
     """Build an inlay hint for a single `Assign`, or None if not inferable."""
     # Only emit hints for simple `name = expr` (no tuple destructuring, no
@@ -217,6 +251,142 @@ def _hint_for_assign(
         tooltip=f"Inferred type: {type_label}",
         data=insert,
     )
+
+
+def _collect_call_param_hints(call: ast.Call, hints: list[lsp.InlayHint]) -> None:
+    """Append Parameter inlay hints for positional args of a dotted builtin."""
+    qualified = _qualified_call_name(call.func)
+    if not qualified:
+        return
+    info = get_builtin(qualified)
+    if not info:
+        return
+    names = _param_names_from_info(qualified, info)
+    if not names:
+        return
+    for i, arg in enumerate(call.args or []):
+        if i >= len(names) or getattr(arg, "name", None) or not names[i]:
+            continue
+        loc = _arg_start_position(arg)
+        if loc is None:
+            continue
+        lineno, col = loc
+        hints.append(
+            lsp.InlayHint(
+                position=lsp.Position(line=lineno - 1, character=col),
+                label=f"{names[i]}: ",
+                kind=lsp.InlayHintKind.Parameter,
+            )
+        )
+
+
+def _qualified_call_name(func: ast.expr) -> str | None:
+    """Return ``ta.sma`` for ``Attribute(Name('ta'), 'sma')``, else None."""
+    if not isinstance(func, ast.Attribute) or not isinstance(func.value, ast.Name):
+        return None
+    module = func.value.id or ""
+    attr = func.attr or ""
+    if not module or not attr:
+        return None
+    return f"{module}.{attr}"
+
+
+def _arg_start_position(arg: ast.AST) -> tuple[int, int] | None:
+    """``(lineno, col_offset)`` of a call arg, falling back to its value."""
+    lineno = getattr(arg, "lineno", None)
+    col = getattr(arg, "col_offset", None)
+    if isinstance(lineno, int) and isinstance(col, int):
+        return lineno, col
+    value = getattr(arg, "value", None)
+    lineno = getattr(value, "lineno", None)
+    col = getattr(value, "col_offset", None)
+    if isinstance(lineno, int) and isinstance(col, int):
+        return lineno, col
+    return None
+
+
+def _param_names_from_info(qualified: str, info: dict[str, Any]) -> list[str]:
+    """Parameter names: snippet placeholders, then detail, docs, well-known."""
+    snippet_names = _names_from_snippet(info.get("snippet") or "")
+    if snippet_names and not any(_GENERIC_PARAM.fullmatch(n) for n in snippet_names):
+        return snippet_names
+    detail_names = _names_from_call_signature(info.get("detail") or "")
+    if detail_names:
+        return detail_names
+    doc_names = _names_from_documentation(info.get("documentation") or "", qualified)
+    if doc_names:
+        return doc_names
+    known = _WELL_KNOWN_PARAMS.get(qualified)
+    if known:
+        return list(known)
+    return snippet_names
+
+
+def _names_from_snippet(snippet: str) -> list[str]:
+    names: list[str] = []
+    for match in _SNIPPET_PLACEHOLDER.finditer(snippet):
+        named = match.group(2)
+        if named:
+            ident = named.strip()
+            if ident:
+                names.append(ident)
+    return names
+
+
+def _names_from_call_signature(sig: str) -> list[str]:
+    head = sig.split("→", 1)[0]
+    start = head.find("(")
+    end = head.rfind(")")
+    if start < 0 or end <= start:
+        return []
+    inner = head[start + 1 : end].strip()
+    if not inner or inner == "...":
+        return []
+    names: list[str] = []
+    for chunk in _split_top_level_args(inner):
+        ident = _ident_from_param_chunk(chunk)
+        if ident:
+            names.append(ident)
+    return names
+
+
+def _names_from_documentation(doc: str, qualified: str) -> list[str]:
+    if not doc or not qualified:
+        return []
+    pattern = re.escape(qualified) + r"\s*\(([^)]*)\)"
+    match = re.search(pattern, doc)
+    if match is None:
+        bare = qualified.rsplit(".", 1)[-1]
+        match = re.search(r"\b" + re.escape(bare) + r"\s*\(([^)]*)\)", doc)
+    if match is None:
+        return []
+    inner = match.group(1).strip()
+    if not inner or inner == "...":
+        return []
+    names: list[str] = []
+    for chunk in _split_top_level_args(inner):
+        ident = _ident_from_param_chunk(chunk)
+        if ident:
+            names.append(ident)
+    return names
+
+
+def _ident_from_param_chunk(chunk: str) -> str | None:
+    piece = chunk.strip()
+    if not piece or piece == "...":
+        return None
+    name = piece.split("=", 1)[0].strip().lstrip("*").strip()
+    if not name:
+        return None
+    token = name.split()[-1]
+    if _IDENT.fullmatch(token):
+        return token
+    return None
+
+
+def _split_top_level_args(inner: str) -> list[str]:
+    """Split a flat ``(a, b, c)`` param list; metadata signatures are un-nested."""
+    return [part.strip() for part in inner.split(",") if part.strip()]
 
 
 def _infer_type(value: ast.expr) -> str | None:

@@ -2,6 +2,7 @@
 
 ### Added
 
+- **LSP parameter inlay hints.** `textDocument/inlayHint` shows builtin parameter names before positional args (`ta.sma(close, 14)` → `source:` / `length:`). Assignment type hints and `inlayHint/resolve` textEdits are unchanged.
 - **`DELETE /data/series` drops one stored series.** The engine's series store is its cache of the venue's OHLCV; a client that flushed its own dataset could not drop the engine's copy, so the engine kept serving the old (stale, holed) window. The route takes the same key fields as `GET /data/series` and removes the series' bars plus its metadata row. Per key only — the store is shared, so a purge never touches another series.
 - **LSP inlay-hint resolve.** `inlayHint/resolve` fills `textEdits` that insert the inferred type annotation at the hint position. Advertised via `inlayHintProvider.resolveProvider`.
 - **LSP on-type formatting.** `textDocument/onTypeFormatting` formats the just-completed line after newline using the same NodeUnparser as range formatting. Empty or unparsed documents return `[]`. Advertised via `documentOnTypeFormattingProvider` (trigger `\n`).
