@@ -143,6 +143,8 @@
               "lsp/features/formatting",
               "lsp/features/semantic-tokens",
               "lsp/features/inlay-hints",
+              "lsp/features/document-link",
+              "lsp/features/document-color",
               "lsp/features/folding",
               "lsp/features/selection-range",
               "lsp/builtin-metadata",

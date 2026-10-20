@@ -2,6 +2,7 @@
 
 ### Added
 
+- **Public LSP docs for documentLink and documentColor.** Dedicated Mintlify pages `docs/pyne/lsp/features/document-link.mdx` (`textDocument/documentLink` for `http(s)` URLs in comments and strings) and `docs/pyne/lsp/features/document-color.mdx` (`textDocument/documentColor` / `colorPresentation` for `#hex`, named `color.*`, and literal `color.rgb` / `color.new` / `color()` / `color.from_gradient`). GHCR client example tag `ghcr.io/hoox-sh/pyne/lsp:0.6.17`.
 - **LSP architecture and index docs catch-up.** `docs/pyne/lsp/architecture.mdx` and `docs/pyne/lsp/index.mdx` now list range semantic tokens, on-type formatting, inlay resolve plus parameter-name hints, linked editing, and document links.
 - **Public LSP docs catch-up.** Mintlify pages under `docs/pyne/lsp/features/` now document hover Pine v6 function-reference links, `textDocument/semanticTokens/range`, `textDocument/onTypeFormatting`, `inlayHint/resolve` plus parameter-name hints, and `textDocument/linkedEditingRange`.
 - **LSP parameter inlay hints.** `textDocument/inlayHint` shows builtin parameter names before positional args (`ta.sma(close, 14)` → `source:` / `length:`). Assignment type hints and `inlayHint/resolve` textEdits are unchanged.

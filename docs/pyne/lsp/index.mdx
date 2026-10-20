@@ -36,7 +36,7 @@ Editors want *static* intelligence at typing cadence. Evaluation over OHLCV is *
 | **Pro API** (`backend.app`) | request / batch | parse, evaluate, plots / events / alerts |
 | **CLI / library** | batch / embed | same AST + evaluator |
 
-The LSP publishes diagnostics from the linter and parse errors, completes and hovers from Fernet-ready builtin metadata (plus keywords and user enums), navigates user symbols via AST visitors, emits semantic tokens (full and range) from the cached tree, and formats by round-tripping through the unparser (including on-type after newline). Inlay hints cover assignment types and builtin parameter names; linked editing and document links round out the editor surface. Feature modules live under `src/pynescript/langserver/features/`; the VS Code extension (`hoox-sh.pyne` **0.4.4**) and `clients/` configs are thin protocol hosts — VS Code maps **`.pyne` first**, then legacy Pine suffixes, to language id `pinescript`. The stdio image is **`ghcr.io/hoox-sh/pyne/lsp`**.
+The LSP publishes diagnostics from the linter and parse errors, completes and hovers from Fernet-ready builtin metadata (plus keywords and user enums), navigates user symbols via AST visitors, emits semantic tokens (full and range) from the cached tree, and formats by round-tripping through the unparser (including on-type after newline). Inlay hints cover assignment types and builtin parameter names; linked editing, document links, and document color round out the editor surface. Feature modules live under `src/pynescript/langserver/features/`; the VS Code extension (`hoox-sh.pyne` **0.4.4**) and `clients/` configs are thin protocol hosts — VS Code maps **`.pyne` first**, then legacy Pine suffixes, to language id `pinescript`. The stdio image is **`ghcr.io/hoox-sh/pyne/lsp`**.
 
 ## Conceptual model
 
@@ -85,8 +85,8 @@ flowchart TB
 | Inlay hints | `textDocument/inlayHint`, `inlayHint/resolve` (types + builtin param names) | `features/inlay_hints.py` |
 | Folding | `textDocument/foldingRange` | `features/folding.py` |
 | Selection range | `textDocument/selectionRange` | `features/selection_range.py` |
-| Document color | `textDocument/documentColor`, `colorPresentation` | `features/document_color.py` |
-| Document links | `textDocument/documentLink` | `features/document_link.py` |
+| [Document color](/pyne/docs/lsp/features/document-color) | `textDocument/documentColor`, `colorPresentation` | `features/document_color.py` |
+| [Document links](/pyne/docs/lsp/features/document-link) | `textDocument/documentLink` | `features/document_link.py` |
 | Code action | `textDocument/codeAction` | `convert.py` (Convert-to-v6 + W001/W002/C002 QuickFix) |
 | Semantic tokens | `textDocument/semanticTokens/full`, `textDocument/semanticTokens/range` | `features/semantic_tokens.py` |
 
@@ -112,9 +112,11 @@ Console scripts are separate: `pyne` (Click CLI; alias `pynescript`) vs `pyne-ls
 1. [Architecture](/pyne/docs/lsp/architecture) — server lifecycle, workspace, capabilities
 2. [Diagnostics](/pyne/docs/lsp/features/diagnostics) through [Selection range](/pyne/docs/lsp/features/selection-range) — feature manuals
 3. [Linked editing](/pyne/docs/lsp/features/linked-editing) — same-document live ident ranges
-4. [Builtin metadata](/pyne/docs/lsp/builtin-metadata) — generation + Fernet `.enc` / `CRYPTO_KEY`
-5. [VS Code extension](/pyne/docs/lsp/vscode-extension) — client packaging
-6. [Clients](/pyne/docs/lsp/clients) — Neovim, Zed, Emacs, Helix, Sublime
+4. [Document links](/pyne/docs/lsp/features/document-link) — `http(s)` URLs in comments and strings
+5. [Document color](/pyne/docs/lsp/features/document-color) — `#hex` / `color.*` / literal `color.rgb` swatches
+6. [Builtin metadata](/pyne/docs/lsp/builtin-metadata) — generation + Fernet `.enc` / `CRYPTO_KEY`
+7. [VS Code extension](/pyne/docs/lsp/vscode-extension) — client packaging
+8. [Clients](/pyne/docs/lsp/clients) — Neovim, Zed, Emacs, Helix, Sublime
 
 ## See also
 
