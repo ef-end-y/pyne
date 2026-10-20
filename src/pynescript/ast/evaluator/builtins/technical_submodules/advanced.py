@@ -895,13 +895,21 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.acceleration_factor(momentum_list, period)
         Returns: Factor (-2.0 to 2.0)
+
+        Bar-mode incremental last sample uses ``_acceleration_factor_inc_update``.
         """
         msg = "ta.acceleration_factor() requires 2 arguments"
         if len(args) < BINARY:
             self._error(msg)
 
-        momentum = self._expect_list(args[0], msg)
         period = self._expect_int(args[1], msg)
+        if self._use_incremental_ta():
+            return self._acceleration_factor_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                period,
+            )
+
+        momentum = self._expect_list(args[0], msg)
 
         if len(momentum) < period + 1 or period <= 0:
             return 0.0

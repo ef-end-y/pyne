@@ -1737,6 +1737,48 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _acceleration_factor_inc_update(
+        self,
+        momentum: Any,
+        period: int,
+    ) -> float:
+        """Incremental acceleration factor matching full ``ta.acceleration_factor``.
+
+        Last-(period+1) samples. ``0.0`` while the window is short,
+        ``period<=0``, fewer than 2 numeric samples, or ``abs(old_mom) < 1e-10``.
+        Else clamp ``(new_mom - old_mom) / old_mom`` to ``[-2.0, 2.0]``.
+        ``new_mom`` is the last numeric in the cleaned window. One call-site
+        slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n <= 0:
+            return 0.0
+        key = ("acceleration_factor", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"w": deque(maxlen=n + 1), "value": 0.0}
+            bucket[key] = st
+        w: deque[Any] = st["w"]
+        w.append(self._series_last(momentum))
+        if len(w) < n + 1:
+            st["value"] = 0.0
+            return 0.0
+        momentum_clean = [m for m in w if isinstance(m, (int, float))]
+        if len(momentum_clean) < 2:
+            st["value"] = 0.0
+            return 0.0
+        old_mom = sum(momentum_clean[:-1]) / len(momentum_clean[:-1])
+        new_mom = momentum_clean[-1]
+        if abs(old_mom) < 1e-10:
+            st["value"] = 0.0
+            return 0.0
+        acceleration = (new_mom - old_mom) / old_mom
+        val = max(-2.0, min(2.0, acceleration))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

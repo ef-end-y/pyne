@@ -7,6 +7,7 @@
 - **Bar-mode incremental `ta.volatility_regime` (T2).** Last-sample kernel matches full recompute: last-N numeric ATR samples → `"low"` / `"medium"` / `"high"` / `"extreme"` (`"medium"` while the window is short).
 - **LSP hover docs links.** Builtin hover cards (`ta.sma`, `strategy.entry`, …) include a markdown link to the public Pine v6 function reference. Keywords, types, and user declarations stay link-free.
 - **Bar-mode incremental `ta.momentum_filter` (T2).** Last-sample kernel matches full recompute: last-N volume-weighted momentum (`0.0` while the window is short or volume_sum is 0).
+- **Bar-mode incremental `ta.acceleration_factor` (T2).** Last-sample kernel matches full recompute: last-(period+1) momentum, clamp to [-2, 2], 0.0 while short or old_mom ~ 0.
 
 ### Fixed
 
