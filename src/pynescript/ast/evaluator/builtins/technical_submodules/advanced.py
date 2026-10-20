@@ -1440,11 +1440,23 @@ class AdvancedIndicators(TechnicalHelpers):
         ta.trend_confirmation_score(momentum, trend_alignment, strength, rsi,
                                      rsi_alignment, support_distance)
         Returns: float (0-100)
+
+        Bar-mode incremental last sample uses ``_trend_confirmation_score_inc_update``.
+        The sixth argument (support_distance) is unused after the length check.
         """
         senary = 6
         msg = "ta.trend_confirmation_score() requires 6 arguments"
         if len(args) < senary:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._trend_confirmation_score_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+                self._as_series_or_raw(args[4], last_sample_ok=True),
+            )
 
         momentum = args[0] if isinstance(args[0], (int, float)) else 0.0
         trend_alignment = args[1] if isinstance(args[1], (int, float)) else 0.0

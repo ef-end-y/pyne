@@ -11148,3 +11148,397 @@ plot(g, "smf2")
     assert r_off["series"]["smf"][0] == pytest.approx(0.0)
     assert any(v != pytest.approx(0.0) for v in r_on["series"]["smf"][1:])
 
+
+# ---------------------------------------------------------------------------
+# T2: trend_confirmation_score incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _trend_confirmation_score_last_n(
+    momentum: list[Any],
+    trend_alignment: list[Any],
+    strength: list[Any],
+    rsi: list[Any],
+    rsi_alignment: list[Any],
+) -> float:
+    """Oracle formula on a chronological prefix (last sample, defaults 0/0/1/50/0)."""
+    m = momentum[-1] if momentum and isinstance(momentum[-1], (int, float)) else 0.0
+    t = (
+        trend_alignment[-1]
+        if trend_alignment and isinstance(trend_alignment[-1], (int, float))
+        else 0.0
+    )
+    s = strength[-1] if strength and isinstance(strength[-1], (int, float)) else 1.0
+    r = rsi[-1] if rsi and isinstance(rsi[-1], (int, float)) else 50.0
+    a = (
+        rsi_alignment[-1]
+        if rsi_alignment and isinstance(rsi_alignment[-1], (int, float))
+        else 0.0
+    )
+    momentum_score = min(100.0, abs(m) * 20.0)
+    trend_score = max(0.0, (t + 1.0) / 2.0 * 100.0)
+    strength_score = min(100.0, s * 50.0)
+    rsi_score = min(100.0, abs(r - 50.0) * 2.0) if abs(r - 50.0) > 10.0 else 40.0
+    alignment_bonus = 20.0 if abs(a) > 0.5 else 0.0
+    total = (
+        momentum_score * 0.25
+        + trend_score * 0.3
+        + strength_score * 0.25
+        + rsi_score * 0.15
+        + alignment_bonus
+    )
+    return max(0.0, min(100.0, total))
+
+
+def _tcs_series(
+    n: int = 120,
+) -> tuple[list[float], list[float], list[float], list[float], list[float]]:
+    """Momentum / trend / strength / rsi / rsi_alignment with mixed mix regimes."""
+    momentum = [2.0 * math.sin(i / 7.0) for i in range(n)]
+    trend = [math.sin(i / 5.0) for i in range(n)]
+    strength = [1.0 + 0.8 * math.sin(i / 6.0) for i in range(n)]
+    rsi = [50.0 + 30.0 * math.sin(i / 8.0) for i in range(n)]
+    rsi_align = [math.sin(i / 4.0) for i in range(n)]
+    return momentum, trend, strength, rsi, rsi_align
+
+
+def _tcs_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: close=mom, open=trend, high=strength, volume=rsi, low=align."""
+    bars: list[dict] = []
+    for i in range(n):
+        momentum = 2.0 * math.sin(i / 7.0)
+        trend = math.sin(i / 5.0)
+        strength = 1.0 + 0.8 * math.sin(i / 6.0)
+        rsi = 50.0 + 30.0 * math.sin(i / 8.0)
+        rsi_align = math.sin(i / 4.0)
+        bars.append(
+            {
+                "open": trend,
+                "high": strength,
+                "low": rsi_align,
+                "close": momentum,
+                "volume": rsi,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_trend_confirmation_score(
+    momentum: list[Any],
+    trend: list[Any],
+    strength: list[Any],
+    rsi: list[Any],
+    rsi_align: list[Any],
+) -> list[float]:
+    """Full-path oracle: last sample of each arg as a scalar (advanced.py formula)."""
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(momentum)):
+        out.append(
+            ev._builtin_ta_trend_confirmation_score(
+                [momentum[i], trend[i], strength[i], rsi[i], rsi_align[i], 0.0]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_trend_confirmation_score(
+    momentum: list[Any],
+    trend: list[Any],
+    strength: list[Any],
+    rsi: list[Any],
+    rsi_align: list[Any],
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(momentum)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._trend_confirmation_score_inc_update(
+                momentum[: i + 1],
+                trend[: i + 1],
+                strength[: i + 1],
+                rsi[: i + 1],
+                rsi_align[: i + 1],
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_trend_confirmation_score_last_sample(
+    momentum: list[Any],
+    trend: list[Any],
+    strength: list[Any],
+    rsi: list[Any],
+    rsi_align: list[Any],
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(momentum)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._trend_confirmation_score_inc_update(
+                momentum[i], trend[i], strength[i], rsi[i], rsi_align[i]
+            )
+        )
+    return out
+
+
+def test_incremental_trend_confirmation_score_matches_full() -> None:
+    mom, trend, strength, rsi, align = _tcs_series(120)
+    got = _bar_walk_inc_trend_confirmation_score(mom, trend, strength, rsi, align)
+    exp = _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_trend_confirmation_score_last_sample(
+        mom, trend, strength, rsi, align
+    )
+    _assert_series_close(last, exp)
+    oracle = [
+        _trend_confirmation_score_last_n(
+            mom[: i + 1],
+            trend[: i + 1],
+            strength[: i + 1],
+            rsi[: i + 1],
+            align[: i + 1],
+        )
+        for i in range(len(mom))
+    ]
+    _assert_series_close(got, oracle)
+    assert any(v != pytest.approx(33.5) for v in got)
+
+
+def test_incremental_trend_confirmation_score_empty() -> None:
+    """Empty / missing last sample → defaults (0/0/1/50/0) → 33.5, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._trend_confirmation_score_inc_update([], [], [], [], []) == pytest.approx(
+        33.5
+    )
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._trend_confirmation_score_inc_update(
+        None, None, None, None, None
+    ) == pytest.approx(33.5)
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_trend_confirmation_score(
+        [None], [None], [None], [None], [None]
+    )
+    oracle_na = [
+        _trend_confirmation_score_last_n([None], [None], [None], [None], [None])
+    ]
+    _assert_series_close(got_na, oracle_na)
+    assert got_na[0] == pytest.approx(33.5)
+
+
+def test_incremental_trend_confirmation_score_alignment_bonus() -> None:
+    """|rsi_alignment| > 0.5 adds 20; otherwise the mix has no bonus."""
+    # defaults + |align| > 0.5 → 33.5 + 20 = 53.5
+    mom, trend, strength, rsi, align = [0.0], [0.0], [1.0], [50.0], [0.6]
+    got = _bar_walk_inc_trend_confirmation_score(mom, trend, strength, rsi, align)
+    exp = _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align)
+    _assert_series_close(got, exp)
+    assert got[-1] == pytest.approx(53.5)
+
+    mom, trend, strength, rsi, align = [0.0], [0.0], [1.0], [50.0], [0.5]
+    got_edge = _bar_walk_inc_trend_confirmation_score(mom, trend, strength, rsi, align)
+    exp_edge = _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align)
+    _assert_series_close(got_edge, exp_edge)
+    assert got_edge[-1] == pytest.approx(33.5)
+
+
+def test_incremental_trend_confirmation_score_non_numeric_last() -> None:
+    """Non-numeric last sample uses the same defaults as the full path."""
+    mom: list[Any] = [1.0, -1.0, "x"]
+    trend: list[Any] = [0.8, -0.8, None]
+    strength: list[Any] = [1.5, 1.5, None]
+    rsi: list[Any] = [70.0, 30.0, None]
+    align: list[Any] = [0.9, -0.9, None]
+    got = _bar_walk_inc_trend_confirmation_score(mom, trend, strength, rsi, align)
+    exp = _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_trend_confirmation_score_last_sample(
+        mom, trend, strength, rsi, align
+    )
+    _assert_series_close(last, exp)
+    # defaults 0/0/1/50/0 → 33.5
+    assert got[-1] == pytest.approx(33.5)
+
+
+def test_incremental_trend_confirmation_score_clamp() -> None:
+    """Score is clamped to [0, 100] when the mix exceeds the band."""
+    # Strong mix + alignment bonus → 115 → 100
+    mom_hi = [0.0, 10.0]
+    trend_hi = [0.0, 1.0]
+    strength_hi = [1.0, 10.0]
+    rsi_hi = [50.0, 0.0]
+    align_hi = [0.0, 1.0]
+    got_hi = _bar_walk_inc_trend_confirmation_score(
+        mom_hi, trend_hi, strength_hi, rsi_hi, align_hi
+    )
+    exp_hi = _bar_walk_full_trend_confirmation_score(
+        mom_hi, trend_hi, strength_hi, rsi_hi, align_hi
+    )
+    _assert_series_close(got_hi, exp_hi)
+    assert got_hi[-1] == pytest.approx(100.0)
+
+    # Negative strength drives the mix below 0 → clamp 0
+    mom_lo = [0.0, 0.0]
+    trend_lo = [0.0, -1.0]
+    strength_lo = [1.0, -10.0]
+    rsi_lo = [50.0, 50.0]
+    align_lo = [0.0, 0.0]
+    got_lo = _bar_walk_inc_trend_confirmation_score(
+        mom_lo, trend_lo, strength_lo, rsi_lo, align_lo
+    )
+    exp_lo = _bar_walk_full_trend_confirmation_score(
+        mom_lo, trend_lo, strength_lo, rsi_lo, align_lo
+    )
+    _assert_series_close(got_lo, exp_lo)
+    assert got_lo[-1] == pytest.approx(0.0)
+
+
+def test_incremental_trend_confirmation_score_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    mom, trend, strength, rsi, align = _tcs_series(40)
+    mom_na: list[float | None] = list(mom)
+    mom_na[4] = None
+    ev = _IncTA()
+    for i in range(len(mom_na)):
+        ev._ta_call_i = 0
+        ev._trend_confirmation_score_inc_update(
+            mom_na[: i + 1],
+            trend[: i + 1],
+            strength[: i + 1],
+            rsi[: i + 1],
+            align[: i + 1],
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_trend_confirmation_score_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    mom, trend, strength, rsi, align = _tcs_series(30)
+    ev = _IncTA()
+    for i in range(len(mom)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_trend_confirmation_score(
+            [
+                mom[: i + 1],
+                trend[: i + 1],
+                strength[: i + 1],
+                rsi[: i + 1],
+                align[: i + 1],
+                0.0,
+            ]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_trend_confirmation_score_two_call_sites_independent() -> None:
+    mom, trend, strength, rsi, align = _tcs_series(80)
+    # abs(momentum) is even, so invert trend_alignment (signed mix term).
+    trend_b = [-t for t in trend]
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(mom)):
+        prefix_m = mom[: i + 1]
+        prefix_t = trend[: i + 1]
+        prefix_s = strength[: i + 1]
+        prefix_r = rsi[: i + 1]
+        prefix_a = align[: i + 1]
+        prefix_tb = trend_b[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._trend_confirmation_score_inc_update(
+                prefix_m, prefix_t, prefix_s, prefix_r, prefix_a
+            )
+        )
+        b_out.append(
+            ev._trend_confirmation_score_inc_update(
+                prefix_m, prefix_tb, prefix_s, prefix_r, prefix_a
+            )
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(
+        a_out,
+        _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align),
+    )
+    _assert_series_close(
+        b_out,
+        _bar_walk_full_trend_confirmation_score(mom, trend_b, strength, rsi, align),
+    )
+    assert a_out != b_out
+
+
+def test_runtime_trend_confirmation_score_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _tcs_bars(80)
+    src = """//@version=5
+indicator("trend confirmation score")
+f = ta.trend_confirmation_score(close, open, high, volume, low, close)
+g = ta.trend_confirmation_score(open, close, volume, high, low, open)
+plot(f, "tcs")
+plot(g, "tcs2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"tcs", "tcs2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses scalar isinstance on PineSeries (newest-first wrap),
+    # so series args default to 0/0/1/50/0 → 33.5 every bar. Incremental last
+    # sample is the chronological prefix formula (list-oracle / kernel). Do not
+    # require incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["tcs"]):
+        exp = _trend_confirmation_score_last_n(
+            closes[: i + 1],
+            opens[: i + 1],
+            highs[: i + 1],
+            vols[: i + 1],
+            lows[: i + 1],
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"tcs bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["tcs2"]):
+        exp = _trend_confirmation_score_last_n(
+            opens[: i + 1],
+            closes[: i + 1],
+            vols[: i + 1],
+            highs[: i + 1],
+            lows[: i + 1],
+        )
+        assert val == pytest.approx(
+            exp, rel=1e-9, abs=1e-9
+        ), f"tcs2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["tcs"][0] == pytest.approx(33.5)
+    assert r_off["series"]["tcs"][0] == pytest.approx(33.5)
+    assert any(v != pytest.approx(33.5) for v in r_on["series"]["tcs"][1:])
+

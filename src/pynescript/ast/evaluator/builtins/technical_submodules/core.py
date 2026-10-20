@@ -2174,6 +2174,54 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _trend_confirmation_score_inc_update(
+        self,
+        momentum: Any,
+        trend_alignment: Any,
+        strength: Any,
+        rsi: Any,
+        rsi_alignment: Any,
+    ) -> float:
+        """Incremental trend confirmation matching full ``ta.trend_confirmation_score``.
+
+        Last samples of momentum / trend_alignment / strength / rsi /
+        rsi_alignment. Empty or missing last sample uses the same defaults as
+        non-numeric: 0 / 0 / 1 / 50 / 0. Five last samples mixed, clamp
+        [0, 100]. One call-site slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("trend_confirmation_score", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 33.5}
+            bucket[key] = st
+        m_last = self._series_last(momentum)
+        t_last = self._series_last(trend_alignment)
+        s_last = self._series_last(strength)
+        r_last = self._series_last(rsi)
+        a_last = self._series_last(rsi_alignment)
+        m = m_last if isinstance(m_last, (int, float)) else 0.0
+        t = t_last if isinstance(t_last, (int, float)) else 0.0
+        s = s_last if isinstance(s_last, (int, float)) else 1.0
+        r = r_last if isinstance(r_last, (int, float)) else 50.0
+        a = a_last if isinstance(a_last, (int, float)) else 0.0
+        momentum_score = min(100.0, abs(m) * 20.0)
+        trend_score = max(0.0, (t + 1.0) / 2.0 * 100.0)
+        strength_score = min(100.0, s * 50.0)
+        rsi_score = min(100.0, abs(r - 50.0) * 2.0) if abs(r - 50.0) > 10.0 else 40.0
+        alignment_bonus = 20.0 if abs(a) > 0.5 else 0.0
+        total = (
+            momentum_score * 0.25
+            + trend_score * 0.3
+            + strength_score * 0.25
+            + rsi_score * 0.15
+            + alignment_bonus
+        )
+        val = max(0.0, min(100.0, total))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 
