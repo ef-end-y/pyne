@@ -11813,3 +11813,277 @@ plot(g.short_stop, "ss2")
         ), f"ss2 bar {i}: {val} != {exp['short_stop']}"
     assert any(v is not None for v in r_on["series"]["ls"])
 
+
+# ---------------------------------------------------------------------------
+# T2: max_loss_level incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _max_loss_level_last_n(
+    entry: list[Any],
+    account: list[Any],
+    max_loss_pct: list[Any],
+) -> float:
+    """Oracle formula on a chronological prefix (last sample, defaults 100/10000/1.0)."""
+    e = entry[-1] if entry and isinstance(entry[-1], (int, float)) else 100.0
+    a = account[-1] if account and isinstance(account[-1], (int, float)) else 10000.0
+    p = (
+        max_loss_pct[-1]
+        if max_loss_pct and isinstance(max_loss_pct[-1], (int, float))
+        else 1.0
+    )
+    max_loss_amount = a * (p / 100.0)
+    if e > 0:
+        shares = a / e
+        stop_price = e - (max_loss_amount / shares) if shares > 0 else 0.0
+        return max(0.0, stop_price)
+    return 0.0
+
+
+def _mll_series(n: int = 120) -> tuple[list[float], list[float], list[float]]:
+    """Entry / account / max_loss_pct with mild trend + oscillation."""
+    entry = [100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0 for i in range(n)]
+    account = [10000.0 + i * 10.0 for i in range(n)]
+    pct = [0.5 + 1.5 * (0.5 + 0.5 * math.sin(i / 7.0)) for i in range(n)]
+    return entry, account, pct
+
+
+def _mll_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: close=entry, volume=account, high=pct, open/low=2nd site."""
+    bars: list[dict] = []
+    for i in range(n):
+        entry = 100.0 + i * 0.15 + math.sin(i / 5.0) * 2.0
+        account = 10000.0 + i * 10.0
+        pct = 0.5 + 1.5 * (0.5 + 0.5 * math.sin(i / 7.0))
+        entry_b = 90.0 + i * 0.1 + math.cos(i / 6.0) * 1.5
+        pct_b = 0.4 + 1.2 * (0.5 + 0.5 * math.cos(i / 8.0))
+        bars.append(
+            {
+                "open": entry_b,
+                "high": pct,
+                "low": pct_b,
+                "close": entry,
+                "volume": account,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_max_loss_level(
+    entry: list[Any],
+    account: list[Any],
+    max_loss_pct: list[Any],
+) -> list[float]:
+    """Full-path oracle: last sample of each arg as a scalar (advanced.py formula)."""
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(entry)):
+        out.append(ev._builtin_ta_max_loss_level([entry[i], account[i], max_loss_pct[i]]))
+    return out
+
+
+def _bar_walk_inc_max_loss_level(
+    entry: list[Any],
+    account: list[Any],
+    max_loss_pct: list[Any],
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(entry)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._max_loss_level_inc_update(
+                entry[: i + 1], account[: i + 1], max_loss_pct[: i + 1]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_max_loss_level_last_sample(
+    entry: list[Any],
+    account: list[Any],
+    max_loss_pct: list[Any],
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(entry)):
+        ev._ta_call_i = 0
+        out.append(ev._max_loss_level_inc_update(entry[i], account[i], max_loss_pct[i]))
+    return out
+
+
+def test_incremental_max_loss_level_matches_full() -> None:
+    entry, account, pct = _mll_series(120)
+    got = _bar_walk_inc_max_loss_level(entry, account, pct)
+    exp = _bar_walk_full_max_loss_level(entry, account, pct)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_max_loss_level_last_sample(entry, account, pct)
+    _assert_series_close(last, exp)
+    oracle = [
+        _max_loss_level_last_n(entry[: i + 1], account[: i + 1], pct[: i + 1])
+        for i in range(len(entry))
+    ]
+    _assert_series_close(got, oracle)
+    assert any(v != pytest.approx(99.0) for v in got)
+
+
+def test_incremental_max_loss_level_empty() -> None:
+    """Empty / missing last sample → defaults (100/10000/1.0) → 99.0, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._max_loss_level_inc_update([], [], []) == pytest.approx(99.0)
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._max_loss_level_inc_update(None, None, None) == pytest.approx(99.0)
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_max_loss_level([None], [None], [None])
+    oracle_na = [_max_loss_level_last_n([None], [None], [None])]
+    _assert_series_close(got_na, oracle_na)
+    assert got_na[0] == pytest.approx(99.0)
+
+
+def test_incremental_max_loss_level_non_numeric_last() -> None:
+    """Non-numeric last sample uses the same defaults as the full path."""
+    entry: list[Any] = [100.0, 110.0, "x"]
+    account: list[Any] = [10000.0, 12000.0, None]
+    pct: list[Any] = [1.0, 2.0, None]
+    got = _bar_walk_inc_max_loss_level(entry, account, pct)
+    exp = _bar_walk_full_max_loss_level(entry, account, pct)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_max_loss_level_last_sample(entry, account, pct)
+    _assert_series_close(last, exp)
+    # defaults 100/10000/1.0 → 99.0
+    assert got[-1] == pytest.approx(99.0)
+    assert got[0] == pytest.approx(99.0)
+    assert got[1] == pytest.approx(110.0 * (1.0 - 2.0 / 100.0))
+
+
+def test_incremental_max_loss_level_entry_non_positive() -> None:
+    """entry <= 0 → 0.0 (no shares), matching the full-path oracle."""
+    got_zero = _bar_walk_inc_max_loss_level([0.0], [10000.0], [1.0])
+    exp_zero = _bar_walk_full_max_loss_level([0.0], [10000.0], [1.0])
+    _assert_series_close(got_zero, exp_zero)
+    assert got_zero[-1] == pytest.approx(0.0)
+
+    got_neg = _bar_walk_inc_max_loss_level([-10.0], [10000.0], [1.0])
+    exp_neg = _bar_walk_full_max_loss_level([-10.0], [10000.0], [1.0])
+    _assert_series_close(got_neg, exp_neg)
+    assert got_neg[-1] == pytest.approx(0.0)
+
+
+def test_incremental_max_loss_level_clamp() -> None:
+    """Stop is clamped to >= 0 when max_loss_pct exceeds 100."""
+    got = _bar_walk_inc_max_loss_level([100.0], [10000.0], [200.0])
+    exp = _bar_walk_full_max_loss_level([100.0], [10000.0], [200.0])
+    _assert_series_close(got, exp)
+    assert got[-1] == pytest.approx(0.0)
+
+
+def test_incremental_max_loss_level_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    entry, account, pct = _mll_series(40)
+    entry_na: list[float | None] = list(entry)
+    entry_na[4] = None
+    ev = _IncTA()
+    for i in range(len(entry_na)):
+        ev._ta_call_i = 0
+        ev._max_loss_level_inc_update(
+            entry_na[: i + 1], account[: i + 1], pct[: i + 1]
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_max_loss_level_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    entry, account, pct = _mll_series(30)
+    ev = _IncTA()
+    for i in range(len(entry)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_max_loss_level(
+            [entry[: i + 1], account[: i + 1], pct[: i + 1]]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_max_loss_level_two_call_sites_independent() -> None:
+    entry, account, pct = _mll_series(80)
+    pct_b = [p * 2.0 for p in pct]
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(entry)):
+        prefix_e = entry[: i + 1]
+        prefix_a = account[: i + 1]
+        prefix_p = pct[: i + 1]
+        prefix_pb = pct_b[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(ev._max_loss_level_inc_update(prefix_e, prefix_a, prefix_p))
+        b_out.append(ev._max_loss_level_inc_update(prefix_e, prefix_a, prefix_pb))
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(a_out, _bar_walk_full_max_loss_level(entry, account, pct))
+    _assert_series_close(b_out, _bar_walk_full_max_loss_level(entry, account, pct_b))
+    assert a_out != b_out
+
+
+def test_runtime_max_loss_level_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _mll_bars(80)
+    src = """//@version=5
+indicator("max loss level")
+f = ta.max_loss_level(close, volume, high)
+g = ta.max_loss_level(open, volume, low)
+plot(f, "mll")
+plot(g, "mll2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"mll", "mll2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses scalar isinstance on PineSeries (newest-first wrap),
+    # so series args default to 100/10000/1.0 → 99.0 every bar. Incremental last
+    # sample is the chronological prefix formula (list-oracle / kernel). Do not
+    # require incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["mll"]):
+        exp = _max_loss_level_last_n(closes[: i + 1], vols[: i + 1], highs[: i + 1])
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mll bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["mll2"]):
+        exp = _max_loss_level_last_n(opens[: i + 1], vols[: i + 1], lows[: i + 1])
+        assert val == pytest.approx(
+            exp, rel=1e-9, abs=1e-9
+        ), f"mll2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["mll"][0] == pytest.approx(
+        _max_loss_level_last_n(closes[:1], vols[:1], highs[:1])
+    )
+    assert r_off["series"]["mll"][0] == pytest.approx(99.0)
+    assert any(v != pytest.approx(99.0) for v in r_on["series"]["mll"][1:])
+
+

@@ -2249,6 +2249,42 @@ class TechnicalHelpers:
             "short_stop": c_last + (a_last * m),
         }
 
+    def _max_loss_level_inc_update(
+        self,
+        entry: Any,
+        account: Any,
+        max_loss_pct: Any,
+    ) -> float:
+        """Incremental max-loss stop matching full ``ta.max_loss_level``.
+
+        Last samples of entry / account / max_loss_pct. Empty or missing last
+        sample uses the same defaults as non-numeric: 100 / 10000 / 1.0.
+        ``entry <= 0`` or ``shares <= 0`` → 0.0. Clamp stop ``>= 0``. One
+        call-site slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("max_loss_level", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 99.0}
+            bucket[key] = st
+        e_last = self._series_last(entry)
+        a_last = self._series_last(account)
+        p_last = self._series_last(max_loss_pct)
+        e = e_last if isinstance(e_last, (int, float)) else 100.0
+        a = a_last if isinstance(a_last, (int, float)) else 10000.0
+        p = p_last if isinstance(p_last, (int, float)) else 1.0
+        max_loss_amount = a * (p / 100.0)
+        if e > 0:
+            shares = a / e
+            stop_price = e - (max_loss_amount / shares) if shares > 0 else 0.0
+            val = max(0.0, stop_price)
+        else:
+            val = 0.0
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

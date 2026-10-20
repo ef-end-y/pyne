@@ -1800,10 +1800,19 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.max_loss_level(entry, account, max_loss_pct)
         Returns: Stop price.
+
+        Bar-mode incremental last sample uses ``_max_loss_level_inc_update``.
         """
         msg = "ta.max_loss_level() requires 3 arguments"
         if len(args) < TERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._max_loss_level_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+            )
 
         entry = args[0] if isinstance(args[0], (int, float)) else 100.0
         account = args[1] if isinstance(args[1], (int, float)) else 10000.0
