@@ -144,6 +144,8 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "cmf",
         "nvi",
         "pvi",
+        "accdist",
+        "wad",
     }
 )
 
@@ -163,7 +165,7 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi "
+    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -194,9 +196,9 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi
-    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), and 0-arg obv/nvi/pvi (close+volume); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi store 0 (cumulative)
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad
+    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), and 0-arg accdist/wad (h/l/c/v); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad store 0 (cumulative)
     extra: int | None = None  # 1-arg/2-arg ao: fast; 3-arg linreg: offset; else None
 
 
@@ -259,6 +261,10 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       decrease). ``length`` is 0. 2-arg ``ta.nvi(close, volume)`` stays unmatched.
     - ``ta.pvi()`` — 0-arg (HTF close+volume, seed 1000, multiply on volume
       increase). ``length`` is 0. 2-arg ``ta.pvi(close, volume)`` stays unmatched.
+    - ``ta.accdist()`` — 0-arg (HTF high/low/close/volume, CLV * volume running
+      sum). ``length`` is 0. 4-arg ``ta.accdist(high, low, close, volume)`` stays unmatched.
+    - ``ta.wad()`` — 0-arg (HTF high/low/close/volume, Williams A/D). ``length``
+      is 0. 4-arg ``ta.wad(high, low, close, volume)`` stays unmatched.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -294,7 +300,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.percentrank`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
     1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
-    2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``,
+    2-arg ``ta.nvi`` / ``ta.pvi``, 4-arg ``ta.accdist`` / ``ta.wad``,
+    5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -340,6 +347,16 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if arg_nodes:
             return None
         return HtfSimpleTaExpr("pvi", None, 0)
+
+    if fname == "accdist":
+        if arg_nodes:
+            return None
+        return HtfSimpleTaExpr("accdist", None, 0)
+
+    if fname == "wad":
+        if arg_nodes:
+            return None
+        return HtfSimpleTaExpr("wad", None, 0)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2735,6 +2752,146 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = pvi
         return out
 
+    @staticmethod
+    def _htf_accdist_full_series(
+        highs: list[float | None],
+        lows: list[float | None],
+        closes: list[float | None],
+        volumes: list[float | None],
+    ) -> list[float | None]:
+        """Full-list A/D matching interpret ``ta.accdist()`` on unique HTF bars.
+
+        CLV * volume running sum. ``clv = 0`` when high==low. Missing /
+        non-numeric OHLC skips the increment (keep prior ad). Empty volume
+        contributes 0. 4-arg ``ta.accdist(high, low, close, volume)`` stays
+        unmatched.
+        """
+        n = min(len(highs), len(lows), len(closes), len(volumes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0:
+            return out
+        ad = 0.0
+        for i in range(n):
+            h = highs[i]
+            l_ = lows[i]
+            c = closes[i]
+            hf: float | None = None
+            lf: float | None = None
+            cf: float | None = None
+            if h is not None:
+                try:
+                    fv = float(h)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    hf = fv
+            if l_ is not None:
+                try:
+                    fv = float(l_)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    lf = fv
+            if c is not None:
+                try:
+                    fv = float(c)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    cf = fv
+            if hf is None or lf is None or cf is None:
+                out[i] = ad
+                continue
+            raw_v = volumes[i]
+            vv = 0.0
+            if raw_v is not None:
+                try:
+                    vf = float(raw_v)
+                except (TypeError, ValueError):
+                    vf = float("nan")
+                if vf == vf:
+                    vv = vf
+            rng = hf - lf
+            clv = 0.0 if rng == 0.0 else ((cf - lf) - (hf - cf)) / rng
+            ad = ad + clv * vv
+            out[i] = ad
+        return out
+
+    @staticmethod
+    def _htf_wad_full_series(
+        highs: list[float | None],
+        lows: list[float | None],
+        closes: list[float | None],
+        volumes: list[float | None],
+    ) -> list[float | None]:
+        """Full-list Williams A/D matching interpret ``ta.wad()`` on unique HTF bars.
+
+        First unique bar is ``0.0``. Later bars add ``vol*(close-low)`` on up
+        closes and subtract ``vol*(high-close)`` on down closes. Empty volume
+        contributes 0. 4-arg ``ta.wad(high, low, close, volume)`` stays unmatched.
+        """
+        n = min(len(highs), len(lows), len(closes), len(volumes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0:
+            return out
+        wad = 0.0
+        prev_c: float | None = None
+        started = False
+        for i in range(n):
+            h = highs[i]
+            l_ = lows[i]
+            c = closes[i]
+            hf: float | None = None
+            lf: float | None = None
+            cf: float | None = None
+            if h is not None:
+                try:
+                    fv = float(h)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    hf = fv
+            if l_ is not None:
+                try:
+                    fv = float(l_)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    lf = fv
+            if c is not None:
+                try:
+                    fv = float(c)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    cf = fv
+            raw_v = volumes[i]
+            vv = 0.0
+            if raw_v is not None:
+                try:
+                    vf = float(raw_v)
+                except (TypeError, ValueError):
+                    vf = float("nan")
+                if vf == vf:
+                    vv = vf
+            if not started:
+                started = True
+                prev_c = cf
+                wad = 0.0
+                out[i] = 0.0
+                continue
+            if cf is not None and prev_c is not None:
+                hi = hf if hf is not None else cf
+                lo = lf if lf is not None else cf
+                if cf > prev_c:
+                    wad = wad + vv * (cf - lo)
+                elif cf < prev_c:
+                    wad = wad - vv * (hi - cf)
+            if cf is not None:
+                prev_c = cf
+            out[i] = wad
+        return out
+
     def _htf_cmf_full_series(
         self,
         closes: list[float | None],
@@ -2873,6 +3030,18 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             closes = self._htf_source_series(unique, "close")
             vol = self._htf_source_series(unique, "volume")
             return self._htf_pvi_full_series(closes, vol)
+        if name == "accdist":
+            highs = self._htf_source_series(unique, "high")
+            lows = self._htf_source_series(unique, "low")
+            closes = self._htf_source_series(unique, "close")
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_accdist_full_series(highs, lows, closes, vol)
+        if name == "wad":
+            highs = self._htf_source_series(unique, "high")
+            lows = self._htf_source_series(unique, "low")
+            closes = self._htf_source_series(unique, "close")
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_wad_full_series(highs, lows, closes, vol)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -3208,6 +3377,18 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             closes = self._series_chrono_values("close")
             vol = self._series_chrono_values("volume")
             return _last_of(self._htf_pvi_full_series(closes, vol))
+        if name == "accdist":
+            highs = self._series_chrono_values("high")
+            lows = self._series_chrono_values("low")
+            closes = self._series_chrono_values("close")
+            vol = self._series_chrono_values("volume")
+            return _last_of(self._htf_accdist_full_series(highs, lows, closes, vol))
+        if name == "wad":
+            highs = self._series_chrono_values("high")
+            lows = self._series_chrono_values("low")
+            closes = self._series_chrono_values("close")
+            vol = self._series_chrono_values("volume")
+            return _last_of(self._htf_wad_full_series(highs, lows, closes, vol))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
         if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and expression.source is None):
@@ -4882,6 +5063,10 @@ def compile_htf_security_value(  # noqa: PLR0913
         elif name == "nvi":
             src = None
         elif name == "pvi":
+            src = None
+        elif name == "accdist":
+            src = None
+        elif name == "wad":
             src = None
         else:
             src = field_s or "close"

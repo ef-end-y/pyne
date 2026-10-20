@@ -477,9 +477,11 @@ plot(ta.atr(3), title="catr")
         0-arg ``ta.vwap()`` / 1-arg ``ta.vwap(source)`` / 1-arg ``ta.cum(source)`` /
         1-arg ``ta.change(source)`` (length 1) / 1-arg ``ta.adx(n)`` /
         1-arg ``ta.mfi(n)`` / 0-arg ``ta.obv()`` / 1-arg ``ta.cmf(n)`` /
-        0-arg ``ta.nvi()`` / 0-arg ``ta.pvi()``
+        0-arg ``ta.nvi()`` / 0-arg ``ta.pvi()`` / 0-arg ``ta.accdist()`` /
+        0-arg ``ta.wad()``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
-        ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, and nested
+        ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
+        ``ta.accdist`` / ``ta.wad``, and nested
         ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
@@ -503,6 +505,8 @@ plot(request.security(syminfo.tickerid, "60", ta.nvi(close, volume)), title="nvi
 plot(request.security(syminfo.tickerid, "60", ta.pvi(close, volume)), title="pvi2")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5)), title="cmf5")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low, volume, 5)), title="cmfn")
+plot(request.security(syminfo.tickerid, "60", ta.accdist(high, low, close, volume)), title="ad4")
+plot(request.security(syminfo.tickerid, "60", ta.wad(high, low, close, volume)), title="wad4")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -665,6 +669,12 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.pvi()"))
         assert m is not None and m.name == "pvi" and m.source is None and m.length == 0
         assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.accdist()"))
+        assert m is not None and m.name == "accdist" and m.source is None and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.wad()"))
+        assert m is not None and m.name == "wad" and m.source is None and m.length == 0
+        assert m.extra is None
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -675,6 +685,10 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.obv(close, volume)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.nvi(close, volume)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.pvi(close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.accdist(high, low, close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.wad(high, low, close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.accdist(ta.sma(high, 5), low, close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.wad(ta.sma(high, 5), low, close, volume)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -1766,6 +1780,60 @@ plot(ta.pvi(), title="cpvi")
         cpvi_day5 = out["series"]["cpvi"][5 * 24 : 6 * 24]
         assert any(abs(float(hnvi[5 * 24 + i]) - float(cnvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cnvi_day5[i]))
         assert any(abs(float(hpvi[5 * 24 + i]) - float(cpvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cpvi_day5[i]))
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_accdist_wad_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 0-arg ta.accdist / ta.wad."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.volume import VolumeIndicators
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.accdist()), title="had")
+plot(request.security(syminfo.tickerid, "D", ta.wad()), title="hwad")
+plot(ta.accdist(), title="cad")
+plot(ta.wad(), title="cwad")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        had = out["series"]["had"]
+        hwad = out["series"]["hwad"]
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        daily_closes: list[float] = []
+        daily_vols: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+        # First completed HTF bar at chart 24; wad is 0 on unique bar 0.
+        assert all(_is_na(x) for x in had[1:24])
+        assert all(_is_na(x) for x in hwad[1:24])
+        assert abs(float(hwad[24]) - 0.0) < 1e-9
+        day5_ad = had[5 * 24 : 6 * 24]
+        day5_wad = hwad[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_ad)
+        assert all(not _is_na(x) for x in day5_wad)
+        ad_ref = float(day5_ad[0])
+        wad_ref = float(day5_wad[0])
+        for v in day5_ad:
+            assert abs(float(v) - ad_ref) < 1e-9
+        for v in day5_wad:
+            assert abs(float(v) - wad_ref) < 1e-9
+        expect_ad = float(VolumeIndicators()._accdist(daily_highs, daily_lows, daily_closes, daily_vols)[-1])
+        expect_wad = float(VolumeIndicators()._wad(daily_highs, daily_lows, daily_closes, daily_vols)[-1])
+        assert math.isfinite(expect_ad) and math.isfinite(expect_wad)
+        assert abs(float(had[-1]) - expect_ad) < 1e-9
+        assert abs(float(hwad[-1]) - expect_wad) < 1e-9
+        cad_day5 = out["series"]["cad"][5 * 24 : 6 * 24]
+        cwad_day5 = out["series"]["cwad"][5 * 24 : 6 * 24]
+        assert any(abs(float(had[5 * 24 + i]) - float(cad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cad_day5[i]))
+        assert any(abs(float(hwad[5 * 24 + i]) - float(cwad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwad_day5[i]))
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
