@@ -2464,6 +2464,38 @@ class TestInlayHintParameters:
         assert any("defval" in label for label in inp)
         assert any("title" in label for label in inp)
 
+    def test_cci_one_arg_is_length_not_source(self) -> None:
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.cci(14))\n')
+        assert any("length" in label for label in labels)
+        assert not any("source" in label for label in labels)
+
+    def test_cci_two_arg_source_length(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.cci(close, 14))\n'
+        )
+        assert any("source" in label for label in labels)
+        assert any("length" in label for label in labels)
+
+    def test_adx_one_arg_is_length_not_dilength(self) -> None:
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.adx(14))\n')
+        assert any("length" in label for label in labels)
+        assert not any("diLength" in label for label in labels)
+
+    def test_adx_two_arg_dilength_adxsmoothing(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.adx(14, 14))\n'
+        )
+        assert any("diLength" in label for label in labels)
+        assert any("adxSmoothing" in label for label in labels)
+
+    def test_mfi_and_bbw_one_arg_is_length(self) -> None:
+        mfi = self._param_labels('//@version=6\nindicator("T")\nplot(ta.mfi(14))\n')
+        assert any("length" in label for label in mfi)
+        assert not any("source" in label for label in mfi)
+        bbw = self._param_labels('//@version=6\nindicator("T")\nplot(ta.bbw(14))\n')
+        assert any("length" in label for label in bbw)
+        assert not any("source" in label for label in bbw)
+
 
 class TestInlayHintResolve:
     """inlayHint/resolve fills textEdits that insert the inferred type annotation."""

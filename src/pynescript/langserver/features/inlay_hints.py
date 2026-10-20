@@ -65,7 +65,9 @@ _GENERIC_PARAM = re.compile(r"^(?:param|arg)\d*$", re.I)
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 # Pine v6 names when metadata snippets are generic ``paramN``. Multi-arity
-# entries use the longest common positional prefix (TV signatures).
+# entries use the longest common positional prefix (TV signatures). 1-arg
+# ``ta.cci(14)`` / ``ta.adx(14)`` / ``ta.mfi(14)`` / ``ta.bbw(14)`` are
+# length-only (not ``source`` / ``diLength``).
 _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
     "ta.sma": ("source", "length"),
     "ta.ema": ("source", "length"),
@@ -90,6 +92,12 @@ _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
     "strategy.entry": ("id", "direction", "qty"),
     "input.int": ("defval", "title"),
 }
+
+# 1-arg overloads whose single positional is ``length`` (typical price / OHLC
+# from context). 2-arg forms keep the map above.
+_LENGTH_ONLY_1ARG: frozenset[str] = frozenset(
+    {"ta.adx", "ta.cci", "ta.mfi", "ta.bbw"}
+)
 
 # Built-in variable → return type. Only the ones the parser/builder treats as
 # plain `Name` nodes (so they can appear bare on the RHS of an Assign).
@@ -276,7 +284,8 @@ def _collect_call_param_hints(call: ast.Call, hints: list[lsp.InlayHint]) -> Non
     info = get_builtin(qualified)
     if not info:
         return
-    names = _param_names_from_info(qualified, info)
+    argc = len(call.args or [])
+    names = _param_names_from_info(qualified, info, argc)
     if not names:
         return
     for i, arg in enumerate(call.args or []):
@@ -320,20 +329,36 @@ def _arg_start_position(arg: ast.AST) -> tuple[int, int] | None:
     return None
 
 
-def _param_names_from_info(qualified: str, info: dict[str, Any]) -> list[str]:
-    """Parameter names: real snippet placeholders, else longest of detail/docs/well-known."""
+def _param_names_from_info(
+    qualified: str, info: dict[str, Any], argc: int = 0
+) -> list[str]:
+    """Parameter names: real snippet placeholders, else longest of detail/docs/well-known.
+
+    *argc* is ``len(call.args)``. 1-arg ``ta.cci`` / ``ta.adx`` / ``ta.mfi`` /
+    ``ta.bbw`` use ``length``; well-known names are sliced to *argc*.
+    """
     snippet_names = _names_from_snippet(info.get("snippet") or "")
     if snippet_names and not any(_GENERIC_PARAM.fullmatch(n) for n in snippet_names):
         return snippet_names
+    if argc == 1 and qualified in _LENGTH_ONLY_1ARG:
+        return ["length"]
     # Generic ``paramN`` snippets fall through. Prefer the longest positional
     # prefix so well-known 2-arg names beat a 1-arg docs match (e.g. ``ta.cci``).
     candidates = [
         _names_from_call_signature(info.get("detail") or ""),
         _names_from_documentation(info.get("documentation") or "", qualified),
-        list(_WELL_KNOWN_PARAMS.get(qualified) or ()),
+        _well_known_names(qualified, argc),
     ]
     best = max(candidates, key=len)
     return best if best else snippet_names
+
+
+def _well_known_names(qualified: str, argc: int) -> list[str]:
+    """Arity-sliced well-known Pine v6 names; extra slots are not shown."""
+    names = list(_WELL_KNOWN_PARAMS.get(qualified) or ())
+    if argc > 0:
+        return names[:argc]
+    return names
 
 
 def _names_from_snippet(snippet: str) -> list[str]:
