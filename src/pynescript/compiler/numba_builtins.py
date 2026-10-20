@@ -610,6 +610,24 @@ def numba_store_src(dst, val, i):
 
 
 @numba.njit(cache=True)
+def numba_history_store(arr, i, value, off):
+    """Store this bar's value and return the value ``off`` bars back.
+
+    ``ta.sma(close, 5)[1]`` and ``ta.lowest(src, len)[off]`` have no named
+    series. The subscript writes the current result, then reads the offset.
+    """
+    v = value + 0.0
+    if v != v:
+        arr[i] = np.nan
+    else:
+        arr[i] = v
+    j = i - off
+    if j < 0 or j >= arr.shape[0]:
+        return np.nan
+    return arr[j]
+
+
+@numba.njit(cache=True)
 def _numba_abs_jit(val):
     """Absolute value of a scalar (nopython ``math.abs``)."""
     if val < 0.0:
