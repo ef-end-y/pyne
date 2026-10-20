@@ -2,6 +2,7 @@
 
 ### Added
 
+- **Public LSP docs for `documentLink/resolve` tooltip.** `docs/pyne/lsp/features/document-link.mdx` documents `documentLink/resolve` filling `tooltip` with the URL when tooltip is unset (`documentLinkProvider.resolveProvider=True`). Architecture, VS Code extension, and LSP index capability tables list the resolve method.
 - **LSP document-link resolve.** `documentLink/resolve` fills `tooltip` with the URL. Advertised via `documentLinkProvider.resolveProvider`.
 - **LSP 2-arg `ta.bbw(length, mult)` parameter-name inlays.** `ta.bbw(20, 2)` inlay as `length:`/`mult:` (not `source:`/`length:`). 1-arg `ta.bbw(20)` stays `length:`; 3-arg `ta.bbw(close, 20, 2)` stays `source:`/`length:`/`mult:`.
 - **LSP arity-aware well-known parameter names.** 1-arg `ta.cci`/`ta.adx`/`ta.mfi`/`ta.bbw` inlay as `length:`; 2-arg `ta.cci(close, 14)` stays `source:`/`length:`, 2-arg `ta.adx(14, 14)` stays `diLength:`/`adxSmoothing:`.

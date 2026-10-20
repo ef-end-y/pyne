@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Document links"
-description: "textDocument/documentLink for http(s) URLs in comments and string literals."
+description: "textDocument/documentLink for http(s) URLs in comments and strings, and documentLink/resolve tooltip."
 resource: "docs/pyne/lsp/features/document-link.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-20T16:49:16Z
+  at: 2026-10-20T21:40:21Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/document-link.mdx"
@@ -26,6 +26,7 @@ Repo path `docs/pyne/lsp/features/document-link.mdx`.
 * Conceptual model
 * Interface surface
   * Where URLs are collected
+  * Resolve
 * Internals
 * Invariants and edge cases
 * Worked example
