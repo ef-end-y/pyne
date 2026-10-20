@@ -96,8 +96,8 @@ _OHLCV_FIELD_ALIASES: dict[str, str] = {
     "hlcc4": "hlcc4",
 }
 
-# Second-source encoding for 2-arg HTF ``ta.crossover`` / ``ta.crossunder``
-# and 3-arg ``ta.correlation`` (close=0 … hlcc4=8).
+# Second-source encoding for 2-arg HTF ``ta.crossover`` / ``ta.crossunder`` /
+# ``ta.cross`` and 3-arg ``ta.correlation`` (close=0 … hlcc4=8).
 _HTF_CROSS_FIELD_INDEX: dict[str, int] = {
     "close": 0,
     "open": 1,
@@ -173,6 +173,7 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "dpo",
         "crossover",
         "crossunder",
+        "cross",
         "correlation",
     }
 )
@@ -195,11 +196,12 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
     "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw/stoch/"
     "pivothigh/pivotlow/percentile_nearest_rank/percentile_linear_interpolation/dpo/"
-    "crossover/crossunder/correlation "
+    "crossover/crossunder/cross/correlation "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf/stoch "
     "and 2-arg ta.stoch(k, d) / ta.pivothigh(left, right) / ta.pivotlow(left, right) "
     "and 3-arg ta.percentile_nearest_rank / ta.percentile_linear_interpolation "
-    "and 1-arg ta.dpo(n) / 2-arg ta.crossover / ta.crossunder of OHLCV names "
+    "and 1-arg ta.dpo(n) / 2-arg ta.dpo(source, n) / 2-arg ta.crossover / ta.crossunder "
+    "/ ta.cross of OHLCV names "
     "and 3-arg ta.correlation of two OHLCV names on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -230,10 +232,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | correlation
-    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg crossover/crossunder is src_a; 3-arg correlation is src_a
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg dpo stores n; 2-arg crossover/crossunder stores 0; 3-arg correlation stores n (≥2)
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); else None
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation
+    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2)
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -324,10 +326,13 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       ``_const_int_ge`` (0 ok) stored in ``extra``. Nested source and
       non-int percentage unmatched. Not ``ta.percentrank``.
     - ``ta.dpo(21)`` — length-only form (HTF close).
-      ``close[n//2+1] - sma(close, n)``. Nested / 2-arg unmatched.
-    - ``ta.crossover(close, open)`` / ``ta.crossunder(close, open)`` — both
-      args are OHLCV Names. ``source`` is src_a, ``length`` is 0, ``extra``
-      is src_b field index (close=0 … hlcc4=8). Nested unmatched.
+      ``close[n//2+1] - sma(close, n)``. Nested unmatched.
+    - ``ta.dpo(close, 21)`` — 2-arg ``(source, n)`` when source is an OHLCV
+      Name. Reuses the same DPO helper on unique HTF source. Nested unmatched.
+    - ``ta.crossover(close, open)`` / ``ta.crossunder(close, open)`` /
+      ``ta.cross(close, open)`` — both args are OHLCV Names. ``source`` is
+      src_a, ``length`` is 0, ``extra`` is src_b field index (close=0 …
+      hlcc4=8). ``ta.cross`` is either-direction. Nested unmatched.
     - ``ta.correlation(close, volume, 20)`` — 3-arg ``(src_a, src_b, n)``
       when both sources are OHLCV Names. ``source`` is src_a, ``length`` is
       n (const int ≥ 2), ``extra`` is src_b field index (close=0 … hlcc4=8).
@@ -364,8 +369,9 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.cmf(ta.sma(...))`` / ``ta.linreg(ta.sma(...), n, offset)`` /
     ``ta.bbw(ta.sma(...), n, 2)`` / ``ta.percentile_nearest_rank(ta.sma(...), n, p)`` /
     ``ta.percentile_linear_interpolation(ta.ema(...), n, p)`` /
-    ``ta.dpo(ta.sma(...))`` / ``ta.crossover(ta.sma(...), open)`` /
-    ``ta.crossunder(close, ta.ema(...))`` /
+    ``ta.dpo(ta.sma(...))`` / ``ta.dpo(ta.sma(...), n)`` /
+    ``ta.crossover(ta.sma(...), open)`` /
+    ``ta.crossunder(close, ta.ema(...))`` / ``ta.cross(ta.sma(...), open)`` /
     ``ta.correlation(ta.sma(...), volume, n)``), multi-arg
     atr, 2-arg ``ta.adx(diLength, adxSmoothing)``, 4-arg ``ta.adx`` /
     ``ta.cci`` / ``ta.wpr``, 2-arg ``ta.mfi(source, length)``, 1-arg ``ta.median`` /
@@ -377,7 +383,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     3-arg ``ta.tr`` / ``ta.tsi``, 1-arg ``ta.bbw``, 4-arg ``ta.stoch``,
     nested ``ta.pivothigh`` / ``ta.pivotlow``, nested / non-int
     ``ta.percentile_nearest_rank`` / ``ta.percentile_linear_interpolation``,
-    nested / 2-arg ``ta.dpo``, nested ``ta.crossover`` / ``ta.crossunder``,
+    nested ``ta.dpo``, nested ``ta.crossover`` / ``ta.crossunder`` / ``ta.cross``,
     nested / 2-arg / length < 2 ``ta.correlation``,
     5-arg ``ta.cmf``,
     variables as length, and non-ta
@@ -524,10 +530,21 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("wpr", None, length) if length else None
 
     if fname == "dpo":
-        length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
-        return HtfSimpleTaExpr("dpo", "close", length) if length else None
+        if len(arg_nodes) == 1:
+            length = _const_positive_int(arg_nodes[0].value)
+            return HtfSimpleTaExpr("dpo", "close", length) if length else None
+        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (source, n)
+            return None
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        length = _const_positive_int(arg_nodes[1].value)
+        if src is None or length is None:
+            return None
+        return HtfSimpleTaExpr("dpo", src, length)
 
-    if fname in ("crossover", "crossunder"):
+    if fname in ("crossover", "crossunder", "cross"):
         if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (src_a, src_b)
             return None
         a_node = arg_nodes[0].value
@@ -2219,7 +2236,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     def _htf_dpo_full_series(self, src: list[float | None], period: int) -> list[float | None]:
-        """Full-list DPO: ``close[n//2+1] - sma(close, n)`` on unique HTF close.
+        """Full-list DPO: ``src[n//2+1] - sma(src, n)`` on unique HTF source.
 
         Prefix walk matching ``_dpo_inc_update`` without ``_ta_next_slot``.
         Window short → na.
@@ -2259,13 +2276,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         a_curr: float | None,
         b_curr: float | None,
         *,
-        under: bool,
+        under: bool = False,
+        either: bool = False,
     ) -> float:
-        """Last-two-sample crossover/crossunder matching interpret helpers.
+        """Last-two-sample crossover/crossunder/cross matching interpret helpers.
 
         Previous ``s1 <= s2`` (over) / ``s1 >= s2`` (under) and current strictly
-        the other side. Any na operand → 0.0 (False). Does not call
-        ``_ta_next_slot``.
+        the other side. ``either=True`` (``ta.cross``) is either direction.
+        Any na operand → 0.0 (False). Does not call ``_ta_next_slot``.
         """
         if a_prev is None or b_prev is None or a_curr is None or b_curr is None:
             return 0.0
@@ -2276,7 +2294,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return 0.0
         if pa != pa or pb != pb or ca != ca or cb != cb:
             return 0.0
-        hit = (pa >= pb and ca < cb) if under else (pa <= pb and ca > cb)
+        over = pa <= pb and ca > cb
+        under_hit = pa >= pb and ca < cb
+        if either:
+            hit = over or under_hit
+        else:
+            hit = under_hit if under else over
         return 1.0 if hit else 0.0
 
     def _htf_crossover_full_series(
@@ -2288,6 +2311,18 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         for i in range(1, n):
             out[i] = self._htf_cross_at(
                 src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], under=False
+            )
+        return out
+
+    def _htf_cross_full_series(
+        self, src_a: list[float | None], src_b: list[float | None]
+    ) -> list[float | None]:
+        """Prefix-walk last two unique HTF samples matching interpret ``_cross``."""
+        n = min(len(src_a), len(src_b))
+        out: list[float | None] = [None] * n
+        for i in range(1, n):
+            out[i] = self._htf_cross_at(
+                src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], either=True
             )
         return out
 
@@ -3746,12 +3781,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             if name == "percentile_nearest_rank":
                 return self._htf_percentile_nearest_rank_full_series(src, period, extra)
             return self._htf_percentile_linear_interpolation_full_series(src, period, extra)
-        if name in ("crossover", "crossunder"):
+        if name in ("crossover", "crossunder", "cross"):
             field_a = expr.source or "close"
             extra = int(expr.extra) if expr.extra is not None else 0
             field_b = _HTF_CROSS_INDEX_FIELD.get(extra, "close")
             src_a = self._htf_source_series(unique, field_a)
             src_b = self._htf_source_series(unique, field_b)
+            if name == "cross":
+                return self._htf_cross_full_series(src_a, src_b)
             if name == "crossover":
                 return self._htf_crossover_full_series(src_a, src_b)
             return self._htf_crossunder_full_series(src_a, src_b)
@@ -4144,12 +4181,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             if name == "percentile_nearest_rank":
                 return _last_of(self._htf_percentile_nearest_rank_full_series(src, period, extra))
             return _last_of(self._htf_percentile_linear_interpolation_full_series(src, period, extra))
-        if name in ("crossover", "crossunder"):
+        if name in ("crossover", "crossunder", "cross"):
             field_a = expression.source or "close"
             extra = int(expression.extra) if expression.extra is not None else 0
             field_b = _HTF_CROSS_INDEX_FIELD.get(extra, "close")
             src_a = self._series_chrono_values(field_a)
             src_b = self._series_chrono_values(field_b)
+            if name == "cross":
+                return _last_of(self._htf_cross_full_series(src_a, src_b))
             if name == "crossover":
                 return _last_of(self._htf_crossover_full_series(src_a, src_b))
             return _last_of(self._htf_crossunder_full_series(src_a, src_b))
@@ -5585,8 +5624,8 @@ class _CompileHtfHost(RequestBuiltinsMixin):
     ``ta.adx`` / ``ta.mfi`` / 0-arg ``ta.obv`` / 1-arg ``ta.cmf`` /
     1-arg ``ta.stoch`` / 2-arg ``ta.stoch(k, d)`` /
     2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)`` /
-    1-arg ``ta.dpo`` / 2-arg ``ta.crossover`` / ``ta.crossunder`` /
-    3-arg ``ta.correlation`` of OHLCV names on HTF
+    1-arg ``ta.dpo`` / 2-arg ``ta.dpo(source, n)`` / 2-arg ``ta.crossover`` /
+    ``ta.crossunder`` / ``ta.cross`` / 3-arg ``ta.correlation`` of OHLCV names on HTF
     bars match interpret exactly.
     """
 
@@ -5868,7 +5907,7 @@ def compile_htf_security_value(  # noqa: PLR0913
         elif name in ("percentile_nearest_rank", "percentile_linear_interpolation"):
             src = field_s or "close"
             extra = int(offset)
-        elif name in ("crossover", "crossunder", "correlation"):
+        elif name in ("crossover", "crossunder", "cross", "correlation"):
             src = field_s or "close"
             extra = int(offset)
         else:

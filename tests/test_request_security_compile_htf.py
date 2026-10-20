@@ -852,6 +852,39 @@ plot(ta.correlation(close, volume, 3), title="ccorr")
             if not _is_na(ccorr_day5[i])
         ) or all(_is_na(x) for x in ccorr_day5)
 
+    def test_htf_dpo2_cross_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 2-arg dpo / OHLCV ta.cross: compile matches interpret."""
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.dpo(close, 3)), title="dpo")
+plot(request.security(syminfo.tickerid, "D", ta.dpo(open, 3)), title="dpoo")
+plot(request.security(syminfo.tickerid, "D", ta.cross(close, open)), title="x")
+plot(ta.dpo(3), title="cdpo")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("dpo", "dpoo", "x"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][5 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day5 = sc["series"]["dpo"][5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5)
+        ref = float(day5[0])
+        for v in day5:
+            assert abs(float(v) - ref) < 1e-9
+        for v in sc["series"]["dpoo"][5 * 24 : 6 * 24]:
+            assert abs(float(v) - float(sc["series"]["dpoo"][5 * 24])) < 1e-9
+        for v in sc["series"]["x"][5 * 24 : 6 * 24]:
+            assert abs(float(v) - float(sc["series"]["x"][5 * 24])) < 1e-9
+        cdpo_day5 = sc["series"]["cdpo"][5 * 24 : 6 * 24]
+        hdpo_day5 = sc["series"]["dpo"][5 * 24 : 6 * 24]
+        assert any(
+            abs(float(hdpo_day5[i]) - float(cdpo_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(cdpo_day5[i])
+        ) or all(_is_na(x) for x in cdpo_day5)
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -958,6 +991,8 @@ plot(request.security(syminfo.tickerid, "60", ta.percentile_nearest_rank(ta.sma(
 plot(request.security(syminfo.tickerid, "60", ta.percentile_linear_interpolation(ta.ema(close, 5), 20, 50)), title="plin")
 plot(request.security(syminfo.tickerid, "60", ta.crossover(ta.sma(close, 5), open)), title="xon")
 plot(request.security(syminfo.tickerid, "60", ta.crossunder(close, ta.ema(open, 5))), title="xun")
+plot(request.security(syminfo.tickerid, "60", ta.cross(ta.sma(close, 5), open)), title="xn")
+plot(request.security(syminfo.tickerid, "60", ta.cross(close, ta.ema(open, 5))), title="xn2")
 plot(request.security(syminfo.tickerid, "60", ta.correlation(ta.sma(close, 5), volume, 20)), title="corrn")
 plot(request.security(syminfo.tickerid, "60", ta.correlation(close, ta.ema(volume, 5), 20)), title="corrn2")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5)), title="cmf5")
@@ -990,6 +1025,8 @@ plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low
         assert all(_is_na(x) for x in sc["series"]["plin"])
         assert all(_is_na(x) for x in sc["series"]["xon"])
         assert all(_is_na(x) for x in sc["series"]["xun"])
+        assert all(_is_na(x) for x in sc["series"]["xn"])
+        assert all(_is_na(x) for x in sc["series"]["xn2"])
         assert all(_is_na(x) for x in sc["series"]["corrn"])
         assert all(_is_na(x) for x in sc["series"]["corrn2"])
         assert all(_is_na(x) for x in sc["series"]["cmf5"])
