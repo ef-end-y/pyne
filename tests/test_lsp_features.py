@@ -36,6 +36,7 @@ from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_range_formatting
 from pynescript.langserver.features.highlight import handle_document_highlight
 from pynescript.langserver.features.hover import handle_hover
+from pynescript.langserver.features.linked_editing import handle_linked_editing_range
 from pynescript.langserver.features.references import handle_references
 from pynescript.langserver.features.rename import handle_prepare_rename
 from pynescript.langserver.features.rename import handle_rename
@@ -2323,6 +2324,7 @@ class TestCapabilities:
         assert caps.selection_range_provider is True
         assert caps.color_provider is True
         assert caps.document_link_provider is True
+        assert caps.linked_editing_range_provider
 
 
 def _decode_semantic_tokens(data: list[int]) -> list[tuple[int, int, int, int, int]]:
@@ -2555,3 +2557,58 @@ def _range_text(source: str, rng: lsp.Range) -> str:
     lines = source.split("\n")
     assert rng.start.line == rng.end.line
     return lines[rng.start.line][rng.start.character : rng.end.character]
+
+
+_LENGTH_SOURCE = """//@version=6
+indicator("t")
+length = 14
+plot(ta.sma(close, length))
+"""
+
+_IF_SOURCE = """//@version=6
+indicator("t")
+if bar_index > 0
+    plot(close)
+"""
+
+
+def _linked_editing_params(source: str, prefix: str) -> lsp.LinkedEditingRangeParams:
+    return lsp.LinkedEditingRangeParams(
+        text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+        position=_position_after(source, prefix),
+    )
+
+
+class TestLinkedEditingRangeHandler:
+    """textDocument/linkedEditingRange for same-document user ident occurrences."""
+
+    def test_user_ident_links_all_occurrences(self) -> None:
+        result = handle_linked_editing_range(_linked_editing_params(_LENGTH_SOURCE, "length"), _LENGTH_SOURCE)
+        assert result is not None
+        texts = [_range_text(_LENGTH_SOURCE, rng) for rng in result.ranges]
+        assert texts == ["length", "length"]
+        assert result.word_pattern == r"[A-Za-z_][A-Za-z0-9_]*"
+        starts = {(rng.start.line, rng.start.character) for rng in result.ranges}
+        assert len(starts) == 2
+
+    def test_builtin_namespace_and_keyword_unlinked(self) -> None:
+        assert handle_linked_editing_range(_linked_editing_params(_LENGTH_SOURCE, "ta"), _LENGTH_SOURCE) is None
+        assert handle_linked_editing_range(_linked_editing_params(_LENGTH_SOURCE, "plot"), _LENGTH_SOURCE) is None
+        assert handle_linked_editing_range(_linked_editing_params(_IF_SOURCE, "if"), _IF_SOURCE) is None
+
+    def test_empty_source(self) -> None:
+        params = lsp.LinkedEditingRangeParams(
+            text_document=lsp.TextDocumentIdentifier(uri="file:///test.pine"),
+            position=lsp.Position(line=0, character=0),
+        )
+        assert handle_linked_editing_range(params, "") is None
+        assert handle_linked_editing_range(params, None) is None
+
+    def test_unparsed_tree_none(self) -> None:
+        result = handle_linked_editing_range(
+            _linked_editing_params(_LENGTH_SOURCE, "length"),
+            _LENGTH_SOURCE,
+            tree=None,
+        )
+        assert result is None or (result.ranges == [])
+

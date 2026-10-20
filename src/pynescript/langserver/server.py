@@ -33,7 +33,7 @@
 **Feature handlers** (delegated to :mod:`pynescript.langserver.features`)
 
 - completion (+ resolve), hover, signatureHelp, definition, references
-- documentHighlight, prepareRename, rename (open workspace documents)
+- documentHighlight, linkedEditingRange, prepareRename, rename (open workspace documents)
 - documentSymbol, workspace/symbol
 - formatting / rangeFormatting
 - inlayHint, semanticTokens/full, semanticTokens/range, foldingRange, selectionRange
@@ -72,6 +72,7 @@ from pynescript.langserver.features import formatting as formatting_feature
 from pynescript.langserver.features import highlight as highlight_feature
 from pynescript.langserver.features import hover as hover_feature
 from pynescript.langserver.features import inlay_hints as inlay_hints_feature
+from pynescript.langserver.features import linked_editing as linked_editing_feature
 from pynescript.langserver.features import references as references_feature
 from pynescript.langserver.features import rename as rename_feature
 from pynescript.langserver.features import selection_range as selection_range_feature
@@ -380,6 +381,17 @@ class PynescriptLanguageServer(LanguageServer):
             if not doc:
                 return highlight_feature.handle_document_highlight(params, None)
             return highlight_feature.handle_document_highlight(params, doc.source, tree=doc.ast)
+
+        @self.feature(lsp.TEXT_DOCUMENT_LINKED_EDITING_RANGE)
+        def text_linked_editing_range(
+            params: lsp.LinkedEditingRangeParams,
+        ) -> lsp.LinkedEditingRanges | None:
+            """Handle textDocument/linkedEditingRange request."""
+            uri = params.text_document.uri
+            doc = self.pine_workspace.get_document(uri)
+            if not doc:
+                return linked_editing_feature.handle_linked_editing_range(params, None)
+            return linked_editing_feature.handle_linked_editing_range(params, doc.source, tree=doc.ast)
 
         @self.feature(lsp.TEXT_DOCUMENT_PREPARE_RENAME)
         def text_prepare_rename(

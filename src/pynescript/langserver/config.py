@@ -66,6 +66,7 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
         definition_provider=True,
         references_provider=True,
         document_highlight_provider=True,
+        linked_editing_range_provider=True,
         rename_provider=lsp.RenameOptions(
             prepare_provider=True,
         ),

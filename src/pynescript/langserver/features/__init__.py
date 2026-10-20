@@ -34,6 +34,7 @@ Modules:
 - :mod:`.definitions` — ``textDocument/definition``
 - :mod:`.references` — ``textDocument/references``
 - :mod:`.highlight` — ``textDocument/documentHighlight``
+- :mod:`.linked_editing` — ``textDocument/linkedEditingRange``
 - :mod:`.rename` — ``textDocument/prepareRename``, ``textDocument/rename``
 - :mod:`.symbols` — ``textDocument/documentSymbol``
 - :mod:`.semantic_tokens` — ``textDocument/semanticTokens/full``, ``/range``
