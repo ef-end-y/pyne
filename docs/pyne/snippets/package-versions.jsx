@@ -8,10 +8,10 @@
 
 /* VERSIONS_FALLBACK_START */
 const FALLBACK = {
-  "hoox-pyne": "0.6.14",
+  "hoox-pyne": "0.6.18",
   "@hoox-sh/pynets": "0.5.0",
   "hoox-sh.pyne": "0.4.4",
-  "ghcr.io/hoox-sh/pyne": "0.6.14"
+  "ghcr.io/hoox-sh/pyne": "0.6.18"
 }
 /* VERSIONS_FALLBACK_END */
 
