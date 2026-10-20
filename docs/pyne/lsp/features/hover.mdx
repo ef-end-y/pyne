@@ -19,25 +19,31 @@
 
 ---
 title: "Hover"
-description: "textDocument/hover — Markdown documentation cards for Pine builtins from metadata."
+description: "textDocument/hover — Markdown cards for builtins, types, namespaces, keywords, and user declarations."
 ---
 
 # Hover
 
 ## Abstract
 
-Hover answers “what is this identifier?” for **builtins**, then **user enums**, then **keywords**. The handler extracts the word under the cursor (including dotted forms), looks up metadata / enum members / `PINE_KEYWORDS`, and returns a Markdown card. Local functions and variables still return `null` (use [definition](/pyne/docs/lsp/features/navigation)).
+Hover answers “what is this identifier?” in a fixed lookup order: **namespace** prefix, **type / qualifier**, **builtin** metadata, **user enums**, **user declarations** (functions, methods, types, enums, assigns), then **keywords**. The handler extracts the word under the cursor (including dotted forms) and returns a Markdown card. Builtin cards for dotted labels (`ta.sma`, `strategy.entry`, `line.fill`) append a Pine v6 function-reference markdown link. Keywords, types, namespaces, and user declarations stay link-free.
 
 ## Conceptual model
 
 ```mermaid
 flowchart LR
-  POS[Position] --> WORD[get_word_at_position]
-  WORD --> META{get_builtin}
-  META -->|hit| CARD[MarkupContent Markdown]
+  POS[Position] --> WORD[get_identifier_segment_at_position]
+  WORD --> NS{_NAMESPACE_DOCS}
+  NS -->|hit| CARD[MarkupContent Markdown]
+  NS -->|miss| TYP[_TYPE_DOCS / _QUALIFIER_DOCS]
+  TYP -->|hit| CARD
+  TYP -->|miss| META{get_builtin}
+  META -->|hit| CARD
   META -->|miss| ENUM[collect_user_enums]
   ENUM -->|hit| CARD
-  ENUM -->|miss| KW[PINE_KEYWORDS]
+  ENUM -->|miss| DECL[_collect_user_decls]
+  DECL -->|hit| CARD
+  DECL -->|miss| KW[PINE_KEYWORDS]
   KW -->|hit| CARD
   KW -->|miss| NULL[null]
 ```
@@ -46,35 +52,41 @@ flowchart LR
 
 - Method: `textDocument/hover`
 - Capability: `hover_provider=True`
-- Handler: `features/hover.py` → `handle_hover`
+- Handler: `features/hover.py` → `handle_hover` (receives cached `tree=doc.ast` and optional per-version `feature_cache` for the user-decl walk)
 
 ### Lookup order
 
-1. Exact word at cursor via `get_word_at_position` (identifiers may include `.`).
-2. Builtin lookup: full word, then leaf after `.`, then `module.word` if the preceding token ends with `.`.
-3. Else user-enum type or `Enum.member` from the cached AST.
-4. Else keyword brief from `PINE_KEYWORDS`.
-5. Build hover with range covering `[start, end)` of the word on the line.
+1. Identifier segment at cursor via `get_identifier_segment_at_position` (identifiers may include `.`).
+2. Namespace: cursor on a module name (`ta` in `ta.sma`, or bare `ta` / `math`). Types that share a name (`line`, `array`, `color`) and callables (`strategy(`, `input(`) fall through.
+3. Type or qualifier (`int`, `float`, `series`, `var`, …) when the segment is **not** followed by `(`.
+4. Builtin lookup: full word, then leaf after `.`, then `module.word` if the preceding token ends with `.`.
+5. Else user-enum type or `Enum.member` from the cached AST.
+6. Else user declaration: `FunctionDef` / `TypeDef` / `EnumDef` / `Assign` (including tuple targets). First declaration of a name wins. Card fence is the source line snippet; brief is `User-defined {function|method|type|enum|variable}.`
+7. Else keyword brief from `PINE_KEYWORDS`.
+8. Build hover with range covering `[start, end)` of the word on the line.
 
-### Card structure
+### Builtin card structure
 
-```markdown
+````markdown
 ```pinescript
-{detail}
+{signature}
 ```
 
 {brief}
+
+**Parameters:** …   (when metadata includes params)
 
 ---
 {first documentation paragraph, ≤500 chars}
 
 **Example:** …
 **See also:** `ta.ema`, …
-```
+[Pine v6: ta.sma](https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma)
+````
 
-Examples and related maps are **hardcoded** for a small high-value set (`ta.sma`, `ta.ema`, `ta.rsi`, `ta.macd`, strategy entry/exit, etc.). Others show signature + brief only.
+Examples and related maps are **hardcoded** for a small high-value set (`ta.sma`, `ta.ema`, `ta.rsi`, `ta.macd`, strategy entry/exit, etc.). Others show signature + brief (and the docs link when the label is dotted).
 
-External TradingView doc links are intentionally omitted (`_build_docs_link` returns empty) to keep hover self-contained.
+`_build_docs_link` emits that markdown link only for dotted builtin labels with a namespace (`ta.sma`, `strategy.entry`, `line.fill`). Empty, undotted (`sma`), or whitespace-only names return `""`. Keyword, type, namespace, and user-declaration cards never include the TradingView URL.
 
 ## Internals
 
@@ -82,30 +94,46 @@ External TradingView doc links are intentionally omitted (`_build_docs_link` ret
 | --- | --- |
 | `features/hover.py` | Word resolution + Markdown assembly |
 | `providers/builtin_metadata.py` | `get_builtin` |
-| `protocol/utils.py` | Word extraction |
+| `protocol/utils.py` | Identifier segment extraction |
+
+The workspace `feature_cache` memos the user-declaration walk so each hover does not re-walk the whole AST.
 
 ## Invariants and edge cases
 
 1. **No source → null.** Missing buffer aborts early.
 2. **Line OOB → null.** Cursor past last line is ignored.
 3. **Empty word → null.** Whitespace / punctuation yields no hover.
-4. **User functions / locals / UDTs** are not inferred for hover (enums are). Use [definition](/pyne/docs/lsp/features/navigation) / outline instead.
-5. Documentation truncation is first-paragraph / 500-char only — full docs live in metadata and completion resolve.
+4. **User functions, assigns, types, and enums are hovered** — locals are not “null”. Use [definition](/pyne/docs/lsp/features/navigation) when you need a jump, not a card.
+5. **Docs links are dotted builtins only.** Keywords, types, namespaces, and user decls stay link-free.
+6. Documentation truncation is first-paragraph / 500-char only — full docs live in metadata and completion resolve.
 
 ## Worked example
 
 Cursor on `sma` in `plot(ta.sma(close, 14))`:
 
 - Word may be `ta.sma` if the dotted identifier is one match, or `sma` with module recovery from `ta.`.
-- Response `contents.kind = markdown` with fence of the metadata `detail` line.
+- Response `contents.kind = markdown` with a fence of the metadata signature, plus `[Pine v6: ta.sma](https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma)`.
+
+Cursor on `foo` in:
+
+```pinescript
+//@version=6
+indicator("T")
+foo(a) => a
+plot(foo(1))
+```
+
+- Declaration and use both hover as a user-defined function with fence `foo(a) => a`.
+- No Pine v6 URL.
 
 ## Failure modes
 
 | Symptom | Cause |
 | --- | --- |
-| Hover never appears | Metadata empty or word not in catalog |
+| Hover never appears | Metadata empty or word not in catalog / AST |
 | Wrong symbol | Identifier regex swallowed neighboring text — rare with `_.` pattern |
 | Stale docs after adding builtin | Regenerate metadata — [builtin metadata](/pyne/docs/lsp/builtin-metadata) |
+| User local shows no card | Parse failed (`tree=None`) so the decl walk is skipped |
 
 ## See also
 

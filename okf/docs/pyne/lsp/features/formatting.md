@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Formatting"
-description: "Document and range formatting via AST parse → NodeUnparser round-trip."
+description: "Document, range, and on-type formatting via AST parse → NodeUnparser round-trip."
 resource: "docs/pyne/lsp/features/formatting.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-20T13:53:03Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/formatting.mdx"
@@ -27,6 +27,7 @@ Repo path `docs/pyne/lsp/features/formatting.mdx`.
 * Interface surface
   * Full document
   * Range
+  * On-type (after \n)
 * Internals
 * Invariants and edge cases
 * Worked example

@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Inlay Hints"
-description: "Inferred type annotations on simple assignments — const, series, and input kinds."
+description: "Assignment type annotations, builtin parameter names, and inlayHint/resolve textEdits that insert the type."
 resource: "docs/pyne/lsp/features/inlay-hints.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-20T13:53:03Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/inlay-hints.mdx"
@@ -25,6 +25,9 @@ Repo path `docs/pyne/lsp/features/inlay-hints.mdx`.
 * Abstract
 * Conceptual model
 * Interface surface
+  * Assignment type hints
+  * Parameter-name hints
+  * Resolve
 * Internals
   * Constant mapping
   * Builtin bare names

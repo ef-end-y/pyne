@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Semantic Tokens"
-description: "textDocument/semanticTokens/full — AST visitor, custom legend, and LSP delta encoding."
+description: "textDocument/semanticTokens/full and /range — AST visitor, custom legend, and LSP delta encoding."
 resource: "docs/pyne/lsp/features/semantic-tokens.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-20T13:53:03Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/semantic-tokens.mdx"

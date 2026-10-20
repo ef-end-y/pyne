@@ -139,6 +139,7 @@
               "lsp/features/completion",
               "lsp/features/hover",
               "lsp/features/navigation",
+              "lsp/features/linked-editing",
               "lsp/features/formatting",
               "lsp/features/semantic-tokens",
               "lsp/features/inlay-hints",

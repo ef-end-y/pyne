@@ -19,25 +19,31 @@
 
 ---
 title: "Inlay Hints"
-description: "Inferred type annotations on simple assignments — const, series, and input kinds."
+description: "Assignment type annotations, builtin parameter names, and inlayHint/resolve textEdits that insert the type."
 ---
 
 # Inlay Hints
 
 ## Abstract
 
-Inlay hints surface **inferred types** next to simple `name = expr` assignments when no explicit type annotation is present. Inference is deliberately shallow: constants, bare series builtins (`close`, …), `input.*` constructors, and `ta`/`math`/`str`/`color` calls whose metadata `detail` contains a `→` return type. Ambiguous operators are skipped rather than guessed wrong.
+Inlay hints surface two things: **inferred types** next to simple `name = expr` assignments when no explicit type annotation is present, and **parameter names** before positional arguments of dotted builtin calls (`ta.sma(close, 14)` → `source:` / `length:`). Inference is deliberately shallow: constants, bare series builtins (`close`, …), `input.*` constructors, and `ta`/`math`/`str`/`color` calls whose metadata `detail` contains a `→` return type. Ambiguous operators are skipped rather than guessed wrong. `inlayHint/resolve` fills `textEdits` that insert the type annotation; parameter-name hints do not insert text.
 
 ## Conceptual model
 
 ```mermaid
 flowchart TD
-  PARSE[parse source] --> WALK[walk Assign nodes]
-  WALK --> CHK{simple Name target, no type, has value?}
-  CHK -->|no| SKIP[skip]
-  CHK -->|yes| INF[_infer_type RHS]
-  INF -->|const / series / input / → type| HINT[": type_label" at end of name]
-  INF -->|None| SKIP
+  PARSE[parse source] --> WALK[walk Assign and Call]
+  WALK --> ASG{simple Name target, no type, has value?}
+  ASG -->|yes| INF[_infer_type RHS]
+  INF -->|const / series / input / → type| THINT[": type_label" at end of name]
+  INF -->|None| SKIP[skip]
+  ASG -->|no| SKIP
+  WALK --> CALL{dotted builtin Call?}
+  CALL -->|yes| NAMES[_param_names_from_info]
+  NAMES --> PHINT["name:  at start of positional arg"]
+  CALL -->|no| SKIP
+  THINT --> RES[inlayHint/resolve textEdits]
+  PHINT --> NOOP[resolve no-op]
 ```
 
 Example mental model (from module docstring):
@@ -46,15 +52,19 @@ Example mental model (from module docstring):
 length = 14                 →  length: const int
 rsi = ta.rsi(close, 14)     →  rsi: series float   (from metadata detail)
 n = input.int(5, "n")       →  n: input int
+ta.sma(close, 14)           →  ta.sma(source: close, length: 14)
 ```
 
 ## Interface surface
 
-- Method: `textDocument/inlayHint`
-- Capability: `InlayHintOptions(resolve_provider=False)`
-- Handler: `features/inlay_hints.py` → `handle_inlay_hints` (receives cached `tree=doc.ast`)
+| Method | Capability |
+| --- | --- |
+| `textDocument/inlayHint` | `InlayHintOptions(resolve_provider=True)` |
+| `inlayHint/resolve` | fills `textEdits` on type hints |
 
-Each hint:
+Handlers: `features/inlay_hints.py` → `handle_inlay_hints` (receives cached `tree=doc.ast`) and `handle_inlay_hint_resolve`.
+
+### Assignment type hints
 
 | Field | Value |
 | --- | --- |
@@ -62,8 +72,32 @@ Each hint:
 | `label` | `": {type_label}"` |
 | `kind` | `InlayHintKind.Type` |
 | `tooltip` | `Inferred type: {type_label}` |
+| `data` | same insert text, so resolve does not re-parse |
 
-Returns `[]` for empty source, `None` if parse fails (client typically treats as no hints).
+### Parameter-name hints
+
+Emitted for positional args of `module.attr(...)` when `get_builtin("module.attr")` hits. Names come from the metadata snippet placeholders, then the `detail` signature, then documentation, then a small well-known map (`ta.sma` / `ta.ema` / `ta.rsi` / … → `source`, `length`). Generic `paramN` snippet names are skipped in favor of the next source.
+
+| Field | Value |
+| --- | --- |
+| `position` | Start of the positional argument |
+| `label` | `"{name}: "` |
+| `kind` | `InlayHintKind.Parameter` |
+| `data` | omitted |
+
+Named kwargs (`length=14`) skip the matching slot. Parameter hints have no insertable type annotation.
+
+`handle_inlay_hints` returns `[]` for empty source, `None` if parse fails (client typically treats as no hints).
+
+### Resolve
+
+`inlayHint/resolve` inserts the type annotation at the hint position:
+
+1. Already-resolved hints (existing `textEdits`) are returned unchanged.
+2. `InlayHintKind.Parameter` is a no-op — must not splice names into the call.
+3. Insert text comes from `hint.data` (preferred) or the label string / label parts.
+4. Only strings that start with `": "` are treated as type annotations.
+5. One `TextEdit` with a zero-width range at `hint.position`.
 
 ## Internals
 
@@ -87,20 +121,21 @@ Returns `[]` for empty source, `None` if parse fails (client typically treats as
 
 ### Walk
 
-Recursive over `_fields` (same pattern as workspace symbol collection) — not limited to script top-level; nested function assigns can receive hints.
+Recursive over `_fields` (same pattern as workspace symbol collection) — not limited to script top-level; nested function assigns and nested calls can receive hints.
 
 | Path | Role |
 | --- | --- |
-| `features/inlay_hints.py` | Collection + inference |
-| `providers/builtin_metadata.py` | Return-type detail for modules |
+| `features/inlay_hints.py` | Collection + inference + resolve |
+| `providers/builtin_metadata.py` | Return-type detail and parameter names |
 
 ## Invariants and edge cases
 
-1. **Explicit `name: type = …` suppresses hints** (`node.type is not None`).
-2. **Tuple / attribute targets** are ignored.
+1. **Explicit `name: type = …` suppresses type hints** (`node.type is not None`).
+2. **Tuple / attribute targets** are ignored for type hints.
 3. **BinOp / Compare / Conditional** return `None` — no speculative arithmetic types.
-4. **Metadata quality bounds accuracy** — missing `→` in detail yields coarse `series`.
-5. **No resolve step** — tooltips are final.
+4. **Metadata quality bounds accuracy** — missing `→` in detail yields coarse `series`; missing param names yields no parameter hints.
+5. **Resolve inserts types only** — parameter labels (`source: `) are display-only.
+6. **Malformed / empty resolve input does not throw** — the hint is returned as-is.
 
 ## Worked example
 
@@ -115,12 +150,13 @@ period = input.int(20, "Period")
 
 Expected hints (when parse + metadata succeed):
 
-- `length` → `: const int`
+- `length` → `: const int` (type; resolve inserts `: const int` at the end of `length`)
 - `src` → `: series float`
 - `avg` → type from `ta.sma` detail (typically series float) or `series`
 - `period` → `: input int`
+- `ta.sma(src, length)` → `source:` before `src`, `length:` before `length`
 
-`avg` will not get a hint derived from `length`’s type through the call graph — only the call’s known return shape.
+`avg` will not get a hint derived from `length`’s type through the call graph — only the call’s known return shape. Resolve on a parameter hint leaves the call text unchanged.
 
 ## Failure modes
 
@@ -128,6 +164,8 @@ Expected hints (when parse + metadata succeed):
 | --- | --- |
 | No hints on file | Parse error → `None` |
 | `ta.*` always `: series` | Metadata detail lacks `→` segment |
+| No `source:` / `length:` on a builtin call | Not a dotted builtin, named kwargs, or metadata/snippet names missing |
+| Apply-type-inlay does nothing on a param hint | Expected: resolve skips `InlayHintKind.Parameter` |
 | Hints mid-identifier | Incorrect `col_offset` on AST node — builder issue |
 
 ## See also

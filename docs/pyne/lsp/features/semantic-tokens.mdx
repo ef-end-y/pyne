@@ -19,24 +19,27 @@
 
 ---
 title: "Semantic Tokens"
-description: "textDocument/semanticTokens/full — AST visitor, custom legend, and LSP delta encoding."
+description: "textDocument/semanticTokens/full and /range — AST visitor, custom legend, and LSP delta encoding."
 ---
 
 # Semantic Tokens
 
 ## Abstract
 
-Semantic tokens let the server paint identifiers with roles richer than TextMate scopes (library namespaces vs user variables, function defs vs properties). PYNE advertises a **full** semantic-tokens provider with a **short custom legend** (not the full LSP standard set) and implements `textDocument/semanticTokens/full` by walking the workspace AST.
+Semantic tokens let the server paint identifiers with roles richer than TextMate scopes (library namespaces vs user variables, function defs vs properties). PYNE advertises a **full and range** semantic-tokens provider with a **short custom legend** (not the full LSP standard set). `textDocument/semanticTokens/full` walks the workspace AST; `textDocument/semanticTokens/range` clips the same legend to tokens whose start falls inside the requested range.
 
 ## Conceptual model
 
 ```mermaid
 flowchart LR
-  REQ[semanticTokens/full] --> AST{cached tree?}
+  REQ["semanticTokens/full or /range"] --> AST{cached tree?}
   AST -->|missing source / parse fail| EMPTY[SemanticTokens data=[]]
   AST -->|ok| WALK[_collect FunctionDef TypeDef EnumDef Assign Attribute]
   WALK --> SORT[sort by line, col]
-  SORT --> ENC["delta encode: dLine, dCol, len, type, mods"]
+  SORT --> CLIP{range request?}
+  CLIP -->|yes| KEEP[keep starts in range]
+  CLIP -->|no| ENC
+  KEEP --> ENC["delta encode: dLine, dCol, len, type, mods"]
 ```
 
 ## Interface surface
@@ -51,13 +54,16 @@ legend.token_types (index order is contract):
 legend.token_modifiers (bit 0 = declaration):
   declaration, definition, readonly, defaultLibrary
 
-range: false
+range: true
 full: true
 ```
 
-Handler: `features/semantic_tokens.py` → `handle_semantic_tokens(params, source, tree=…)`.
+| Method | Handler |
+| --- | --- |
+| `textDocument/semanticTokens/full` | `handle_semantic_tokens` |
+| `textDocument/semanticTokens/range` | `handle_semantic_tokens_range` |
 
-Response type: `lsp.SemanticTokens(data=[...])` — LSP-encoded five-tuples as a flat `int` array (relative line/character deltas).
+Both take `(params, source, tree=…)` and return `lsp.SemanticTokens(data=[...])` — LSP-encoded five-tuples as a flat `int` array (relative line/character deltas). Range uses the **same legend** as full: collect, sort, then keep tokens whose start `(line, col)` is in `params.range` (inclusive start, exclusive end) before encoding.
 
 ### What is emitted
 
@@ -76,9 +82,9 @@ Builtin namespace set (`_BUILTIN_NS`): `ta`, `math`, `str`, `array`, `matrix`, `
 
 | Path | Role |
 | --- | --- |
-| `features/semantic_tokens.py` | Collector + `_encode` |
+| `features/semantic_tokens.py` | Collector + `_encode` + range clip |
 | `config.py` | Legend + capability — **indices must match** `_TT` |
-| `server.py` | `TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL`; passes cached `doc.ast` |
+| `server.py` | `TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL` / `_RANGE`; passes cached `doc.ast` |
 
 Attribute columns prefer `end_col_offset - len(attr)` when present; otherwise parent `col_offset` (approximate).
 
@@ -87,9 +93,9 @@ TextMate from `vscode-extension/syntaxes/pinescript.tmLanguage.json` still color
 ## Invariants and edge cases
 
 1. **Never throws** — missing source, `tree=None`, or parse exception yields empty `data`.
-2. **No range provider** — clients must not request `semanticTokens/range`.
+2. **Range is a clip of full** — same types/modifiers; tokens whose start is outside the range are dropped. A range token stream is a subsequence of the full stream.
 3. **Legend is fixed** at initialize; changing indices later would break cached clients.
-4. Empty `data` is valid protocol (empty file or parse failure), not an error.
+4. Empty `data` is valid protocol (empty file, parse failure, or no tokens in range), not an error.
 5. Tokens are sorted by `(line, col)` before delta encoding.
 
 ## Worked example
@@ -101,7 +107,9 @@ length = 14
 plot(ta.sma(close, length))
 ```
 
-Expect tokens for `length` (variable/declaration), `ta` (namespace/defaultLibrary), `sma` (method/defaultLibrary). Keywords such as `indicator` remain TextMate-only.
+Full document: tokens for `length` (variable/declaration), `ta` (namespace/defaultLibrary), `sma` (method/defaultLibrary). Keywords such as `indicator` remain TextMate-only.
+
+Range covering only the `plot(ta.sma…)` line keeps `ta` / `sma` (and any other starts on that line) and drops the `length` assignment. A range covering only the `//@version=6` pragma yields no namespace token.
 
 ## Failure modes
 
@@ -109,7 +117,7 @@ Expect tokens for `length` (variable/declaration), `ta` (namespace/defaultLibrar
 | --- | --- |
 | Semantic highlighting off despite tokens | Client `editor.semanticHighlighting.enabled` false |
 | Colors look “shifted” after a legend edit | Client cached old type indices — restart the language client |
-| Client errors on range request | `range=False` in capabilities; client should not call it |
+| Range request returns empty `data` | Parse failure, empty buffer, or no token starts in range — not a capability miss |
 | Attribute token sits on the wrong column | Missing `end_col_offset` on the AST node — approximate path |
 
 ## See also

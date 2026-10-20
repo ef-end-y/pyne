@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "Hover"
-description: "textDocument/hover — Markdown documentation cards for Pine builtins from metadata."
+description: "textDocument/hover — Markdown cards for builtins, types, namespaces, keywords, and user declarations."
 resource: "docs/pyne/lsp/features/hover.mdx"
 tags: [doc, docs, lsp, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-20T13:53:03Z
 sources:
   - id: tree
     resource: "docs/pyne/lsp/features/hover.mdx"
@@ -26,7 +26,7 @@ Repo path `docs/pyne/lsp/features/hover.mdx`.
 * Conceptual model
 * Interface surface
   * Lookup order
-  * Card structure
+  * Builtin card structure
 * Internals
 * Invariants and edge cases
 * Worked example

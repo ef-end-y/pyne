@@ -19,14 +19,14 @@
 
 ---
 title: "Formatting"
-description: "Document and range formatting via AST parse → NodeUnparser round-trip."
+description: "Document, range, and on-type formatting via AST parse → NodeUnparser round-trip."
 ---
 
 # Formatting
 
 ## Abstract
 
-Formatting is **canonical unparse**, not a style linter. The handler parses the buffer, runs `NodeUnparser`, and if the result differs from the source, replaces the document (or the requested line range) with a single `TextEdit`. There is no prettier-like option matrix; `FormattingOptions` from the client are currently unused.
+Formatting is **canonical unparse**, not a style linter. The handler parses the buffer, runs `NodeUnparser`, and if the result differs from the source, replaces the document (or the requested line range, or the just-completed line) with a single `TextEdit`. There is no prettier-like option matrix; `FormattingOptions` from the client are currently unused.
 
 ## Conceptual model
 
@@ -37,7 +37,9 @@ flowchart LR
   AST --> UNP[NodeUnparser.visit]
   UNP --> OUT[Formatted text]
   OUT -->|equals source| EMPTY[empty edit list]
-  OUT -->|differs| EDIT[TextEdit replace]
+  OUT -->|full differs| EDIT[TextEdit replace document]
+  OUT -->|range differs| REDIT[TextEdit replace range lines]
+  OUT -->|on-type newline| LEDIT[TextEdit replace previous line]
 ```
 
 ## Interface surface
@@ -46,8 +48,9 @@ flowchart LR
 | --- | --- |
 | `textDocument/formatting` | `handle_formatting` |
 | `textDocument/rangeFormatting` | `handle_range_formatting` |
+| `textDocument/onTypeFormatting` | `handle_on_type_formatting` |
 
-Capabilities: both providers `True` in `config.py`.
+Capabilities (`config.py`): both document providers `True`; on-type advertised as `documentOnTypeFormattingProvider` with `firstTriggerCharacter = "\n"`.
 
 ### Full document
 
@@ -65,6 +68,18 @@ Capabilities: both providers `True` in `config.py`.
 
 This is line-aligned, not AST-node-aligned: partial mid-line ranges may produce surprising splices when unparse changes line structure.
 
+### On-type (after `\n`)
+
+After the client inserts a newline, `params.position` is the cursor on the **new** line and `params.ch` is `"\n"`. The handler formats the **previous** line (or line 0) via the same `NodeUnparser` and, when that line differs, returns one `TextEdit` covering only that source line.
+
+1. Empty source, `ch != "\n"`, or `tree=None` (workspace parse already failed) → `[]`.
+2. Unparse the whole document.
+3. `target = max(0, params.position.line - 1)`.
+4. If the target is past either line list, or the formatted line equals the source line → `[]`.
+5. Else replace `[target, 0) → [target, len(source_line))` with the formatted line.
+
+Triggers other than newline are ignored. The advertised trigger is `"\n"`.
+
 ## Internals
 
 | Path | Role |
@@ -73,15 +88,16 @@ This is line-aligned, not AST-node-aligned: partial mid-line ranges may produce 
 | `src/pynescript/ast/helper.py` | `parse` |
 | `src/pynescript/ast/unparser.py` | `NodeUnparser` |
 
-VS Code command `pynescript.formatDocument` delegates to `editor.action.formatDocument`, which hits this provider when the language client is active.
+VS Code command `pynescript.formatDocument` delegates to `editor.action.formatDocument`, which hits this provider when the language client is active. Format-on-type is the client’s `onTypeFormatting` request after Enter.
 
 ## Invariants and edge cases
 
-1. **Parse failure → `[]`** (no partial format; silent no-op from the client’s perspective).
+1. **Parse failure → `[]`** (no partial format; silent no-op from the client’s perspective). On-type also no-ops when the workspace already failed to parse (`tree=None`).
 2. **Idempotence goal:** format twice should stabilize if unparse is canonical; any non-idempotent unparse is a core bug, not an LSP bug.
 3. **Comments / trivia:** fidelity is whatever the unparser preserves — not a full CST pretty-printer.
-4. **Range formatting** still requires a full successful parse of the whole file.
+4. **Range and on-type** still require a full successful parse of the whole file; only the edit span is clipped.
 5. Tab size / insert spaces from `FormattingOptions` are ignored today.
+6. **On-type is previous-line only** — the new empty line under the cursor is not rewritten.
 
 ## Worked example
 
@@ -103,12 +119,15 @@ plot(close)
 
 If source already matches unparse output, the server returns an empty edit list and the editor leaves the buffer alone.
 
+On-type: typing Enter after a compact assignment `length=14` (cursor now at the start of the next line) yields one edit on that assignment line: `length = 14`.
+
 ## Failure modes
 
 | Symptom | Cause |
 | --- | --- |
 | Format does nothing on broken syntax | Expected: exception → `[]` |
 | Range format rewrites wrong lines | Unparse shifted line count; prefer full-document format |
+| On-type after Enter does nothing | Unknown trigger, unparsed buffer, or the previous line already matches unparse |
 | Client “format on save” loops | Unparse not idempotent — fix unparser, not client |
 
 ## See also

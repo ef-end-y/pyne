@@ -39,7 +39,7 @@ def get_server_capabilities() -> lsp.ServerCapabilities:
     """Return :class:`lsprotocol.types.ServerCapabilities` for ``initialize``.
 
     Sync mode is incremental open/close/change with save text. Completion
-    triggers on ``.`` with resolve. Semantic tokens: full only (no range).
+    triggers on ``.`` with resolve. Semantic tokens: full and range.
     """
     return lsp.ServerCapabilities(
         text_document_sync=lsp.TextDocumentSyncOptions(
