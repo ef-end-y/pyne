@@ -1323,10 +1323,20 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.smart_money_flow(price_change, volume, time_since_high, time_since_low)
         Returns: Flow intensity (-1.0 to 1.0)
+
+        Bar-mode incremental last sample uses ``_smart_money_flow_inc_update``.
         """
         msg = "ta.smart_money_flow() requires 4 arguments"
         if len(args) < QUATERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._smart_money_flow_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
 
         price_change = args[0] if isinstance(args[0], (int, float)) else 0.0
         volume = args[1] if isinstance(args[1], (int, float)) else 1000.0

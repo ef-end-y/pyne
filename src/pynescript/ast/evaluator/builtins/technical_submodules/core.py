@@ -2133,6 +2133,47 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _smart_money_flow_inc_update(
+        self,
+        price_change: Any,
+        volume: Any,
+        time_high: Any,
+        time_low: Any,
+    ) -> float:
+        """Incremental smart money flow matching full ``ta.smart_money_flow``.
+
+        Last samples of price_change / volume / time_since_high / time_since_low.
+        Empty or missing last sample uses the same defaults as non-numeric:
+        0 / 1000 / 10 / 10. Volume-scaled signed flow from last price_change vs
+        time_since_high/low, clamp [-1, 1]. One call-site slot every bar,
+        including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("smart_money_flow", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 0.0}
+            bucket[key] = st
+        p_last = self._series_last(price_change)
+        v_last = self._series_last(volume)
+        th_last = self._series_last(time_high)
+        tl_last = self._series_last(time_low)
+        p = p_last if isinstance(p_last, (int, float)) else 0.0
+        v = v_last if isinstance(v_last, (int, float)) else 1000.0
+        th = th_last if isinstance(th_last, (int, float)) else 10
+        tl = tl_last if isinstance(tl_last, (int, float)) else 10
+        vol_factor = min(1.0, v / 5000.0)
+        if p > 0 and th < tl:
+            flow = vol_factor * 0.8
+        elif p < 0 and tl < th:
+            flow = -vol_factor * 0.8
+        else:
+            flow = 0.0
+        val = max(-1.0, min(1.0, flow))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

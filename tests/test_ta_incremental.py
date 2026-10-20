@@ -10825,3 +10825,326 @@ plot(g, "cs2")
     assert r_off["series"]["cs"][0] == pytest.approx(50.0)
     assert r_on["series"]["cs"][4] != pytest.approx(50.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: smart_money_flow incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _smart_money_flow_last_n(
+    price_change: list[Any],
+    volume: list[Any],
+    time_high: list[Any],
+    time_low: list[Any],
+) -> float:
+    """Oracle formula on a chronological prefix (last sample, defaults 0/1000/10/10)."""
+    p = price_change[-1] if price_change and isinstance(price_change[-1], (int, float)) else 0.0
+    v = volume[-1] if volume and isinstance(volume[-1], (int, float)) else 1000.0
+    th = time_high[-1] if time_high and isinstance(time_high[-1], (int, float)) else 10
+    tl = time_low[-1] if time_low and isinstance(time_low[-1], (int, float)) else 10
+    vol_factor = min(1.0, v / 5000.0)
+    if p > 0 and th < tl:
+        flow = vol_factor * 0.8
+    elif p < 0 and tl < th:
+        flow = -vol_factor * 0.8
+    else:
+        flow = 0.0
+    return max(-1.0, min(1.0, flow))
+
+
+def _smf_series(n: int = 120) -> tuple[list[float], list[float], list[float], list[float]]:
+    """Price change / volume / time_since_high / time_since_low with mixed flow."""
+    price = [2.0 * math.sin(i / 7.0) for i in range(n)]
+    vol = [1000.0 + 4000.0 * (0.5 + 0.5 * math.sin(i / 5.0)) for i in range(n)]
+    time_high = [5.0 + 8.0 * math.sin(i / 4.0) for i in range(n)]
+    time_low = [5.0 + 8.0 * math.cos(i / 6.0) for i in range(n)]
+    return price, vol, time_high, time_low
+
+
+def _smf_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: close=price_change, volume, high=time_high, low=time_low."""
+    bars: list[dict] = []
+    for i in range(n):
+        price = 2.0 * math.sin(i / 7.0)
+        vol = 1000.0 + 4000.0 * (0.5 + 0.5 * math.sin(i / 5.0))
+        time_high = 5.0 + 8.0 * math.sin(i / 4.0)
+        time_low = 5.0 + 8.0 * math.cos(i / 6.0)
+        bars.append(
+            {
+                "open": -price,
+                "high": time_high,
+                "low": time_low,
+                "close": price,
+                "volume": vol,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_smart_money_flow(
+    price_change: list[Any],
+    volume: list[Any],
+    time_high: list[Any],
+    time_low: list[Any],
+) -> list[float]:
+    """Full-path oracle: last sample of each arg as a scalar (advanced.py formula)."""
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(price_change)):
+        out.append(
+            ev._builtin_ta_smart_money_flow(
+                [price_change[i], volume[i], time_high[i], time_low[i]]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_smart_money_flow(
+    price_change: list[Any],
+    volume: list[Any],
+    time_high: list[Any],
+    time_low: list[Any],
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(price_change)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._smart_money_flow_inc_update(
+                price_change[: i + 1],
+                volume[: i + 1],
+                time_high[: i + 1],
+                time_low[: i + 1],
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_smart_money_flow_last_sample(
+    price_change: list[Any],
+    volume: list[Any],
+    time_high: list[Any],
+    time_low: list[Any],
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(price_change)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._smart_money_flow_inc_update(
+                price_change[i], volume[i], time_high[i], time_low[i]
+            )
+        )
+    return out
+
+
+def test_incremental_smart_money_flow_matches_full() -> None:
+    price, vol, time_h, time_l = _smf_series(120)
+    got = _bar_walk_inc_smart_money_flow(price, vol, time_h, time_l)
+    exp = _bar_walk_full_smart_money_flow(price, vol, time_h, time_l)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_smart_money_flow_last_sample(price, vol, time_h, time_l)
+    _assert_series_close(last, exp)
+    oracle = [
+        _smart_money_flow_last_n(
+            price[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]
+        )
+        for i in range(len(price))
+    ]
+    _assert_series_close(got, oracle)
+    assert any(v != pytest.approx(0.0) for v in got)
+
+
+def test_incremental_smart_money_flow_empty() -> None:
+    """Empty / missing last sample → defaults (0/1000/10/10) → 0.0, no throw."""
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._smart_money_flow_inc_update([], [], [], []) == pytest.approx(0.0)
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._smart_money_flow_inc_update(None, None, None, None) == pytest.approx(0.0)
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_smart_money_flow([None], [None], [None], [None])
+    oracle_na = [_smart_money_flow_last_n([None], [None], [None], [None])]
+    _assert_series_close(got_na, oracle_na)
+    assert got_na[0] == pytest.approx(0.0)
+
+
+def test_incremental_smart_money_flow_signed_regimes() -> None:
+    """Buying / selling / balanced last samples match the full-path oracle."""
+    # price>0 and time_high < time_low → +vol_factor*0.8
+    buy_p, buy_v, buy_h, buy_l = [1.0], [5000.0], [2.0], [10.0]
+    got_buy = _bar_walk_inc_smart_money_flow(buy_p, buy_v, buy_h, buy_l)
+    exp_buy = _bar_walk_full_smart_money_flow(buy_p, buy_v, buy_h, buy_l)
+    _assert_series_close(got_buy, exp_buy)
+    assert got_buy[-1] == pytest.approx(0.8)
+
+    # price<0 and time_low < time_high → -vol_factor*0.8
+    sell_p, sell_v, sell_h, sell_l = [-1.0], [5000.0], [10.0], [2.0]
+    got_sell = _bar_walk_inc_smart_money_flow(sell_p, sell_v, sell_h, sell_l)
+    exp_sell = _bar_walk_full_smart_money_flow(sell_p, sell_v, sell_h, sell_l)
+    _assert_series_close(got_sell, exp_sell)
+    assert got_sell[-1] == pytest.approx(-0.8)
+
+    # price==0 or times equal → 0.0
+    neu_p, neu_v, neu_h, neu_l = [0.0, 1.0], [2500.0, 2500.0], [10.0, 10.0], [10.0, 10.0]
+    got_neu = _bar_walk_inc_smart_money_flow(neu_p, neu_v, neu_h, neu_l)
+    exp_neu = _bar_walk_full_smart_money_flow(neu_p, neu_v, neu_h, neu_l)
+    _assert_series_close(got_neu, exp_neu)
+    assert got_neu[-1] == pytest.approx(0.0)
+
+
+def test_incremental_smart_money_flow_non_numeric_last() -> None:
+    """Non-numeric last sample uses the same defaults as the full path."""
+    price: list[Any] = [1.0, -1.0, "x"]
+    vol: list[Any] = [2500.0, 2500.0, None]
+    time_h: list[Any] = [2.0, 10.0, None]
+    time_l: list[Any] = [10.0, 2.0, None]
+    got = _bar_walk_inc_smart_money_flow(price, vol, time_h, time_l)
+    exp = _bar_walk_full_smart_money_flow(price, vol, time_h, time_l)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_smart_money_flow_last_sample(price, vol, time_h, time_l)
+    _assert_series_close(last, exp)
+    # defaults 0/1000/10/10 → 0.0
+    assert got[-1] == pytest.approx(0.0)
+
+
+def test_incremental_smart_money_flow_clamp() -> None:
+    """Flow is clamped to [-1, 1] when volume-scaled factor exceeds the band."""
+    # Negative volume + buying branch → vol_factor*0.8 < -1
+    price_lo = [0.0, 1.0]
+    vol_lo = [1000.0, -10000.0]
+    time_h_lo = [5.0, 2.0]
+    time_l_lo = [5.0, 10.0]
+    got_lo = _bar_walk_inc_smart_money_flow(price_lo, vol_lo, time_h_lo, time_l_lo)
+    exp_lo = _bar_walk_full_smart_money_flow(price_lo, vol_lo, time_h_lo, time_l_lo)
+    _assert_series_close(got_lo, exp_lo)
+    assert got_lo[-1] == pytest.approx(-1.0)
+
+    # Negative volume + selling branch → -vol_factor*0.8 > 1
+    price_hi = [0.0, -1.0]
+    vol_hi = [1000.0, -10000.0]
+    time_h_hi = [5.0, 10.0]
+    time_l_hi = [5.0, 2.0]
+    got_hi = _bar_walk_inc_smart_money_flow(price_hi, vol_hi, time_h_hi, time_l_hi)
+    exp_hi = _bar_walk_full_smart_money_flow(price_hi, vol_hi, time_h_hi, time_l_hi)
+    _assert_series_close(got_hi, exp_hi)
+    assert got_hi[-1] == pytest.approx(1.0)
+
+
+def test_incremental_smart_money_flow_slot_count_stable() -> None:
+    """One call-site slot every bar, including empty / na."""
+    price, vol, time_h, time_l = _smf_series(40)
+    price_na: list[float | None] = list(price)
+    price_na[4] = None
+    ev = _IncTA()
+    for i in range(len(price_na)):
+        ev._ta_call_i = 0
+        ev._smart_money_flow_inc_update(
+            price_na[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_smart_money_flow_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    price, vol, time_h, time_l = _smf_series(30)
+    ev = _IncTA()
+    for i in range(len(price)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_smart_money_flow(
+            [price[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_smart_money_flow_two_call_sites_independent() -> None:
+    price, vol, time_h, time_l = _smf_series(80)
+    price_b = [-p for p in price]
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(price)):
+        prefix_p = price[: i + 1]
+        prefix_v = vol[: i + 1]
+        prefix_h = time_h[: i + 1]
+        prefix_l = time_l[: i + 1]
+        prefix_pb = price_b[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._smart_money_flow_inc_update(prefix_p, prefix_v, prefix_h, prefix_l)
+        )
+        b_out.append(
+            ev._smart_money_flow_inc_update(prefix_pb, prefix_v, prefix_h, prefix_l)
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(a_out, _bar_walk_full_smart_money_flow(price, vol, time_h, time_l))
+    _assert_series_close(
+        b_out, _bar_walk_full_smart_money_flow(price_b, vol, time_h, time_l)
+    )
+    assert a_out != b_out
+
+
+def test_runtime_smart_money_flow_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _smf_bars(80)
+    src = """//@version=5
+indicator("smart money flow")
+f = ta.smart_money_flow(close, volume, high, low)
+g = ta.smart_money_flow(open, volume, low, high)
+plot(f, "smf")
+plot(g, "smf2")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"smf", "smf2"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses scalar isinstance on PineSeries (newest-first wrap),
+    # so series args default to 0/1000/10/10 → 0.0 every bar. Incremental last
+    # sample is the chronological prefix formula (list-oracle / kernel). Do not
+    # require incremental == disabled for every bar.
+    closes = [float(b["close"]) for b in bars]
+    opens = [float(b["open"]) for b in bars]
+    highs = [float(b["high"]) for b in bars]
+    lows = [float(b["low"]) for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["smf"]):
+        exp = _smart_money_flow_last_n(
+            closes[: i + 1], vols[: i + 1], highs[: i + 1], lows[: i + 1]
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"smf bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["smf2"]):
+        exp = _smart_money_flow_last_n(
+            opens[: i + 1], vols[: i + 1], lows[: i + 1], highs[: i + 1]
+        )
+        assert val == pytest.approx(
+            exp, rel=1e-9, abs=1e-9
+        ), f"smf2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["smf"][0] == pytest.approx(0.0)
+    assert r_off["series"]["smf"][0] == pytest.approx(0.0)
+    assert any(v != pytest.approx(0.0) for v in r_on["series"]["smf"][1:])
+
