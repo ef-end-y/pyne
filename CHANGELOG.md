@@ -9,6 +9,7 @@
 - **LSP hover docs links.** Builtin hover cards (`ta.sma`, `strategy.entry`, …) include a markdown link to the public Pine v6 function reference. Keywords, types, and user declarations stay link-free.
 - **Bar-mode incremental `ta.momentum_filter` (T2).** Last-sample kernel matches full recompute: last-N volume-weighted momentum (`0.0` while the window is short or volume_sum is 0).
 - **Bar-mode incremental `ta.acceleration_factor` (T2).** Last-sample kernel matches full recompute: last-(period+1) momentum, clamp to [-2, 2], 0.0 while short or old_mom ~ 0.
+- **Bar-mode incremental `ta.mean_reversion_score` (T2).** Last-sample kernel matches full recompute: last close/sma/stdev vs period warmup, score 0–100 (`50.0` while short or stdev is 0).
 
 ### Fixed
 

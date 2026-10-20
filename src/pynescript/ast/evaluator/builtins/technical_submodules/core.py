@@ -1779,6 +1779,51 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _mean_reversion_score_inc_update(
+        self,
+        close: Any,
+        sma: Any,
+        stdev: Any,
+        period: int,
+    ) -> float:
+        """Incremental mean reversion score matching full ``ta.mean_reversion_score``.
+
+        Period is a warmup gate (need ``period`` samples of close and sma),
+        not a rolling window. After warmup, last samples only: non-numeric
+        last close/sma → 100.0, last stdev → 1.0; ``sd==0`` or short window
+        or ``period<=0`` → 50.0; else clamp ``min(100, abs(c-s)/sd * 20)``
+        to ``[0, 100]``. One call-site slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n <= 0:
+            return 50.0
+        key = ("mean_reversion_score", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"count_c": 0, "count_s": 0, "value": 50.0}
+            bucket[key] = st
+        c_last = self._series_last(close)
+        s_last = self._series_last(sma)
+        sd_last = self._series_last(stdev)
+        st["count_c"] = int(st["count_c"]) + 1
+        st["count_s"] = int(st["count_s"]) + 1
+        if st["count_c"] < n or st["count_s"] < n:
+            st["value"] = 50.0
+            return 50.0
+        c = c_last if isinstance(c_last, (int, float)) else 100.0
+        s = s_last if isinstance(s_last, (int, float)) else 100.0
+        sd = sd_last if isinstance(sd_last, (int, float)) else 1.0
+        if sd == 0:
+            st["value"] = 50.0
+            return 50.0
+        distance = abs(c - s) / sd
+        score = min(100.0, distance * 20)
+        val = max(0.0, min(100.0, score))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

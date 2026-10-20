@@ -8732,3 +8732,286 @@ plot(g, "af5")
     assert r_on["series"]["af3"][3] != pytest.approx(0.0)
     assert r_off["series"]["af3"][3] != pytest.approx(0.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: mean_reversion_score incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _mean_reversion_score_last_n(
+    close: list[Any],
+    sma: list[Any],
+    stdev: list[Any],
+    period: int,
+) -> float:
+    """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
+    if len(close) < period or len(sma) < period or period <= 0:
+        return 50.0
+    c = close[-1] if isinstance(close[-1], (int, float)) else 100.0
+    s = sma[-1] if isinstance(sma[-1], (int, float)) else 100.0
+    sd = stdev[-1] if stdev and isinstance(stdev[-1], (int, float)) else 1.0
+    if sd == 0:
+        return 50.0
+    distance = abs(c - s) / sd
+    score = min(100.0, distance * 20)
+    return max(0.0, min(100.0, score))
+
+
+def _mrs_series(n: int = 120) -> tuple[list[float], list[float], list[float]]:
+    close = _series(n)
+    sma = [c - 1.0 - (i % 7) * 0.05 for i, c in enumerate(close)]
+    stdev = [1.5 + (i % 5) * 0.1 for i in range(n)]
+    return close, sma, stdev
+
+
+def _bar_walk_full_mean_reversion_score(
+    close: list[Any],
+    sma: list[Any],
+    stdev: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(close)):
+        out.append(
+            ev._builtin_ta_mean_reversion_score(
+                [close[: i + 1], sma[: i + 1], stdev[: i + 1], period]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_mean_reversion_score(
+    close: list[Any],
+    sma: list[Any],
+    stdev: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._mean_reversion_score_inc_update(
+                close[: i + 1], sma[: i + 1], stdev[: i + 1], period
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_mean_reversion_score_last_sample(
+    close: list[Any],
+    sma: list[Any],
+    stdev: list[Any],
+    period: int,
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._mean_reversion_score_inc_update(close[i], sma[i], stdev[i], period)
+        )
+    return out
+
+
+def test_incremental_mean_reversion_score_matches_full() -> None:
+    close, sma, stdev = _mrs_series(120)
+    period = 5
+    got = _bar_walk_inc_mean_reversion_score(close, sma, stdev, period)
+    exp = _bar_walk_full_mean_reversion_score(close, sma, stdev, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_mean_reversion_score_last_sample(close, sma, stdev, period)
+    _assert_series_close(last, exp)
+    oracle = [
+        _mean_reversion_score_last_n(close[: i + 1], sma[: i + 1], stdev[: i + 1], period)
+        for i in range(len(close))
+    ]
+    _assert_series_close(got, oracle)
+
+
+def test_incremental_mean_reversion_score_warmup() -> None:
+    """Window shorter than period, empty, None, or period<=0 is ``50.0``."""
+    close = [100.0, 101.0]
+    sma = [99.0, 99.5]
+    stdev = [1.0, 1.1]
+    period = 5
+    got = _bar_walk_inc_mean_reversion_score(close, sma, stdev, period)
+    exp = _bar_walk_full_mean_reversion_score(close, sma, stdev, period)
+    _assert_series_close(got, exp)
+    assert got == [50.0, 50.0]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._mean_reversion_score_inc_update([], [], [], 5) == 50.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._mean_reversion_score_inc_update(None, None, None, 5) == 50.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._mean_reversion_score_inc_update(1.0, 1.0, 1.0, 0) == 50.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._mean_reversion_score_inc_update(1.0, 1.0, 1.0, -3) == 50.0
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_mean_reversion_score([None], [None], [None], 5)
+    exp_na = _bar_walk_full_mean_reversion_score([None], [None], [None], 5)
+    _assert_series_close(got_na, exp_na)
+    assert got_na[0] == 50.0
+
+
+def test_incremental_mean_reversion_score_sd_zero() -> None:
+    """Last stdev == 0 → 50.0 after warmup."""
+    period = 3
+    close = [100.0, 101.0, 102.0, 110.0]
+    sma = [100.0, 100.0, 100.0, 100.0]
+    stdev = [1.0, 1.0, 1.0, 0.0]
+    got = _bar_walk_inc_mean_reversion_score(close, sma, stdev, period)
+    exp = _bar_walk_full_mean_reversion_score(close, sma, stdev, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_mean_reversion_score_last_sample(close, sma, stdev, period)
+    _assert_series_close(last, exp)
+    assert got[-1] == 50.0
+    assert got[2] != 50.0
+
+
+def test_incremental_mean_reversion_score_non_numeric_last() -> None:
+    """Non-numeric last close/sma → 100.0; last stdev → 1.0 (same as full path)."""
+    period = 3
+    close: list[Any] = [100.0, 101.0, "x"]
+    sma: list[Any] = [99.0, 99.5, None]
+    stdev: list[Any] = [1.0, 1.0, None]
+    got = _bar_walk_inc_mean_reversion_score(close, sma, stdev, period)
+    exp = _bar_walk_full_mean_reversion_score(close, sma, stdev, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_mean_reversion_score_last_sample(close, sma, stdev, period)
+    _assert_series_close(last, exp)
+    # c=100, s=100, sd=1 → distance 0 → score 0
+    assert got[-1] == pytest.approx(0.0)
+
+
+def test_incremental_mean_reversion_score_clamp() -> None:
+    """Score is clamped to [0, 100] (distance * 20 saturates at 100)."""
+    period = 3
+    close = [100.0, 100.0, 100.0, 200.0]
+    sma = [100.0, 100.0, 100.0, 100.0]
+    stdev = [1.0, 1.0, 1.0, 1.0]
+    got = _bar_walk_inc_mean_reversion_score(close, sma, stdev, period)
+    exp = _bar_walk_full_mean_reversion_score(close, sma, stdev, period)
+    _assert_series_close(got, exp)
+    assert got[-1] == pytest.approx(100.0)
+
+
+def test_incremental_mean_reversion_score_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    close: list[float | None]
+    close, sma, stdev = _mrs_series(40)
+    close_na: list[float | None] = list(close)
+    close_na[4] = None
+    ev = _IncTA()
+    for i in range(len(close_na)):
+        ev._ta_call_i = 0
+        ev._mean_reversion_score_inc_update(
+            close_na[: i + 1], sma[: i + 1], stdev[: i + 1], 5
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_mean_reversion_score_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    close, sma, stdev = _mrs_series(30)
+    ev = _IncTA()
+    for i in range(len(close)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_mean_reversion_score(
+            [close[: i + 1], sma[: i + 1], stdev[: i + 1], 5]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_mean_reversion_score_two_call_sites_independent() -> None:
+    close, sma, stdev = _mrs_series(80)
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(close)):
+        prefix_c = close[: i + 1]
+        prefix_s = sma[: i + 1]
+        prefix_d = stdev[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._mean_reversion_score_inc_update(prefix_c, prefix_s, prefix_d, 3)
+        )
+        b_out.append(
+            ev._mean_reversion_score_inc_update(prefix_c, prefix_s, prefix_d, 5)
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(
+        a_out, _bar_walk_full_mean_reversion_score(close, sma, stdev, 3)
+    )
+    _assert_series_close(
+        b_out, _bar_walk_full_mean_reversion_score(close, sma, stdev, 5)
+    )
+    assert a_out != b_out
+
+
+def test_runtime_mean_reversion_score_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _ohlcv_bars(80)
+    src = """//@version=5
+indicator("mean reversion score")
+f = ta.mean_reversion_score(close, open, volume, 3)
+g = ta.mean_reversion_score(close, open, volume, 5)
+plot(f, "mrs3")
+plot(g, "mrs5")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"mrs3", "mrs5"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses ``_expect_list`` on PineSeries (newest-first), so
+    # last-sample on the reversed list is the oldest bar — not chronological
+    # last-sample. Incremental last sample is the chronological prefix formula
+    # (list-oracle / kernel). Do not require incremental == disabled for every bar.
+    closes = [b["close"] for b in bars]
+    opens = [b["open"] for b in bars]
+    vols = [float(b["volume"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["mrs3"]):
+        exp = _mean_reversion_score_last_n(
+            closes[: i + 1], opens[: i + 1], vols[: i + 1], 3
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mrs3 bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["mrs5"]):
+        exp = _mean_reversion_score_last_n(
+            closes[: i + 1], opens[: i + 1], vols[: i + 1], 5
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mrs5 bar {i}: {val} != {exp}"
+    assert r_on["series"]["mrs3"][0] == pytest.approx(50.0)
+    assert r_off["series"]["mrs3"][0] == pytest.approx(50.0)
+    assert r_on["series"]["mrs3"][2] != pytest.approx(50.0)
+
