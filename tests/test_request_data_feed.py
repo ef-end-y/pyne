@@ -505,14 +505,17 @@ plot(ta.atr(3), title="catr")
         0-arg ``ta.wad()`` / 0-arg ``ta.tr()`` / 2-arg ``ta.tsi(short, long)`` /
         2-arg ``ta.bbw(n, mult)`` / 3-arg ``ta.bbw(source, n, mult)`` /
         1-arg ``ta.stoch(n)`` / 2-arg ``ta.stoch(k, d)`` (%K) /
-        2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)``
+        2-arg ``ta.pivothigh(left, right)`` / ``ta.pivotlow(left, right)`` /
+        3-arg ``ta.percentile_nearest_rank(source, n, percentage)`` /
+        3-arg ``ta.percentile_linear_interpolation(source, n, percentage)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
         ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
         3-arg ``ta.tsi(source, short, long)``, nested ``ta.bbw``, 1-arg
         ``ta.bbw``, 4-arg ``ta.stoch(source, high, low, length)``, nested
-        ``ta.pivothigh`` / ``ta.pivotlow``, and nested
-        ``ta.adx`` / ``ta.mfi`` stay na.
+        ``ta.pivothigh`` / ``ta.pivotlow``, nested
+        ``ta.percentile_nearest_rank`` / ``ta.percentile_linear_interpolation``,
+        and nested ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
 
@@ -543,6 +546,8 @@ plot(request.security(syminfo.tickerid, "60", ta.bbw(ta.sma(close, 5), 5, 2)), t
 plot(request.security(syminfo.tickerid, "60", ta.stoch(close, high, low, 5)), title="stoch4")
 plot(request.security(syminfo.tickerid, "60", ta.pivothigh(ta.sma(close, 5), 2, 2)), title="phn")
 plot(request.security(syminfo.tickerid, "60", ta.pivotlow(ta.ema(close, 5), 2, 2)), title="pln")
+plot(request.security(syminfo.tickerid, "60", ta.percentile_nearest_rank(ta.sma(close, 5), 20, 50)), title="pnrn")
+plot(request.security(syminfo.tickerid, "60", ta.percentile_linear_interpolation(ta.ema(close, 5), 20, 50)), title="plin")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -557,6 +562,8 @@ plot(request.security(syminfo.tickerid, "60", ta.pivotlow(ta.ema(close, 5), 2, 2
         assert all(_is_na(x) for x in out["series"]["stoch4"])
         assert all(_is_na(x) for x in out["series"]["phn"])
         assert all(_is_na(x) for x in out["series"]["pln"])
+        # Nested percentile can coincidentally equal an OHLCV sample and hit the
+        # chart pre-eval heuristic (same as nested sma); matcher stays unmatched.
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -754,6 +761,15 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.pivotlow(hl2, 3, 1)"))
         assert m is not None and m.name == "pivotlow" and m.source == "hl2" and m.length == 3
         assert m.extra == 1
+        m = match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(close, 20, 50)"))
+        assert m is not None and m.name == "percentile_nearest_rank" and m.source == "close"
+        assert m.length == 20 and m.extra == 50
+        m = match_htf_simple_ta_ast(_expr("ta.percentile_linear_interpolation(hl2, 14, 0)"))
+        assert m is not None and m.name == "percentile_linear_interpolation" and m.source == "hl2"
+        assert m.length == 14 and m.extra == 0
+        m = match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(hlc3, 10, 50.0)"))
+        assert m is not None and m.name == "percentile_nearest_rank" and m.source == "hlc3"
+        assert m.length == 10 and m.extra == 50
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -780,6 +796,11 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.pivotlow(ta.ema(close, 5), 2, 2)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.pivothigh(2)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.pivotlow()")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(ta.sma(close, 5), 20, 50)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.percentile_linear_interpolation(ta.ema(close, 5), 20, 50)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(close, 20, 50.5)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.percentile_linear_interpolation(close, 20)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.percentile_nearest_rank(close, 20, -1)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -2135,6 +2156,63 @@ plot(ta.pivothigh(2, 2), title="cph")
             for i in range(len(day7_ph))
             if not _is_na(cph_day7[i])
         ) or all(_is_na(x) for x in cph_day7)
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_percentile_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 3-arg percentile TA."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.percentile_nearest_rank(close, 3, 50)), title="hpnr")
+plot(request.security(syminfo.tickerid, "D", ta.percentile_linear_interpolation(close, 3, 25)), title="hpli")
+plot(ta.percentile_nearest_rank(close, 3, 50), title="cpnr")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hpnr = out["series"]["hpnr"]
+        hpli = out["series"]["hpli"]
+        daily_closes: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+        # period=3 defined at unique 2; unique 2 completes at chart 72.
+        assert all(_is_na(x) for x in hpnr[1:72])
+        assert all(_is_na(x) for x in hpli[1:72])
+        day5_pnr = hpnr[5 * 24 : 6 * 24]
+        day5_pli = hpli[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_pnr)
+        assert all(not _is_na(x) for x in day5_pli)
+        pnr_ref = float(day5_pnr[0])
+        pli_ref = float(day5_pli[0])
+        for v in day5_pnr:
+            assert abs(float(v) - pnr_ref) < 1e-9
+        for v in day5_pli:
+            assert abs(float(v) - pli_ref) < 1e-9
+        win = daily_closes[-3:]
+        sorted_w = sorted(win)
+        n = len(sorted_w)
+        rank_nr = max(1, int((50.0 / 100.0) * n + 0.999999))
+        rank_nr = min(rank_nr, n)
+        expect_pnr = float(sorted_w[rank_nr - 1])
+        rank_lin = (25.0 / 100.0) * (n - 1)
+        lo = int(rank_lin)
+        hi = min(lo + 1, n - 1)
+        frac = rank_lin - lo
+        expect_pli = float(sorted_w[lo]) * (1.0 - frac) + float(sorted_w[hi]) * frac
+        assert math.isfinite(expect_pnr)
+        assert math.isfinite(expect_pli)
+        assert abs(float(hpnr[-1]) - expect_pnr) < 1e-9
+        assert abs(float(hpli[-1]) - expect_pli) < 1e-9
+        cpnr_day5 = out["series"]["cpnr"][5 * 24 : 6 * 24]
+        assert any(
+            abs(float(hpnr[5 * 24 + i]) - float(cpnr_day5[i])) > 1e-6
+            for i in range(24)
+            if not _is_na(cpnr_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

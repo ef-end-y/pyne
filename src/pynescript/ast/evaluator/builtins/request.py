@@ -152,6 +152,8 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "stoch",
         "pivothigh",
         "pivotlow",
+        "percentile_nearest_rank",
+        "percentile_linear_interpolation",
     }
 )
 
@@ -172,9 +174,10 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
     "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi/accdist/wad/tr/tsi/bbw/stoch/"
-    "pivothigh/pivotlow "
+    "pivothigh/pivotlow/percentile_nearest_rank/percentile_linear_interpolation "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf/stoch "
-    "and 2-arg ta.stoch(k, d) / ta.pivothigh(left, right) / ta.pivotlow(left, right) on coarser TF "
+    "and 2-arg ta.stoch(k, d) / ta.pivothigh(left, right) / ta.pivotlow(left, right) "
+    "and 3-arg ta.percentile_nearest_rank / ta.percentile_linear_interpolation on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
     "(htf_ohlcv_offset); LTF / unparseable TF still use the chart passthrough stub.",
@@ -204,10 +207,10 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow
-    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; else None
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation
+    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf (h/l/c/v), 0-arg obv/nvi/pvi (close+volume), 0-arg accdist/wad (h/l/c/v), and 0-arg tr (h/l/c); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n
+    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); else None
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -292,6 +295,11 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
       literals; ``source`` is HTF high / low, ``length`` is left, ``extra``
       is right. Optional 3-arg ``ta.pivothigh(close, left, right)`` when
       source is an OHLCV Name. Nested source unmatched.
+    - ``ta.percentile_nearest_rank(close, 20, 50)`` /
+      ``ta.percentile_linear_interpolation(close, 20, 50)`` — 3-arg
+      ``(source, n, percentage)`` with percentage a const int via
+      ``_const_int_ge`` (0 ok) stored in ``extra``. Nested source and
+      non-int percentage unmatched. Not ``ta.percentrank``.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -322,7 +330,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.cum(ta.sma(...))`` / ``ta.change(ta.sma(...))`` /
     ``ta.adx(ta.sma(...), n)`` / ``ta.mfi(ta.sma(...), n)`` /
     ``ta.cmf(ta.sma(...))`` / ``ta.linreg(ta.sma(...), n, offset)`` /
-    ``ta.bbw(ta.sma(...), n, 2)``), multi-arg
+    ``ta.bbw(ta.sma(...), n, 2)`` / ``ta.percentile_nearest_rank(ta.sma(...), n, p)`` /
+    ``ta.percentile_linear_interpolation(ta.ema(...), n, p)``), multi-arg
     atr, 2-arg ``ta.adx(diLength, adxSmoothing)``, 4-arg ``ta.adx`` /
     ``ta.cci`` / ``ta.wpr``, 2-arg ``ta.mfi(source, length)``, 1-arg ``ta.median`` /
     ``ta.dev`` / ``ta.variance`` / ``ta.mode`` /
@@ -331,7 +340,9 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
     2-arg ``ta.nvi`` / ``ta.pvi``, 4-arg ``ta.accdist`` / ``ta.wad``,
     3-arg ``ta.tr`` / ``ta.tsi``, 1-arg ``ta.bbw``, 4-arg ``ta.stoch``,
-    nested ``ta.pivothigh`` / ``ta.pivotlow``, 5-arg ``ta.cmf``,
+    nested ``ta.pivothigh`` / ``ta.pivotlow``, nested / non-int
+    ``ta.percentile_nearest_rank`` / ``ta.percentile_linear_interpolation``,
+    5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -457,6 +468,19 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if src is None or left is None or right is None:
             return None
         return HtfSimpleTaExpr(fname, src, left, extra=right)
+
+    if fname in ("percentile_nearest_rank", "percentile_linear_interpolation"):
+        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, n, percentage)
+            return None
+        src_node = arg_nodes[0].value
+        if type(src_node) is not ast_mod.Name:
+            return None
+        src = _OHLCV_FIELD_ALIASES.get(str(src_node.id).strip().lower())
+        length = _const_positive_int(arg_nodes[1].value)
+        percentage = _const_int_ge(arg_nodes[2].value, 0)
+        if src is None or length is None or percentage is None:
+            return None
+        return HtfSimpleTaExpr(fname, src, length, extra=percentage)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2031,6 +2055,97 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if fv != fv else fv
         return out
 
+    @staticmethod
+    def _htf_percentile_nearest_rank_at(
+        window: list[float | None], percentage: int
+    ) -> float | None:
+        """Last-sample ``ta.percentile_nearest_rank`` on a chronological window.
+
+        Inlines ``_percentile_nearest_rank_inc_update`` without ``_ta_next_slot``.
+        """
+        sorted_w: list[float] = []
+        for v in window:
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv == fv:
+                sorted_w.append(fv)
+        if not sorted_w:
+            return None
+        sorted_w.sort()
+        n = len(sorted_w)
+        rank = max(1, int((float(percentage) / 100.0) * n + 0.999999))
+        rank = min(rank, n)
+        return float(sorted_w[rank - 1])
+
+    @staticmethod
+    def _htf_percentile_linear_interpolation_at(
+        window: list[float | None], percentage: int
+    ) -> float | None:
+        """Last-sample ``ta.percentile_linear_interpolation`` on a chronological window.
+
+        Inlines ``_percentile_linear_inc_update`` without ``_ta_next_slot``.
+        """
+        sorted_w: list[float] = []
+        for v in window:
+            if v is None:
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if fv == fv:
+                sorted_w.append(fv)
+        if not sorted_w:
+            return None
+        sorted_w.sort()
+        n = len(sorted_w)
+        if n == 1:
+            return float(sorted_w[0])
+        rank = (float(percentage) / 100.0) * (n - 1)
+        lo = int(rank)
+        hi = min(lo + 1, n - 1)
+        frac = rank - lo
+        fv = float(sorted_w[lo]) * (1.0 - frac) + float(sorted_w[hi]) * frac
+        return None if fv != fv else fv
+
+    def _htf_percentile_nearest_rank_full_series(
+        self, src: list[float | None], period: int, percentage: int
+    ) -> list[float | None]:
+        """Full-list nearest-rank percentile on unique HTF source via prefix windows.
+
+        Does not call ``_ta_next_slot``.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        for i in range(period - 1, n):
+            out[i] = self._htf_percentile_nearest_rank_at(
+                src[i - period + 1 : i + 1], percentage
+            )
+        return out
+
+    def _htf_percentile_linear_interpolation_full_series(
+        self, src: list[float | None], period: int, percentage: int
+    ) -> list[float | None]:
+        """Full-list linear-interpolation percentile on unique HTF source via prefix windows.
+
+        Does not call ``_ta_next_slot``.
+        """
+        n = len(src)
+        out: list[float | None] = [None] * n
+        if n == 0 or period <= 0:
+            return out
+        for i in range(period - 1, n):
+            out[i] = self._htf_percentile_linear_interpolation_at(
+                src[i - period + 1 : i + 1], percentage
+            )
+        return out
+
     def _htf_change_full_series(self, src: list[float | None], period: int) -> list[float | None]:
         """Full-list change via interpret ``_change`` (``src - src[n]``) on HTF windows."""
         n = len(src)
@@ -3421,6 +3536,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             extra = int(expr.extra) if expr.extra is not None else 0
             period = int(expr.length)
             return self._htf_bbw_full_series(src, period, extra)
+        if name in ("percentile_nearest_rank", "percentile_linear_interpolation"):
+            field = expr.source or "close"
+            src = self._htf_source_series(unique, field)
+            extra = int(expr.extra) if expr.extra is not None else 0
+            period = int(expr.length)
+            if name == "percentile_nearest_rank":
+                return self._htf_percentile_nearest_rank_full_series(src, period, extra)
+            return self._htf_percentile_linear_interpolation_full_series(src, period, extra)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -3792,6 +3915,13 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             src = self._series_chrono_values(field)
             extra = int(expression.extra) if expression.extra is not None else 0
             return _last_of(self._htf_bbw_full_series(src, period, extra))
+        if name in ("percentile_nearest_rank", "percentile_linear_interpolation"):
+            field = expression.source or "close"
+            src = self._series_chrono_values(field)
+            extra = int(expression.extra) if expression.extra is not None else 0
+            if name == "percentile_nearest_rank":
+                return _last_of(self._htf_percentile_nearest_rank_full_series(src, period, extra))
+            return _last_of(self._htf_percentile_linear_interpolation_full_series(src, period, extra))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
         if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch") or (name == "range" and expression.source is None):
@@ -5493,6 +5623,9 @@ def compile_htf_security_value(  # noqa: PLR0913
             src = field_s or "close"
             if length > 0 and offset > 0:
                 extra = int(offset)
+        elif name in ("percentile_nearest_rank", "percentile_linear_interpolation"):
+            src = field_s or "close"
+            extra = int(offset)
         else:
             src = field_s or "close"
             if name == "linreg" and offset:
