@@ -13,6 +13,7 @@
 
 - **`request.security` resamples allowlisted 1-arg `ta.adx(length)` / `ta.mfi(length)` on HTF (D-06).** Same-symbol `ta.adx(14)` (HTF high/low/close) / `ta.mfi(14)` (HTF high/low/close/volume) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*`, 2-arg `ta.adx(diLength, adxSmoothing)`, and 4-arg explicit-series adx stay `na`. Disk IR cache v36.
 - **`request.security` resamples allowlisted 0-arg `ta.obv()` / 1-arg `ta.cmf(length)` on HTF (D-06).** Same-symbol `ta.obv()` (HTF close+volume, running signed volume; 0 until 3 unique bars) / `ta.cmf(14)` (HTF high/low/close/volume) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*`, 2-arg `ta.obv(close, volume)`, and 5-arg explicit-series cmf stay `na`. Disk IR cache v37.
+- **`request.security` resamples allowlisted 0-arg `ta.nvi()` / `ta.pvi()` on HTF (D-06).** Same-symbol `ta.nvi()` / `ta.pvi()` (HTF close+volume, seed 1000; later bars multiply by `(1 + close_change)` when volume decreases / increases) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*` and 2-arg `ta.nvi(close, volume)` / `ta.pvi(close, volume)` stay `na`. Disk IR cache v38.
 
 ## [0.6.17] — 2026-10-19
 

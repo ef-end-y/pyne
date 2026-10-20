@@ -476,9 +476,11 @@ plot(ta.atr(3), title="catr")
         3-arg ``ta.linreg(source, n, offset)`` /
         0-arg ``ta.vwap()`` / 1-arg ``ta.vwap(source)`` / 1-arg ``ta.cum(source)`` /
         1-arg ``ta.change(source)`` (length 1) / 1-arg ``ta.adx(n)`` /
-        1-arg ``ta.mfi(n)`` / 0-arg ``ta.obv()`` / 1-arg ``ta.cmf(n)``
+        1-arg ``ta.mfi(n)`` / 0-arg ``ta.obv()`` / 1-arg ``ta.cmf(n)`` /
+        0-arg ``ta.nvi()`` / 0-arg ``ta.pvi()``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
-        ``ta.obv``, 5-arg ``ta.cmf``, and nested ``ta.adx`` / ``ta.mfi`` stay na.
+        ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, and nested
+        ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
 
@@ -497,6 +499,8 @@ plot(request.security(syminfo.tickerid, "60", ta.adx(5, 5)), title="adx2")
 plot(request.security(syminfo.tickerid, "60", ta.adx(high, low, close, 5)), title="adx4")
 plot(request.security(syminfo.tickerid, "60", ta.mfi(ta.sma(close, 5), 5)), title="mfin")
 plot(request.security(syminfo.tickerid, "60", ta.obv(close, volume)), title="obv2")
+plot(request.security(syminfo.tickerid, "60", ta.nvi(close, volume)), title="nvi2")
+plot(request.security(syminfo.tickerid, "60", ta.pvi(close, volume)), title="pvi2")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5)), title="cmf5")
 plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low, volume, 5)), title="cmfn")
 """
@@ -655,6 +659,12 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.obv()"))
         assert m is not None and m.name == "obv" and m.source is None and m.length == 0
         assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.nvi()"))
+        assert m is not None and m.name == "nvi" and m.source is None and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.pvi()"))
+        assert m is not None and m.name == "pvi" and m.source is None and m.length == 0
+        assert m.extra is None
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -663,6 +673,8 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.mfi(close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.mfi(ta.sma(close, 14), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.obv(close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.nvi(close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.pvi(close, volume)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -1701,6 +1713,63 @@ plot(ta.cmf(3), title="ccmf")
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
 
+    def test_htf_nvi_pvi_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 0-arg ta.nvi / ta.pvi."""
+        from backend.runtime import Runtime
+
+        bars = _day_aligned_hourly(24 * 8)
+        # Oscillate daily volume so nvi (decrease) and pvi (increase) both fire
+        # on unique HTF bars; chart-TF still differs (hourly path).
+        for i, b in enumerate(bars):
+            day = i // 24
+            hour = i % 24
+            base = 2000.0 if day % 2 == 0 else 800.0
+            b["volume"] = base + hour
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.nvi()), title="hnvi")
+plot(request.security(syminfo.tickerid, "D", ta.pvi()), title="hpvi")
+plot(ta.nvi(), title="cnvi")
+plot(ta.pvi(), title="cpvi")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hnvi = out["series"]["hnvi"]
+        hpvi = out["series"]["hpvi"]
+        daily_closes: list[float] = []
+        daily_vols: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+        # First completed HTF bar at chart 24; nvi/pvi seed 1000 on unique bar 0.
+        assert all(_is_na(x) for x in hnvi[1:24])
+        assert all(_is_na(x) for x in hpvi[1:24])
+        assert abs(float(hnvi[24]) - 1000.0) < 1e-9
+        assert abs(float(hpvi[24]) - 1000.0) < 1e-9
+        day5_nvi = hnvi[5 * 24 : 6 * 24]
+        day5_pvi = hpvi[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_nvi)
+        assert all(not _is_na(x) for x in day5_pvi)
+        nvi_ref = float(day5_nvi[0])
+        pvi_ref = float(day5_pvi[0])
+        for v in day5_nvi:
+            assert abs(float(v) - nvi_ref) < 1e-9
+        for v in day5_pvi:
+            assert abs(float(v) - pvi_ref) < 1e-9
+        expect_nvi = _nvi_last(daily_closes, daily_vols)
+        expect_pvi = _pvi_last(daily_closes, daily_vols)
+        assert math.isfinite(expect_nvi) and math.isfinite(expect_pvi)
+        assert abs(float(hnvi[-1]) - expect_nvi) < 1e-9
+        assert abs(float(hpvi[-1]) - expect_pvi) < 1e-9
+        cnvi_day5 = out["series"]["cnvi"][5 * 24 : 6 * 24]
+        cpvi_day5 = out["series"]["cpvi"][5 * 24 : 6 * 24]
+        assert any(abs(float(hnvi[5 * 24 + i]) - float(cnvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cnvi_day5[i]))
+        assert any(abs(float(hpvi[5 * 24 + i]) - float(cpvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cpvi_day5[i]))
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
 
 class TestRequestSecurityHonestyMeta:
     """Runtime metadata + documented no-crash behavior for limited security surface."""
@@ -2086,6 +2155,54 @@ plot(timeframe.change("W") ? 1 : 0, "chg")
         # Monday opens a new week: last completed weekly close is Friday's 20.
         assert abs(float(sec[2]) - 20.0) < 1e-9
         assert abs(float(sec[3]) - 20.0) < 1e-9
+
+
+def _nvi_last(closes: list[float], volumes: list[float]) -> float:
+    """Oracle matching ``_nvi_inc_update`` last sample on unique bars."""
+    nvi = 1000.0
+    prev_c: float | None = None
+    prev_v: float | None = None
+    started = False
+    for close, vol in zip(closes, volumes, strict=True):
+        cf = float(close)
+        vv = 0.0 if vol is None else float(vol)
+        if not started:
+            started = True
+            prev_c = cf
+            prev_v = vv
+            continue
+        if prev_c is not None:
+            close_change = 0.0 if prev_c == 0.0 else (cf - prev_c) / prev_c
+            pv = 0.0 if prev_v is None else float(prev_v)
+            if vv < pv:
+                nvi = nvi * (1.0 + close_change)
+        prev_c = cf
+        prev_v = vv
+    return nvi
+
+
+def _pvi_last(closes: list[float], volumes: list[float]) -> float:
+    """Oracle matching ``_pvi_inc_update`` last sample on unique bars."""
+    pvi = 1000.0
+    prev_c: float | None = None
+    prev_v: float | None = None
+    started = False
+    for close, vol in zip(closes, volumes, strict=True):
+        cf = float(close)
+        vv = 0.0 if vol is None else float(vol)
+        if not started:
+            started = True
+            prev_c = cf
+            prev_v = vv
+            continue
+        if prev_c is not None:
+            close_change = 0.0 if prev_c == 0.0 else (cf - prev_c) / prev_c
+            pv = 0.0 if prev_v is None else float(prev_v)
+            if vv > pv:
+                pvi = pvi * (1.0 + close_change)
+        prev_c = cf
+        prev_v = vv
+    return pvi
 
 
 def _utc_day0_ms() -> int:

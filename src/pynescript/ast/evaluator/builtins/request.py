@@ -142,6 +142,8 @@ _HTF_SIMPLE_TA_FUNCS = frozenset(
         "mfi",
         "obv",
         "cmf",
+        "nvi",
+        "pvi",
     }
 )
 
@@ -161,7 +163,7 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
     "is aligned to chart bars (provider_htf_ohlcv) with the same gaps/lookahead merge.",
     "Same-symbol allowlisted ta.sma/ema/rsi/atr/wma/rma/cmo/stdev/linreg/cci/roc/mom/hma/vwma/dema/tema/"
     "highest/lowest/range/median/dev/variance/mode/percentrank/change/cog/highestbars/lowestbars/"
-    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf "
+    "kama/rising/falling/swma/ao/vwap/cum/adx/mfi/obv/cmf/nvi/pvi "
     "and 1-arg ta.wpr/highest/lowest/highestbars/lowestbars/range/change/adx/mfi/cmf on coarser TF "
     "runs the TA helper on resampled HTF bars (htf_simple_ta_resample) — still not a full multi-TF engine.",
     "Same-symbol history offsets such as close[1] resample the previous HTF bar "
@@ -192,9 +194,9 @@ class HtfSimpleTaExpr:
     Nested sources, UDFs, and non-constant lengths are rejected.
     """
 
-    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf
-    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), and 0-arg obv (close+volume); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv store 0 (cumulative)
+    name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi
+    source: str | None  # OHLCV field; None for atr/wpr/adx (h/l/c), mfi/cmf (h/l/c/v), and 0-arg obv/nvi/pvi (close+volume); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; ao is hl2; 0-arg vwap is hlc3
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi store 0 (cumulative)
     extra: int | None = None  # 1-arg/2-arg ao: fast; 3-arg linreg: offset; else None
 
 
@@ -253,6 +255,10 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.cmf(14)`` — length-only form (uses HTF high/low/close/volume).
     - ``ta.obv()`` — 0-arg (HTF close+volume, running signed volume).
       ``length`` is stored as 0. 2-arg ``ta.obv(close, volume)`` stays unmatched.
+    - ``ta.nvi()`` — 0-arg (HTF close+volume, seed 1000, multiply on volume
+      decrease). ``length`` is 0. 2-arg ``ta.nvi(close, volume)`` stays unmatched.
+    - ``ta.pvi()`` — 0-arg (HTF close+volume, seed 1000, multiply on volume
+      increase). ``length`` is 0. 2-arg ``ta.pvi(close, volume)`` stays unmatched.
     - ``ta.cci(14)`` — length-only form (typical price / HTF hlc3).
     - ``ta.wpr(14)`` — length-only form (uses HTF high/low/close).
     - ``ta.highest(14)`` — length-only form (HTF high).
@@ -288,7 +294,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     ``ta.percentrank`` / ``ta.cog``, ``ta.kama`` 3/4-arg,
     1-arg ``ta.rising`` / ``ta.falling``, 2-arg ``ta.swma``,
     2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.cum``, 2-arg ``ta.obv``,
-    5-arg ``ta.cmf``,
+    2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``,
     variables as length, and non-ta
     callees return ``None`` (existing complex-na path).
     """
@@ -324,6 +330,16 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if arg_nodes:
             return None
         return HtfSimpleTaExpr("obv", None, 0)
+
+    if fname == "nvi":
+        if arg_nodes:
+            return None
+        return HtfSimpleTaExpr("nvi", None, 0)
+
+    if fname == "pvi":
+        if arg_nodes:
+            return None
+        return HtfSimpleTaExpr("pvi", None, 0)
 
     if fname == "wpr":
         length = _const_positive_int(arg_nodes[0].value) if len(arg_nodes) == 1 else None
@@ -2609,6 +2625,116 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = total
         return out
 
+    @staticmethod
+    def _htf_nvi_full_series(
+        closes: list[float | None], volumes: list[float | None]
+    ) -> list[float | None]:
+        """Full-list NVI matching interpret ``ta.nvi()`` on unique HTF bars.
+
+        Seed ``1000.0`` on the first unique bar. Later bars multiply by
+        ``(1 + close_change)`` when volume decreases. Missing / non-numeric
+        close skips the increment. Empty volume contributes 0.
+        2-arg ``ta.nvi(close, volume)`` stays unmatched.
+        """
+        n = min(len(closes), len(volumes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0:
+            return out
+        nvi = 1000.0
+        prev_c: float | None = None
+        prev_v: float | None = None
+        started = False
+        for i in range(n):
+            cur = closes[i]
+            cf: float | None = None
+            if cur is not None:
+                try:
+                    fv = float(cur)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    cf = fv
+            raw_v = volumes[i]
+            vv = 0.0
+            if raw_v is not None:
+                try:
+                    vf = float(raw_v)
+                except (TypeError, ValueError):
+                    vf = float("nan")
+                if vf == vf:
+                    vv = vf
+            if not started:
+                started = True
+                prev_c = cf
+                prev_v = vv
+                out[i] = nvi
+                continue
+            if cf is not None and prev_c is not None:
+                close_change = 0.0 if prev_c == 0.0 else (cf - prev_c) / prev_c
+                pv = 0.0 if prev_v is None else float(prev_v)
+                if vv < pv:
+                    nvi = nvi * (1.0 + close_change)
+            if cf is not None:
+                prev_c = cf
+            prev_v = vv
+            out[i] = nvi
+        return out
+
+    @staticmethod
+    def _htf_pvi_full_series(
+        closes: list[float | None], volumes: list[float | None]
+    ) -> list[float | None]:
+        """Full-list PVI matching interpret ``ta.pvi()`` on unique HTF bars.
+
+        Seed ``1000.0`` on the first unique bar. Later bars multiply by
+        ``(1 + close_change)`` when volume increases. Missing / non-numeric
+        close skips the increment. Empty volume contributes 0.
+        2-arg ``ta.pvi(close, volume)`` stays unmatched.
+        """
+        n = min(len(closes), len(volumes))
+        out: list[float | None] = [None] * max(len(closes), n)
+        if n == 0:
+            return out
+        pvi = 1000.0
+        prev_c: float | None = None
+        prev_v: float | None = None
+        started = False
+        for i in range(n):
+            cur = closes[i]
+            cf: float | None = None
+            if cur is not None:
+                try:
+                    fv = float(cur)
+                except (TypeError, ValueError):
+                    fv = float("nan")
+                if fv == fv:
+                    cf = fv
+            raw_v = volumes[i]
+            vv = 0.0
+            if raw_v is not None:
+                try:
+                    vf = float(raw_v)
+                except (TypeError, ValueError):
+                    vf = float("nan")
+                if vf == vf:
+                    vv = vf
+            if not started:
+                started = True
+                prev_c = cf
+                prev_v = vv
+                out[i] = pvi
+                continue
+            if cf is not None and prev_c is not None:
+                close_change = 0.0 if prev_c == 0.0 else (cf - prev_c) / prev_c
+                pv = 0.0 if prev_v is None else float(prev_v)
+                if vv > pv:
+                    pvi = pvi * (1.0 + close_change)
+            if cf is not None:
+                prev_c = cf
+            prev_v = vv
+            out[i] = pvi
+        return out
+
     def _htf_cmf_full_series(
         self,
         closes: list[float | None],
@@ -2739,6 +2865,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             closes = self._htf_source_series(unique, "close")
             vol = self._htf_source_series(unique, "volume")
             return self._htf_obv_full_series(closes, vol)
+        if name == "nvi":
+            closes = self._htf_source_series(unique, "close")
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_nvi_full_series(closes, vol)
+        if name == "pvi":
+            closes = self._htf_source_series(unique, "close")
+            vol = self._htf_source_series(unique, "volume")
+            return self._htf_pvi_full_series(closes, vol)
         if expr.length <= 0:
             return []
         period = int(expr.length)
@@ -3066,6 +3200,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             closes = self._series_chrono_values("close")
             vol = self._series_chrono_values("volume")
             return _last_of(self._htf_obv_full_series(closes, vol))
+        if name == "nvi":
+            closes = self._series_chrono_values("close")
+            vol = self._series_chrono_values("volume")
+            return _last_of(self._htf_nvi_full_series(closes, vol))
+        if name == "pvi":
+            closes = self._series_chrono_values("close")
+            vol = self._series_chrono_values("volume")
+            return _last_of(self._htf_pvi_full_series(closes, vol))
         if period <= 0 and name not in ("vwap", "cum"):
             return na
         if name in ("atr", "wpr", "adx", "mfi", "cmf") or (name == "range" and expression.source is None):
@@ -4736,6 +4878,10 @@ def compile_htf_security_value(  # noqa: PLR0913
         elif name == "cum":
             src = field_s or "close"
         elif name == "obv":
+            src = None
+        elif name == "nvi":
+            src = None
+        elif name == "pvi":
             src = None
         else:
             src = field_s or "close"
