@@ -9948,3 +9948,305 @@ plot(g ? 1 : 0, "vt08")
     assert r_off["series"]["vt03"][0] == pytest.approx(0.0)
     assert r_on["series"]["vt03"][4] != pytest.approx(0.0)
 
+
+# ---------------------------------------------------------------------------
+# T2: liquidity_score incremental last-sample ≡ full recompute
+# ---------------------------------------------------------------------------
+
+
+def _liquidity_score_last_n(
+    volume: list[Any],
+    volatility: list[Any],
+    spread: list[Any],
+    period: int,
+) -> float:
+    """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
+    if (
+        len(volume) < period
+        or len(volatility) < period
+        or len(spread) < period
+        or period <= 0
+    ):
+        return 50.0
+    vol_avg = (
+        sum(v for v in volume[-period:] if isinstance(v, (int, float))) / period
+        if volume
+        else 1000.0
+    )
+    vol_score = min(100.0, vol_avg / 100.0)
+    valid_volatility = [v for v in volatility[-period:] if isinstance(v, (int, float))]
+    vol_avg_volatility = sum(valid_volatility) / period if volatility else 1.0
+    volatility_score = max(0.0, 100.0 - vol_avg_volatility * 50.0)
+    spread_avg = (
+        sum(s for s in spread[-period:] if isinstance(s, (int, float))) / period
+        if spread
+        else 0.1
+    )
+    spread_score = max(0.0, 100.0 - spread_avg * 100.0)
+    liquidity = vol_score * 0.4 + volatility_score * 0.3 + spread_score * 0.3
+    return max(0.0, min(100.0, liquidity))
+
+
+def _liq_series(n: int = 120) -> tuple[list[float], list[float], list[float]]:
+    """Volume / volatility / spread with mixed liquidity regimes."""
+    volume = _vols(n, seed=2000.0)
+    volatility = [0.4 + 0.3 * math.sin(i / 6.0) for i in range(n)]
+    spread = [0.05 + 0.02 * abs(math.sin(i / 4.0)) for i in range(n)]
+    return volume, volatility, spread
+
+
+def _liq_bars(n: int = 80) -> list[dict]:
+    """Synthetic OHLCV: volume, open=volatility, close=spread."""
+    bars: list[dict] = []
+    for i in range(n):
+        vola = 0.4 + 0.3 * math.sin(i / 6.0)
+        spr = 0.05 + 0.02 * abs(math.sin(i / 4.0))
+        bars.append(
+            {
+                "open": vola,
+                "high": max(vola, spr) + 0.1,
+                "low": min(vola, spr) - 0.01,
+                "close": spr,
+                "volume": 2000 + i * 15,
+                "time": 1_700_000_000 + i * 86_400,
+            }
+        )
+    return bars
+
+
+def _bar_walk_full_liquidity_score(
+    volume: list[Any],
+    volatility: list[Any],
+    spread: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _FullTA()
+    out: list[float] = []
+    for i in range(len(volume)):
+        out.append(
+            ev._builtin_ta_liquidity_score(
+                [volume[: i + 1], volatility[: i + 1], spread[: i + 1], period]
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_liquidity_score(
+    volume: list[Any],
+    volatility: list[Any],
+    spread: list[Any],
+    period: int,
+) -> list[float]:
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(volume)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._liquidity_score_inc_update(
+                volume[: i + 1], volatility[: i + 1], spread[: i + 1], period
+            )
+        )
+    return out
+
+
+def _bar_walk_inc_liquidity_score_last_sample(
+    volume: list[Any],
+    volatility: list[Any],
+    spread: list[Any],
+    period: int,
+) -> list[float]:
+    """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
+    ev = _IncTA()
+    out: list[float] = []
+    for i in range(len(volume)):
+        ev._ta_call_i = 0
+        out.append(
+            ev._liquidity_score_inc_update(
+                volume[i], volatility[i], spread[i], period
+            )
+        )
+    return out
+
+
+def test_incremental_liquidity_score_matches_full() -> None:
+    volume, volatility, spread = _liq_series(120)
+    period = 5
+    got = _bar_walk_inc_liquidity_score(volume, volatility, spread, period)
+    exp = _bar_walk_full_liquidity_score(volume, volatility, spread, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_liquidity_score_last_sample(
+        volume, volatility, spread, period
+    )
+    _assert_series_close(last, exp)
+    oracle = [
+        _liquidity_score_last_n(
+            volume[: i + 1], volatility[: i + 1], spread[: i + 1], period
+        )
+        for i in range(len(volume))
+    ]
+    _assert_series_close(got, oracle)
+
+
+def test_incremental_liquidity_score_warmup() -> None:
+    """Window shorter than period, empty, None, or period<=0 is ``50.0``."""
+    volume = [2000.0, 2100.0]
+    volatility = [0.4, 0.5]
+    spread = [0.05, 0.06]
+    period = 5
+    got = _bar_walk_inc_liquidity_score(volume, volatility, spread, period)
+    exp = _bar_walk_full_liquidity_score(volume, volatility, spread, period)
+    _assert_series_close(got, exp)
+    assert got == [50.0, 50.0]
+
+    ev = _IncTA()
+    ev._ta_call_i = 0
+    assert ev._liquidity_score_inc_update([], [], [], 5) == 50.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._liquidity_score_inc_update(None, None, None, 5) == 50.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._liquidity_score_inc_update(2000.0, 0.4, 0.05, 0) == 50.0
+    assert ev._ta_call_i == 1
+
+    ev._ta_call_i = 0
+    assert ev._liquidity_score_inc_update(2000.0, 0.4, 0.05, -3) == 50.0
+    assert ev._ta_call_i == 1
+
+    got_na = _bar_walk_inc_liquidity_score([None], [None], [None], 5)
+    exp_na = _bar_walk_full_liquidity_score([None], [None], [None], 5)
+    _assert_series_close(got_na, exp_na)
+    assert got_na[0] == 50.0
+
+
+def test_incremental_liquidity_score_non_numeric() -> None:
+    """Non-numeric samples are dropped from the sum; still divide by period."""
+    period = 3
+    volume: list[Any] = [2000.0, None, 4000.0]
+    volatility: list[Any] = [0.4, "x", 0.2]
+    spread: list[Any] = [0.05, None, 0.01]
+    got = _bar_walk_inc_liquidity_score(volume, volatility, spread, period)
+    exp = _bar_walk_full_liquidity_score(volume, volatility, spread, period)
+    _assert_series_close(got, exp)
+    last = _bar_walk_inc_liquidity_score_last_sample(
+        volume, volatility, spread, period
+    )
+    _assert_series_close(last, exp)
+    oracle = [
+        _liquidity_score_last_n(
+            volume[: i + 1], volatility[: i + 1], spread[: i + 1], period
+        )
+        for i in range(len(volume))
+    ]
+    _assert_series_close(got, oracle)
+
+
+def test_incremental_liquidity_score_slot_count_stable() -> None:
+    """One call-site slot every bar, including warmup / na."""
+    volume, volatility, spread = _liq_series(40)
+    volume_na: list[float | None] = list(volume)
+    volume_na[4] = None
+    ev = _IncTA()
+    for i in range(len(volume_na)):
+        ev._ta_call_i = 0
+        ev._liquidity_score_inc_update(
+            volume_na[: i + 1], volatility[: i + 1], spread[: i + 1], 5
+        )
+        assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
+
+
+def test_incremental_liquidity_score_builtin_uses_inc_slot() -> None:
+    """Bar-mode builtin consumes the inc kernel slot (gate is wired)."""
+    volume, volatility, spread = _liq_series(30)
+    ev = _IncTA()
+    for i in range(len(volume)):
+        ev._ta_call_i = 0
+        ev._builtin_ta_liquidity_score(
+            [volume[: i + 1], volatility[: i + 1], spread[: i + 1], 5]
+        )
+        assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
+
+
+def test_incremental_liquidity_score_two_call_sites_independent() -> None:
+    volume, volatility, spread = _liq_series(80)
+    ev = _IncTA()
+    a_out: list[float] = []
+    b_out: list[float] = []
+    for i in range(len(volume)):
+        prefix_v = volume[: i + 1]
+        prefix_vola = volatility[: i + 1]
+        prefix_s = spread[: i + 1]
+        ev._ta_call_i = 0
+        a_out.append(
+            ev._liquidity_score_inc_update(prefix_v, prefix_vola, prefix_s, 5)
+        )
+        b_out.append(
+            ev._liquidity_score_inc_update(prefix_v, prefix_vola, prefix_s, 14)
+        )
+        assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
+    _assert_series_close(
+        a_out, _bar_walk_full_liquidity_score(volume, volatility, spread, 5)
+    )
+    _assert_series_close(
+        b_out, _bar_walk_full_liquidity_score(volume, volatility, spread, 14)
+    )
+    assert a_out != b_out
+
+
+def test_runtime_liquidity_score_incremental_vs_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.runtime import Runtime
+
+    try:
+        from pynescript.ast.helper import clear_parse_cache
+    except ImportError:  # pragma: no cover
+
+        def clear_parse_cache() -> None:
+            return None
+
+    bars = _liq_bars(80)
+    src = """//@version=5
+indicator("liquidity score")
+f = ta.liquidity_score(volume, open, close, 5)
+g = ta.liquidity_score(volume, open, close, 14)
+plot(f, "liq5")
+plot(g, "liq14")
+"""
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+    r_on = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_on, r_on.get("error")
+    monkeypatch.setenv("PYNE_TA_INCREMENTAL", "0")
+    clear_parse_cache()
+    r_off = Runtime(symbol="T").run(src, bars)
+    assert "error" not in r_off, r_off.get("error")
+    monkeypatch.delenv("PYNE_TA_INCREMENTAL", raising=False)
+    clear_parse_cache()
+
+    expected_plots = {"liq5", "liq14"}
+    assert expected_plots <= set(r_on["series"]), r_on["series"].keys()
+    assert set(r_on["series"]) == set(r_off["series"])
+    # Full-path Runtime uses ``_expect_list`` on PineSeries (newest-first), so
+    # ``[-period:]`` is the oldest window — not last-sample. Incremental last
+    # sample is the chronological last-N formula (list-oracle / kernel). Do
+    # not require incremental == disabled for every bar.
+    vols = [float(b["volume"]) for b in bars]
+    volas = [float(b["open"]) for b in bars]
+    spreads = [float(b["close"]) for b in bars]
+    for i, val in enumerate(r_on["series"]["liq5"]):
+        exp = _liquidity_score_last_n(
+            vols[: i + 1], volas[: i + 1], spreads[: i + 1], 5
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"liq5 bar {i}: {val} != {exp}"
+    for i, val in enumerate(r_on["series"]["liq14"]):
+        exp = _liquidity_score_last_n(
+            vols[: i + 1], volas[: i + 1], spreads[: i + 1], 14
+        )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"liq14 bar {i}: {val} != {exp}"
+    assert r_on["series"]["liq5"][0] == pytest.approx(50.0)
+    assert r_off["series"]["liq5"][0] == pytest.approx(50.0)
+    assert r_on["series"]["liq5"][4] != pytest.approx(50.0)
+

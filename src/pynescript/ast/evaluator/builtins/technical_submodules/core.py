@@ -2013,6 +2013,57 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _liquidity_score_inc_update(
+        self,
+        volume: Any,
+        volatility: Any,
+        spread: Any,
+        period: int,
+    ) -> float:
+        """Incremental liquidity score matching full ``ta.liquidity_score``.
+
+        Last-N volume/volatility/spread deques. ``50.0`` while the window is
+        short or ``period<=0``. Last-N numeric averages divide by period even
+        when some samples are non-numeric: ``vol_score = min(100, vol_avg/100)``,
+        ``volatility_score = max(0, 100 - vol_avg_volatility*50)``,
+        ``spread_score = max(0, 100 - spread_avg*100)``; 0.4/0.3/0.3 mix, clamp
+        0–100. One call-site slot every bar, including warmup / na.
+        """
+        n = int(period) if period is not None else 0
+        slot = self._ta_next_slot()
+        if n <= 0:
+            return 50.0
+        key = ("liquidity_score", slot, n)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {
+                "vol": deque(maxlen=n),
+                "vola": deque(maxlen=n),
+                "sp": deque(maxlen=n),
+                "value": 50.0,
+            }
+            bucket[key] = st
+        wvol: deque[Any] = st["vol"]
+        wvola: deque[Any] = st["vola"]
+        wsp: deque[Any] = st["sp"]
+        wvol.append(self._series_last(volume))
+        wvola.append(self._series_last(volatility))
+        wsp.append(self._series_last(spread))
+        if len(wvol) < n or len(wvola) < n or len(wsp) < n:
+            st["value"] = 50.0
+            return 50.0
+        vol_avg = sum(v for v in wvol if isinstance(v, (int, float))) / n
+        vol_score = min(100.0, vol_avg / 100.0)
+        vol_avg_volatility = sum(v for v in wvola if isinstance(v, (int, float))) / n
+        volatility_score = max(0.0, 100.0 - vol_avg_volatility * 50.0)
+        spread_avg = sum(s for s in wsp if isinstance(s, (int, float))) / n
+        spread_score = max(0.0, 100.0 - spread_avg * 100.0)
+        liquidity = vol_score * 0.4 + volatility_score * 0.3 + spread_score * 0.3
+        val = max(0.0, min(100.0, liquidity))
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

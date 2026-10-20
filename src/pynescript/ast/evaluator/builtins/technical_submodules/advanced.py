@@ -1330,15 +1330,25 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.liquidity_score(volume, volatility, bid_ask_spread, period)
         Returns: Score (0-100)
+
+        Bar-mode incremental last sample uses ``_liquidity_score_inc_update``.
         """
         msg = "ta.liquidity_score() requires 4 arguments"
         if len(args) < QUATERNARY:
             self._error(msg)
 
+        period = self._expect_int(args[3], msg)
+        if self._use_incremental_ta():
+            return self._liquidity_score_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                period,
+            )
+
         volume = self._expect_list(args[0], msg)
         volatility = self._expect_list(args[1], msg)
         spread = self._expect_list(args[2], msg)
-        period = self._expect_int(args[3], msg)
 
         if len(volume) < period or len(volatility) < period or len(spread) < period or period <= 0:
             return 50.0
