@@ -475,8 +475,10 @@ plot(ta.atr(3), title="catr")
         1-arg ``ta.ao(fast)`` / 2-arg ``ta.ao(fast, slow)`` /
         3-arg ``ta.linreg(source, n, offset)`` /
         0-arg ``ta.vwap()`` / 1-arg ``ta.vwap(source)`` / 1-arg ``ta.cum(source)`` /
-        1-arg ``ta.change(source)`` (length 1)
-        are allowlisted. 2-arg / 3-arg ``ta.vwap`` stay na.
+        1-arg ``ta.change(source)`` (length 1) / 1-arg ``ta.adx(n)`` /
+        1-arg ``ta.mfi(n)``
+        are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, and nested
+        ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
 
@@ -491,6 +493,9 @@ plot(request.security(syminfo.tickerid, "60", ta.kama(close, 5, 2)), title="kama
 plot(request.security(syminfo.tickerid, "60", ta.vwap(ta.sma(close, 5))), title="vwapn")
 plot(request.security(syminfo.tickerid, "60", ta.cum(ta.sma(close, 5))), title="cumn")
 plot(request.security(syminfo.tickerid, "60", ta.change(ta.sma(close, 5))), title="chgn")
+plot(request.security(syminfo.tickerid, "60", ta.adx(5, 5)), title="adx2")
+plot(request.security(syminfo.tickerid, "60", ta.adx(high, low, close, 5)), title="adx4")
+plot(request.security(syminfo.tickerid, "60", ta.mfi(ta.sma(close, 5), 5)), title="mfin")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -498,6 +503,7 @@ plot(request.security(syminfo.tickerid, "60", ta.change(ta.sma(close, 5))), titl
         assert all(_is_na(x) for x in out["series"]["wpr4"])
         assert all(_is_na(x) for x in out["series"]["kama4"])
         assert all(_is_na(x) for x in out["series"]["kama3"])
+        assert all(_is_na(x) for x in out["series"]["adx4"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -639,6 +645,15 @@ plot(ta.wma(close, 3), title="cwma")
         assert m is not None and m.name == "vwap" and m.source == "close" and m.length == 0
         m = match_htf_simple_ta_ast(_expr("ta.vwap(hlc3)"))
         assert m is not None and m.name == "vwap" and m.source == "hlc3" and m.length == 0
+        m = match_htf_simple_ta_ast(_expr("ta.adx(14)"))
+        assert m is not None and m.name == "adx" and m.source is None and m.length == 14
+        m = match_htf_simple_ta_ast(_expr("ta.mfi(14)"))
+        assert m is not None and m.name == "mfi" and m.source is None and m.length == 14
+        assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.adx(high, low, close, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.adx(ta.sma(close, 14), 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.mfi(close, 14)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.mfi(ta.sma(close, 14), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cci(high, low, close, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wpr(high, low, close, 14)")) is None
@@ -1545,6 +1560,79 @@ plot(ta.change(close), title="cchg")
         expect = daily_closes[-1] - daily_closes[-2]
         assert abs(float(hchg[-1]) - expect) < 1e-9
         assert abs(float(hchg[-1]) - float(out["series"]["cchg"][-1])) > 1e-6
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_adx_mfi_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 1-arg ta.adx / ta.mfi."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.common import CommonIndicators
+        from pynescript.ast.evaluator.builtins.technical_submodules.volume import VolumeIndicators
+
+        # Oscillating 5-day cycle so daily ADX/MFI differ from hourly (plain
+        # `_day_aligned_hourly` is a strong uptrend and saturates ADX at 100).
+        day0 = _utc_day0_ms()
+        bars: list[dict] = []
+        for i in range(24 * 12):
+            base = 100.0 + 8.0 * math.sin(2.0 * math.pi * i / (24 * 5))
+            o = round(base, 2)
+            c = round(base + (1.2 if i % 4 else -0.8), 2)
+            h = round(max(o, c) + 0.9, 2)
+            lo = round(min(o, c) - 0.9, 2)
+            bars.append(
+                {
+                    "open": o,
+                    "high": h,
+                    "low": max(lo, 0.01),
+                    "close": c,
+                    "time": day0 + i * 3_600_000,
+                    "volume": 800.0 + (i % 24) * 40.0,
+                }
+            )
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.adx(3)), title="hadx")
+plot(request.security(syminfo.tickerid, "D", ta.mfi(3)), title="hmfi")
+plot(ta.adx(3), title="cadx")
+plot(ta.mfi(3), title="cmfi")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        hadx = out["series"]["hadx"]
+        hmfi = out["series"]["hmfi"]
+        # 12 UTC days of hourly bars; last-completed is day 10 while day 11 is forming.
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        daily_closes: list[float] = []
+        daily_vols: list[float] = []
+        for d in range(11):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+            daily_closes.append(float(chunk[-1]["close"]))
+            daily_vols.append(sum(float(b["volume"]) for b in chunk))
+        # mfi(3) needs 4 HTF samples; first output at unique index 3 (during day 4).
+        assert all(_is_na(x) for x in hmfi[1:96])
+        day8_adx = hadx[8 * 24 : 9 * 24]
+        day8_mfi = hmfi[8 * 24 : 9 * 24]
+        assert all(not _is_na(x) for x in day8_adx)
+        assert all(not _is_na(x) for x in day8_mfi)
+        adx_ref = float(day8_adx[0])
+        mfi_ref = float(day8_mfi[0])
+        for v in day8_adx:
+            assert abs(float(v) - adx_ref) < 1e-9
+        for v in day8_mfi:
+            assert abs(float(v) - mfi_ref) < 1e-9
+        expect_adx = float(CommonIndicators()._adx(daily_highs, daily_lows, daily_closes, 3))
+        expect_mfi = float(VolumeIndicators()._mfi(daily_highs, daily_lows, daily_closes, daily_vols, 3))
+        assert math.isfinite(expect_adx) and math.isfinite(expect_mfi)
+        assert abs(float(hadx[-1]) - expect_adx) < 1e-9
+        assert abs(float(hmfi[-1]) - expect_mfi) < 1e-9
+        cadx_day8 = out["series"]["cadx"][8 * 24 : 9 * 24]
+        cmfi_day8 = out["series"]["cmfi"][8 * 24 : 9 * 24]
+        assert any(abs(float(hadx[8 * 24 + i]) - float(cadx_day8[i])) > 1e-6 for i in range(24) if not _is_na(cadx_day8[i]))
+        assert any(abs(float(hmfi[8 * 24 + i]) - float(cmfi_day8[i])) > 1e-6 for i in range(24) if not _is_na(cmfi_day8[i]))
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False

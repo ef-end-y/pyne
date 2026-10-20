@@ -512,6 +512,51 @@ plot(ta.change(close), title="cchg1")
             assert abs(float(v) - ref) < 1e-9
         assert abs(float(sc["series"]["chg1"][-1]) - float(sc["series"]["cchg1"][-1])) > 1e-6
 
+    def test_htf_adx_mfi_hourly_to_daily_match_interpret(self) -> None:
+        """Hourly→daily last-completed 1-arg ta.adx / ta.mfi: compile matches interpret."""
+        day0 = _utc_day0_ms()
+        bars: list[dict] = []
+        for i in range(24 * 12):
+            base = 100.0 + 8.0 * math.sin(2.0 * math.pi * i / (24 * 5))
+            o = round(base, 2)
+            c = round(base + (1.2 if i % 4 else -0.8), 2)
+            h = round(max(o, c) + 0.9, 2)
+            lo = round(min(o, c) - 0.9, 2)
+            bars.append(
+                {
+                    "open": o,
+                    "high": h,
+                    "low": max(lo, 0.01),
+                    "close": c,
+                    "time": day0 + i * 3_600_000,
+                    "volume": 800.0 + (i % 24) * 40.0,
+                }
+            )
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.adx(3)), title="adx")
+plot(request.security(syminfo.tickerid, "D", ta.mfi(3)), title="mfi")
+plot(ta.adx(3), title="cadx")
+plot(ta.mfi(3), title="cmfi")
+"""
+        si, sc = _run_both(src, bars)
+        for key in ("adx", "mfi"):
+            _assert_series_match(si, sc, key)
+            finite = [x for x in sc["series"][key][8 * 24 :] if not _is_na(x)]
+            assert len(finite) > 0, key
+            assert math.isfinite(float(finite[-1])), key
+        day8 = sc["series"]["adx"][8 * 24 : 9 * 24]
+        assert all(not _is_na(x) for x in day8)
+        ref = float(day8[0])
+        for v in day8:
+            assert abs(float(v) - ref) < 1e-9
+        cadx_day8 = sc["series"]["cadx"][8 * 24 : 9 * 24]
+        cmfi_day8 = sc["series"]["cmfi"][8 * 24 : 9 * 24]
+        hadx_day8 = sc["series"]["adx"][8 * 24 : 9 * 24]
+        hmfi_day8 = sc["series"]["mfi"][8 * 24 : 9 * 24]
+        assert any(abs(float(hadx_day8[i]) - float(cadx_day8[i])) > 1e-6 for i in range(24) if not _is_na(cadx_day8[i]))
+        assert any(abs(float(hmfi_day8[i]) - float(cmfi_day8[i])) > 1e-6 for i in range(24) if not _is_na(cmfi_day8[i]))
+
 
 class TestCompileHtfBarmerge:
     """gaps_on / lookahead_on on resample paths: compile matches interpret."""
@@ -600,6 +645,9 @@ plot(request.security(syminfo.tickerid, "60", ta.vwap(close, 1)), title="vwap2")
 plot(request.security(syminfo.tickerid, "60", ta.vwap(hlc3, 1, 1)), title="vwap3")
 plot(request.security(syminfo.tickerid, "60", ta.cum(ta.sma(close, 5))), title="cumn")
 plot(request.security(syminfo.tickerid, "60", ta.change(ta.sma(close, 5))), title="chgn")
+plot(request.security(syminfo.tickerid, "60", ta.adx(5, 5)), title="adx2")
+plot(request.security(syminfo.tickerid, "60", ta.adx(high, low, close, 5)), title="adx4")
+plot(request.security(syminfo.tickerid, "60", ta.mfi(ta.sma(close, 5), 5)), title="mfin")
 """
         si, sc = _run_both(src, bars)
         assert all(_is_na(x) for x in sc["series"]["cci1"])
@@ -610,6 +658,9 @@ plot(request.security(syminfo.tickerid, "60", ta.change(ta.sma(close, 5))), titl
         assert all(_is_na(x) for x in sc["series"]["vwap3"])
         assert all(_is_na(x) for x in sc["series"]["cumn"])
         assert all(_is_na(x) for x in sc["series"]["chgn"])
+        assert all(_is_na(x) for x in sc["series"]["adx2"])
+        assert all(_is_na(x) for x in sc["series"]["adx4"])
+        assert all(_is_na(x) for x in sc["series"]["mfin"])
         _assert_series_match(si, sc, "cci1")
         _assert_series_match(si, sc, "cci4")
         _assert_series_match(si, sc, "wpr4")

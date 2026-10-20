@@ -5,6 +5,10 @@
 - **LSP semantic tokens range.** `textDocument/semanticTokens/range` returns the same token legend as `/full`, clipped to the requested range. Empty or unparsed documents return an empty `data` array. Advertised via `semanticTokensProvider.range`.
 - **Bar-mode incremental `ta.volatility_regime` (T2).** Last-sample kernel matches full recompute: last-N numeric ATR samples → `"low"` / `"medium"` / `"high"` / `"extreme"` (`"medium"` while the window is short).
 
+### Fixed
+
+- **`request.security` resamples allowlisted 1-arg `ta.adx(length)` / `ta.mfi(length)` on HTF (D-06).** Same-symbol `ta.adx(14)` (HTF high/low/close) / `ta.mfi(14)` (HTF high/low/close/volume) on a coarser TF run the interpret TA helper on unique completed HTF bars (interpret **and** object-mode compile), with the same `gaps_on` / `lookahead_on` as `ta.sma`. Nested `ta.*`, 2-arg `ta.adx(diLength, adxSmoothing)`, and 4-arg explicit-series adx stay `na`. Disk IR cache v36.
+
 ## [0.6.17] — 2026-10-19
 
 ### Fixed
