@@ -478,10 +478,11 @@ plot(ta.atr(3), title="catr")
         1-arg ``ta.change(source)`` (length 1) / 1-arg ``ta.adx(n)`` /
         1-arg ``ta.mfi(n)`` / 0-arg ``ta.obv()`` / 1-arg ``ta.cmf(n)`` /
         0-arg ``ta.nvi()`` / 0-arg ``ta.pvi()`` / 0-arg ``ta.accdist()`` /
-        0-arg ``ta.wad()``
+        0-arg ``ta.wad()`` / 0-arg ``ta.tr()`` / 2-arg ``ta.tsi(short, long)``
         are allowlisted. 2-arg / 3-arg ``ta.vwap``, 2-arg ``ta.adx``, 2-arg
         ``ta.obv``, 2-arg ``ta.nvi`` / ``ta.pvi``, 5-arg ``ta.cmf``, 4-arg
-        ``ta.accdist`` / ``ta.wad``, and nested
+        ``ta.accdist`` / ``ta.wad``, 3-arg ``ta.tr(high, low, close)`` /
+        3-arg ``ta.tsi(source, short, long)``, and nested
         ``ta.adx`` / ``ta.mfi`` stay na.
         """
         from backend.runtime import Runtime
@@ -507,6 +508,8 @@ plot(request.security(syminfo.tickerid, "60", ta.cmf(close, high, low, volume, 5
 plot(request.security(syminfo.tickerid, "60", ta.cmf(ta.sma(close, 5), high, low, volume, 5)), title="cmfn")
 plot(request.security(syminfo.tickerid, "60", ta.accdist(high, low, close, volume)), title="ad4")
 plot(request.security(syminfo.tickerid, "60", ta.wad(high, low, close, volume)), title="wad4")
+plot(request.security(syminfo.tickerid, "60", ta.tr(high, low, close)), title="tr3")
+plot(request.security(syminfo.tickerid, "60", ta.tsi(close, 13, 25)), title="tsi3")
 """
         out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
         assert not out.get("error"), out.get("error")
@@ -515,6 +518,8 @@ plot(request.security(syminfo.tickerid, "60", ta.wad(high, low, close, volume)),
         assert all(_is_na(x) for x in out["series"]["kama4"])
         assert all(_is_na(x) for x in out["series"]["kama3"])
         assert all(_is_na(x) for x in out["series"]["adx4"])
+        assert all(_is_na(x) for x in out["series"]["tr3"])
+        assert all(_is_na(x) for x in out["series"]["tsi3"])
         pol = (out.get("meta") or {}).get("request_security") or {}
         policies = pol.get("policies") or {}
         assert "complex_htf_na" in policies
@@ -675,6 +680,16 @@ plot(ta.wma(close, 3), title="cwma")
         m = match_htf_simple_ta_ast(_expr("ta.wad()"))
         assert m is not None and m.name == "wad" and m.source is None and m.length == 0
         assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.tr()"))
+        assert m is not None and m.name == "tr" and m.source is None and m.length == 0
+        assert m.extra is None
+        m = match_htf_simple_ta_ast(_expr("ta.tr(true)"))
+        assert m is not None and m.name == "tr" and m.source is None and m.length == 0
+        m = match_htf_simple_ta_ast(_expr("ta.tr(false)"))
+        assert m is not None and m.name == "tr" and m.source is None and m.length == 0
+        m = match_htf_simple_ta_ast(_expr("ta.tsi(13, 25)"))
+        assert m is not None and m.name == "tsi" and m.source == "close" and m.length == 25
+        assert m.extra == 13
         m = match_htf_simple_ta_ast(_expr("ta.cmf(14)"))
         assert m is not None and m.name == "cmf" and m.source is None and m.length == 14
         assert match_htf_simple_ta_ast(_expr("ta.adx(14, 14)")) is None
@@ -689,6 +704,9 @@ plot(ta.wma(close, 3), title="cwma")
         assert match_htf_simple_ta_ast(_expr("ta.wad(high, low, close, volume)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.accdist(ta.sma(high, 5), low, close, volume)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.wad(ta.sma(high, 5), low, close, volume)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.tr(high, low, close)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.tsi(close, 13, 25)")) is None
+        assert match_htf_simple_ta_ast(_expr("ta.tsi(ta.sma(close, 5), 13, 25)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(close, high, low, volume, 14)")) is None
         assert match_htf_simple_ta_ast(_expr("ta.cmf(ta.sma(close, 5))")) is None
         assert match_htf_simple_ta_ast(_expr("ta.sma(ta.ema(close, 5), 14)")) is None
@@ -1834,6 +1852,61 @@ plot(ta.wad(), title="cwad")
         cwad_day5 = out["series"]["cwad"][5 * 24 : 6 * 24]
         assert any(abs(float(had[5 * 24 + i]) - float(cad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cad_day5[i]))
         assert any(abs(float(hwad[5 * 24 + i]) - float(cwad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwad_day5[i]))
+        pol = (out.get("meta") or {}).get("request_security") or {}
+        assert "htf_simple_ta_resample" in (pol.get("policies") or {})
+        assert pol.get("htf_reeval") is False
+
+    def test_htf_tr_tsi_hourly_to_daily_last_completed(self) -> None:
+        """Hourly chart + request D: last-completed daily 0-arg ta.tr / 2-arg ta.tsi."""
+        from backend.runtime import Runtime
+        from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
+        from pynescript.ast.evaluator.builtins.technical_submodules.oscillators import OscillatorIndicators
+
+        bars = _day_aligned_hourly(24 * 8)
+        src = """//@version=6
+indicator("t")
+plot(request.security(syminfo.tickerid, "D", ta.tr()), title="htr")
+plot(request.security(syminfo.tickerid, "D", ta.tsi(2, 3)), title="htsi")
+plot(ta.tr(), title="ctr")
+plot(ta.tsi(2, 3), title="ctsi")
+"""
+        out = Runtime(symbol="AAPL").run(src, bars, mode="interpret")
+        assert not out.get("error"), out.get("error")
+        htr = out["series"]["htr"]
+        htsi = out["series"]["htsi"]
+        daily_highs: list[float] = []
+        daily_lows: list[float] = []
+        daily_closes: list[float] = []
+        for d in range(7):
+            chunk = bars[24 * d : 24 * (d + 1)]
+            daily_highs.append(max(float(b["high"]) for b in chunk))
+            daily_lows.append(min(float(b["low"]) for b in chunk))
+            daily_closes.append(float(chunk[-1]["close"]))
+        # First unique HTF bar TR is na; first completed unique at chart 24.
+        assert all(_is_na(x) for x in htr[1:24])
+        assert _is_na(htr[24])
+        # TSI(2, 3) needs 5 unique HTF closes (long+short); unique 4 completes at 120.
+        assert all(_is_na(x) for x in htsi[1:120])
+        day5_tr = htr[5 * 24 : 6 * 24]
+        day5_tsi = htsi[5 * 24 : 6 * 24]
+        assert all(not _is_na(x) for x in day5_tr)
+        assert all(not _is_na(x) for x in day5_tsi)
+        tr_ref = float(day5_tr[0])
+        tsi_ref = float(day5_tsi[0])
+        for v in day5_tr:
+            assert abs(float(v) - tr_ref) < 1e-9
+        for v in day5_tsi:
+            assert abs(float(v) - tsi_ref) < 1e-9
+        expect_tr = TechnicalHelpers()._tr(daily_highs, daily_lows, daily_closes)[-1]
+        expect_tsi = OscillatorIndicators()._tsi(daily_closes, 3, 2)
+        assert expect_tr is not None and math.isfinite(float(expect_tr))
+        assert expect_tsi is not None and math.isfinite(float(expect_tsi))
+        assert abs(float(htr[-1]) - float(expect_tr)) < 1e-9
+        assert abs(float(htsi[-1]) - float(expect_tsi)) < 1e-9
+        ctr_day5 = out["series"]["ctr"][5 * 24 : 6 * 24]
+        ctsi_day5 = out["series"]["ctsi"][5 * 24 : 6 * 24]
+        assert any(abs(float(htr[5 * 24 + i]) - float(ctr_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctr_day5[i]))
+        assert any(abs(float(htsi[5 * 24 + i]) - float(ctsi_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctsi_day5[i]))
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
