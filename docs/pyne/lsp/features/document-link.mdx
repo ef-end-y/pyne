@@ -19,14 +19,14 @@
 
 ---
 title: "Document links"
-description: "textDocument/documentLink for http(s) URLs in comments and string literals."
+description: "textDocument/documentLink for http(s) URLs in comments and strings, and documentLink/resolve tooltip."
 ---
 
 # Document links
 
 ## Abstract
 
-`textDocument/documentLink` reports `http://` / `https://` URLs found in comments (`//`, `/* */`, hash `# …`) and string literals. Each match is a `DocumentLink` whose range is the URL (not the surrounding quotes or comment markers) and whose `target` is that URL. Empty source or parse failure returns `[]`.
+`textDocument/documentLink` reports `http://` / `https://` URLs found in comments (`//`, `/* */`, hash `# …`) and string literals. Each match is a `DocumentLink` whose range is the URL (not the surrounding quotes or comment markers) and whose `target` is that URL. Empty source or parse failure returns `[]`. The first response leaves `tooltip` unset; `documentLink/resolve` copies the URL onto `tooltip` when it is unset so clients can show it on hover. Advertised as `DocumentLinkOptions(resolve_provider=True)`.
 
 ## Conceptual model
 
@@ -41,24 +41,29 @@ flowchart TD
   URL --> STRIP["rstrip .,;:!?"]
   STRIP --> LINKS["DocumentLink range + target"]
   LINKS --> SORT[sort by line, column]
+  SORT --> RES[documentLink/resolve]
+  RES -->|tooltip unset| TIP["tooltip = target"]
+  RES -->|tooltip already set| KEEP[keep tooltip]
 ```
 
 Comments are scanned from the raw buffer so they do not need AST nodes. String URLs come from `Constant` nodes whose `value` is a `str`. Hash comments are distinguished from `#rgb` color tokens: `#` followed by a hex digit is a color, not a comment.
 
 ## Interface surface
 
-- Method: `textDocument/documentLink`
-- Capability: `document_link_provider=True`
-- Handler: `features/document_link.py` → `handle_document_link` (receives cached `tree=doc.ast`)
+| Method | Capability |
+| --- | --- |
+| `textDocument/documentLink` | `DocumentLinkOptions(resolve_provider=True)` |
+| `documentLink/resolve` | fills `tooltip` with the URL when tooltip is unset |
 
-Each result:
+Handlers: `features/document_link.py` → `handle_document_link` (receives cached `tree=doc.ast`) and `handle_document_link_resolve`.
+
+Each initial result:
 
 | Field | Value |
 | --- | --- |
 | `range` | LSP range covering the URL text |
 | `target` | The URL string (`http://` or `https://`) |
-
-There is no `documentLink/resolve` provider — `target` is filled on the first response.
+| `tooltip` | unset (`None`) until resolve |
 
 Returns `[]` for empty source, parse failure, or `tree=None`.
 
@@ -79,13 +84,23 @@ Not collected:
 - URLs in identifier / number tokens (only comments and string Constants)
 - `#hex` color literals (they are not hash comments)
 
+### Resolve
+
+`documentLink/resolve` fills `tooltip` with the link `target` URL:
+
+1. An existing tooltip is kept (already-resolved links are returned unchanged).
+2. When tooltip is unset and `target` is a non-empty string, `tooltip` is set to that URL.
+3. Empty or malformed links are returned unchanged (never raises).
+
+Initial `textDocument/documentLink` responses already carry `target`. Resolve copies that URL onto `tooltip` so clients can show it on hover.
+
 ## Internals
 
 | Path | Role |
 | --- | --- |
-| `src/pynescript/langserver/features/document_link.py` | Comment scan + string walk |
-| `src/pynescript/langserver/config.py` | `document_link_provider=True` |
-| `src/pynescript/langserver/server.py` | `TEXT_DOCUMENT_DOCUMENT_LINK`; result cached on `doc.feature_cache["document_link"]` |
+| `src/pynescript/langserver/features/document_link.py` | Comment scan + string walk + resolve |
+| `src/pynescript/langserver/config.py` | `DocumentLinkOptions(resolve_provider=True)` |
+| `src/pynescript/langserver/server.py` | `TEXT_DOCUMENT_DOCUMENT_LINK` (cached on `doc.feature_cache["document_link"]`); `DOCUMENT_LINK_RESOLVE` |
 
 The workspace cache supplies `tree=doc.ast`. Pass `tree=None` when the last parse failed (skips a redundant re-parse). Omit `tree` only in isolated tests (handler then parses from `source`). Comments need the source text; a pre-parsed tree with `source=None` still yields string-literal links.
 
@@ -98,7 +113,8 @@ Tests: `tests/test_lsp_features.py` (`TestDocumentLinkHandler`).
 3. **Trailing punctuation is not part of the link.** `https://example.com/end.` strips the period.
 4. **Hash comments vs colors.** `# hash https://…` is a comment; `#ff0000` is a color token and is not scanned as a comment.
 5. **Results are sorted** by start line, then start column.
-6. **Workspace cache.** The server stores the handler result on `feature_cache` until the buffer changes.
+6. **Workspace cache.** The server stores the `textDocument/documentLink` result on `feature_cache` until the buffer changes. Resolve is not cached; it fills `tooltip` on the link the client sends back.
+7. **Resolve fills tooltip only when unset.** An existing tooltip is kept; empty or malformed links are returned as-is and never throw.
 
 ## Worked example
 
@@ -114,7 +130,7 @@ also = 'http://example.org/path'
 plot(close)
 ```
 
-Expected links (`target` equals the range text):
+Expected links (`target` equals the range text; `tooltip` is unset until resolve):
 
 - `https://example.com/pine`
 - `https://tradingview.com/pine-script-docs`
@@ -123,6 +139,8 @@ Expected links (`target` equals the range text):
 - `https://example.com/two`
 - `https://example.com/hash`
 - `https://example.com/end` (period not included)
+
+After `documentLink/resolve`, each of those links has `tooltip` equal to `target` (for example `https://example.com/pine`). A client that already set a tooltip keeps that string.
 
 `ftp://example.com` and `www.example.com` in a comment produce no links.
 
@@ -134,6 +152,8 @@ Expected links (`target` equals the range text):
 | Link includes a trailing period | Client ignored the range and used line text; the server strips `.,;:!?` |
 | Comment URL missing, string URL present | Handler ran with `source=None` and a cached tree — comments need the buffer |
 | `#ff0000` not a link | Expected: hash color tokens are not comments |
+| Hover over a link shows no tooltip | Client skipped `documentLink/resolve`, or the link had no `target` |
+| Tooltip overwritten | Not expected: resolve keeps an existing tooltip |
 
 ## See also
 

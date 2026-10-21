@@ -77,7 +77,7 @@ pynescript-lsp = "pynescript.langserver.__main__:main"   # alias
 
 `PynescriptLanguageServer` (`server.py`):
 
-- Subclasses `pygls.lsp.server.LanguageServer` with `name="Pynescript"` and `version=__version__` from `src/pynescript/__about__.py` (**0.6.17**). `initialize` reports `serverInfo.name = "Pynescript Language Server"` with the same version.
+- Subclasses `pygls.lsp.server.LanguageServer` with `name="Pynescript"` and `version=__version__` from `src/pynescript/__about__.py` (**0.6.18**). `initialize` reports `serverInfo.name = "Pynescript Language Server"` with the same version.
 - Instantiates `self.pine_workspace = Workspace()`.
 - Registers handlers in `setup_method_handlers()` via `@self.feature(...)`.
 
@@ -111,7 +111,7 @@ From `config.py` (`get_server_capabilities`):
 - Folding ranges (`folding_range_provider=True`) for blocks, type/enum/function bodies, and `//#region`
 - Selection ranges (`selection_range_provider=True`) from ident / smallest AST node to enclosing statement and block
 - Color provider (`color_provider=True`) — `textDocument/documentColor` + `colorPresentation` for `#hex`, named `color.*`, `color.rgb` / `color.new` / `color()`, and literal `color.from_gradient`
-- Document links (`document_link_provider=True`) — `http://` / `https://` URLs in comments (`//`, `/* */`, hash `# …`) and string literals
+- Document links (`DocumentLinkOptions(resolve_provider=True)`) — `http://` / `https://` URLs in comments (`//`, `/* */`, hash `# …`) and string literals. `documentLink/resolve` fills `tooltip` with the URL when tooltip is unset
 - Code action (`QuickFix` + `RefactorRewrite`): Convert to Pine v6, W001 insert `//@version=6`, W002 replace old pragma, C002 format-on-long-line + executeCommand `pynescript.convertToV6`
 - Inlay hints (`InlayHintOptions(resolve_provider=True)`): assignment type labels and parameter-name hints on dotted builtin calls (`ta.sma(close, 14)` → `source:` / `length:`). `inlayHint/resolve` fills type `textEdits`; parameter hints are display-only
 - Semantic tokens full **and range** (`range=true`, `full=true`; legend of standard token types/modifiers)
@@ -208,7 +208,7 @@ Server returns `InitializeResult` with `serverInfo.name = "Pynescript Language S
 - [Formatting](/pyne/docs/lsp/features/formatting) — full, range, and on-type
 - [Semantic tokens](/pyne/docs/lsp/features/semantic-tokens) — full and range
 - [Inlay hints](/pyne/docs/lsp/features/inlay-hints) — types, param names, resolve
-- [Document links](/pyne/docs/lsp/features/document-link) — `http(s)` URLs in comments and strings
+- [Document links](/pyne/docs/lsp/features/document-link) — `http(s)` URLs; `documentLink/resolve` fills tooltip
 - [Document color](/pyne/docs/lsp/features/document-color) — `#hex` / `color.*` / literal color calls
 - [Builtin metadata](/pyne/docs/lsp/builtin-metadata)
 - [VS Code extension](/pyne/docs/lsp/vscode-extension)

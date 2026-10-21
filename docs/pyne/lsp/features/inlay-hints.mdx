@@ -76,7 +76,7 @@ Handlers: `features/inlay_hints.py` → `handle_inlay_hints` (receives cached `t
 
 ### Parameter-name hints
 
-Emitted for positional args of `module.attr(...)` when `get_builtin("module.attr")` hits. Names come from the metadata snippet placeholders, then the `detail` signature, then documentation, then a small well-known map (`ta.sma` / `ta.ema` / `ta.rsi` / … → `source`, `length`). Generic `paramN` snippet names are skipped in favor of the next source.
+Emitted for positional args of `module.attr(...)` when `get_builtin("module.attr")` hits. Real snippet placeholder names win; generic `paramN` snippets fall through to the longest of the `detail` signature, documentation, and a well-known Pine v6 map (`ta.sma`/`ema`/`rsi` → `source`/`length`, `ta.atr` → `length`, `ta.correlation` → `source1`/`source2`/`length`, `strategy.entry` → `id`/`direction`/`qty`, `input.int` → `defval`/`title`, plus `ta.cci`/`roc`/`mom`/`linreg`/`adx`/`mfi`/`bbw`/`dpo`/`crossover`/`crossunder`).
 
 | Field | Value |
 | --- | --- |

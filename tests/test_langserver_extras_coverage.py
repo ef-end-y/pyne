@@ -276,6 +276,66 @@ class TestInlayHints:
 
 
 # ---------------------------------------------------------------------------
+# features/document_link.py extras
+# ---------------------------------------------------------------------------
+
+
+class TestDocumentLinkExtras:
+    def test_resolve_fills_tooltip_from_target(self) -> None:
+        from pynescript.langserver.features.document_link import handle_document_link
+        from pynescript.langserver.features.document_link import handle_document_link_resolve
+
+        src = '//@version=6\nindicator("T")\n// https://example.com\nplot(close)\n'
+        params = lsp.DocumentLinkParams(
+            text_document=lsp.TextDocumentIdentifier(uri=URI),
+        )
+        links = handle_document_link(params, src)
+        assert links
+        link = links[0]
+        assert link.target == "https://example.com"
+        assert link.tooltip is None
+        resolved = handle_document_link_resolve(link)
+        assert resolved.tooltip == link.target == "https://example.com"
+
+    def test_resolve_already_set(self) -> None:
+        from pynescript.langserver.features.document_link import handle_document_link_resolve
+
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=19),
+        )
+        existing = "already resolved"
+        link = lsp.DocumentLink(range=rng, target="https://example.com", tooltip=existing)
+        assert handle_document_link_resolve(link) is link
+        assert link.tooltip is existing
+
+    def test_resolve_empty_and_malformed(self) -> None:
+        from pynescript.langserver.features.document_link import handle_document_link_resolve
+
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=1),
+        )
+        empty = lsp.DocumentLink(range=rng)
+        assert handle_document_link_resolve(empty) is empty
+        assert empty.tooltip is None
+        bogus = SimpleNamespace(tooltip=None, target=object())
+        assert handle_document_link_resolve(bogus) is bogus  # type: ignore[arg-type]
+
+    def test_resolve_no_target_keeps_tooltip_none(self) -> None:
+        from pynescript.langserver.features.document_link import handle_document_link_resolve
+
+        rng = lsp.Range(
+            start=lsp.Position(line=1, character=0),
+            end=lsp.Position(line=1, character=5),
+        )
+        link = lsp.DocumentLink(range=rng, target=None)
+        resolved = handle_document_link_resolve(link)
+        assert resolved is link
+        assert resolved.tooltip is None
+
+
+# ---------------------------------------------------------------------------
 # features/references.py extras
 # ---------------------------------------------------------------------------
 
@@ -838,6 +898,8 @@ class TestConfigExtras:
         assert caps.completion_provider and caps.completion_provider.resolve_provider is True
         assert caps.inlay_hint_provider is not None
         assert caps.inlay_hint_provider.resolve_provider is True
+        assert caps.document_link_provider is not None
+        assert caps.document_link_provider.resolve_provider is True
         assert caps.linked_editing_range_provider
         assert caps.document_on_type_formatting_provider is not None
         assert caps.document_on_type_formatting_provider.first_trigger_character == "\n"

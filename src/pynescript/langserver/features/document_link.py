@@ -17,13 +17,18 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Document links — ``textDocument/documentLink``.
+"""Document links — ``textDocument/documentLink`` and ``documentLink/resolve``.
 
-Public handler: :func:`handle_document_link`. Scans ``http://`` / ``https://``
-URLs in comments (``//``, ``/* */``, hash ``# …``) and string literals.
-Each match becomes a :class:`~lsprotocol.types.DocumentLink` whose range is
-the URL and whose ``target`` is that URL. Empty source or parse failure
-returns ``[]``.
+Public handlers:
+
+- :func:`handle_document_link` — scan ``http://`` / ``https://`` URLs in
+  comments (``//``, ``/* */``, hash ``# …``) and string literals. Each match
+  is a :class:`~lsprotocol.types.DocumentLink` whose range is the URL and
+  whose ``target`` is that URL. Empty source or parse failure returns ``[]``.
+- :func:`handle_document_link_resolve` — fill ``tooltip`` with the URL (or
+  keep an existing tooltip). Empty or malformed links are returned unchanged.
+
+Capability: ``resolve_provider=True``.
 """
 
 from __future__ import annotations
@@ -86,6 +91,33 @@ def handle_document_link(
     results.extend(_links_from_strings(tree, source))
     results.sort(key=lambda ln: (ln.range.start.line, ln.range.start.character))
     return results
+
+
+def handle_document_link_resolve(link: lsp.DocumentLink) -> lsp.DocumentLink:
+    """Fill ``tooltip`` with the link ``target`` URL.
+
+    Initial ``textDocument/documentLink`` responses already carry ``target``.
+    Resolve copies that URL onto ``tooltip`` so clients can show it on hover.
+    An existing tooltip is kept. Empty or malformed links are returned
+    unchanged (never raises).
+
+    Args:
+        link: The document link to resolve (from the client, possibly with
+            ``target`` round-tripped from the initial response).
+
+    Returns:
+        The same link with ``tooltip`` set to ``target`` when both were
+        missing a tooltip and ``target`` is a non-empty URL string.
+    """
+    try:
+        if getattr(link, "tooltip", None) is not None:
+            return link
+        target = getattr(link, "target", None)
+        if isinstance(target, str) and target:
+            link.tooltip = target
+        return link
+    except Exception:
+        return link
 
 
 def _links_from_comments(source: str) -> list[lsp.DocumentLink]:

@@ -2102,6 +2102,228 @@ class TechnicalHelpers:
         st["value"] = val
         return val
 
+    def _crowd_sentiment_inc_update(
+        self,
+        price_agr: Any,
+        vol_agr: Any,
+        time_agr: Any,
+    ) -> float:
+        """Incremental crowd sentiment matching full ``ta.crowd_sentiment``.
+
+        Last samples of price / volume / time agreement. Empty or missing last
+        sample uses the same default as non-numeric: 0.5. Mix
+        ``((p + v + t) / 3) * 100``, clamp [0, 100]. One call-site slot every
+        bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("crowd_sentiment", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 50.0}
+            bucket[key] = st
+        p_last = self._series_last(price_agr)
+        v_last = self._series_last(vol_agr)
+        t_last = self._series_last(time_agr)
+        p = p_last if isinstance(p_last, (int, float)) else 0.5
+        v = v_last if isinstance(v_last, (int, float)) else 0.5
+        t = t_last if isinstance(t_last, (int, float)) else 0.5
+        consensus = ((p + v + t) / 3) * 100
+        val = max(0.0, min(100.0, consensus))
+        st["value"] = val
+        return val
+
+    def _smart_money_flow_inc_update(
+        self,
+        price_change: Any,
+        volume: Any,
+        time_high: Any,
+        time_low: Any,
+    ) -> float:
+        """Incremental smart money flow matching full ``ta.smart_money_flow``.
+
+        Last samples of price_change / volume / time_since_high / time_since_low.
+        Empty or missing last sample uses the same defaults as non-numeric:
+        0 / 1000 / 10 / 10. Volume-scaled signed flow from last price_change vs
+        time_since_high/low, clamp [-1, 1]. One call-site slot every bar,
+        including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("smart_money_flow", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 0.0}
+            bucket[key] = st
+        p_last = self._series_last(price_change)
+        v_last = self._series_last(volume)
+        th_last = self._series_last(time_high)
+        tl_last = self._series_last(time_low)
+        p = p_last if isinstance(p_last, (int, float)) else 0.0
+        v = v_last if isinstance(v_last, (int, float)) else 1000.0
+        th = th_last if isinstance(th_last, (int, float)) else 10
+        tl = tl_last if isinstance(tl_last, (int, float)) else 10
+        vol_factor = min(1.0, v / 5000.0)
+        if p > 0 and th < tl:
+            flow = vol_factor * 0.8
+        elif p < 0 and tl < th:
+            flow = -vol_factor * 0.8
+        else:
+            flow = 0.0
+        val = max(-1.0, min(1.0, flow))
+        st["value"] = val
+        return val
+
+    def _trend_confirmation_score_inc_update(
+        self,
+        momentum: Any,
+        trend_alignment: Any,
+        strength: Any,
+        rsi: Any,
+        rsi_alignment: Any,
+    ) -> float:
+        """Incremental trend confirmation matching full ``ta.trend_confirmation_score``.
+
+        Last samples of momentum / trend_alignment / strength / rsi /
+        rsi_alignment. Empty or missing last sample uses the same defaults as
+        non-numeric: 0 / 0 / 1 / 50 / 0. Five last samples mixed, clamp
+        [0, 100]. One call-site slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("trend_confirmation_score", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 33.5}
+            bucket[key] = st
+        m_last = self._series_last(momentum)
+        t_last = self._series_last(trend_alignment)
+        s_last = self._series_last(strength)
+        r_last = self._series_last(rsi)
+        a_last = self._series_last(rsi_alignment)
+        m = m_last if isinstance(m_last, (int, float)) else 0.0
+        t = t_last if isinstance(t_last, (int, float)) else 0.0
+        s = s_last if isinstance(s_last, (int, float)) else 1.0
+        r = r_last if isinstance(r_last, (int, float)) else 50.0
+        a = a_last if isinstance(a_last, (int, float)) else 0.0
+        momentum_score = min(100.0, abs(m) * 20.0)
+        trend_score = max(0.0, (t + 1.0) / 2.0 * 100.0)
+        strength_score = min(100.0, s * 50.0)
+        rsi_score = min(100.0, abs(r - 50.0) * 2.0) if abs(r - 50.0) > 10.0 else 40.0
+        alignment_bonus = 20.0 if abs(a) > 0.5 else 0.0
+        total = (
+            momentum_score * 0.25
+            + trend_score * 0.3
+            + strength_score * 0.25
+            + rsi_score * 0.15
+            + alignment_bonus
+        )
+        val = max(0.0, min(100.0, total))
+        st["value"] = val
+        return val
+
+    def _atr_stop_inc_update(
+        self,
+        atr_value: Any,
+        multiplier: Any,
+    ) -> dict[str, float | None]:
+        """Incremental ATR stop matching full ``ta.atr_stop``.
+
+        Last ATR sample and last chart close. Default multiplier 2.0.
+        Non-numeric / ``<= 0`` ATR or no close →
+        ``{long_stop: None, short_stop: None}``. One call-site slot every
+        bar, including empty.
+        """
+        self._ta_next_slot()
+        off: dict[str, float | None] = {"long_stop": None, "short_stop": None}
+        a_last = self._series_last(atr_value)
+        if not isinstance(a_last, (int, float)) or a_last <= 0:
+            return off
+        c_last = self._series_last(self._context_source("close"))
+        if not isinstance(c_last, (int, float)):
+            return off
+        m_last = self._series_last(multiplier)
+        m = float(m_last) if isinstance(m_last, (int, float)) else 2.0
+        return {
+            "long_stop": c_last - (a_last * m),
+            "short_stop": c_last + (a_last * m),
+        }
+
+    def _max_loss_level_inc_update(
+        self,
+        entry: Any,
+        account: Any,
+        max_loss_pct: Any,
+    ) -> float:
+        """Incremental max-loss stop matching full ``ta.max_loss_level``.
+
+        Last samples of entry / account / max_loss_pct. Empty or missing last
+        sample uses the same defaults as non-numeric: 100 / 10000 / 1.0.
+        ``entry <= 0`` or ``shares <= 0`` → 0.0. Clamp stop ``>= 0``. One
+        call-site slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("max_loss_level", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 99.0}
+            bucket[key] = st
+        e_last = self._series_last(entry)
+        a_last = self._series_last(account)
+        p_last = self._series_last(max_loss_pct)
+        e = e_last if isinstance(e_last, (int, float)) else 100.0
+        a = a_last if isinstance(a_last, (int, float)) else 10000.0
+        p = p_last if isinstance(p_last, (int, float)) else 1.0
+        max_loss_amount = a * (p / 100.0)
+        if e > 0:
+            shares = a / e
+            stop_price = e - (max_loss_amount / shares) if shares > 0 else 0.0
+            val = max(0.0, stop_price)
+        else:
+            val = 0.0
+        st["value"] = val
+        return val
+
+    def _profit_lock_level_inc_update(
+        self,
+        entry: Any,
+        current: Any,
+        trail_pct: Any,
+        direction: Any,
+    ) -> float:
+        """Incremental profit-lock stop matching full ``ta.profit_lock_level``.
+
+        Last samples of entry / current / trail_pct / direction. Empty or
+        missing last sample uses the same defaults as non-numeric:
+        100 / 100 / 0.05 / 1.0. ``trail_pct`` is clamped to ``[0, 1]``.
+        Long (``direction > 0``): ``max(entry*0.9, current*(1-trail_pct))``.
+        Short: ``min(entry*1.1, current*(1+trail_pct))``. One call-site
+        slot every bar, including empty.
+        """
+        slot = self._ta_next_slot()
+        key = ("profit_lock_level", slot)
+        bucket = self._ta_state_bucket()
+        st = bucket.get(key)
+        if st is None:
+            st = {"value": 95.0}
+            bucket[key] = st
+        e_last = self._series_last(entry)
+        c_last = self._series_last(current)
+        t_last = self._series_last(trail_pct)
+        d_last = self._series_last(direction)
+        e = e_last if isinstance(e_last, (int, float)) else 100.0
+        c = c_last if isinstance(c_last, (int, float)) else 100.0
+        t = t_last if isinstance(t_last, (int, float)) else 0.05
+        d = d_last if isinstance(d_last, (int, float)) else 1.0
+        t = max(0.0, min(1.0, t))
+        if d > 0:
+            val = max(e * 0.9, c - c * t)
+        else:
+            val = min(e * 1.1, c + c * t)
+        st["value"] = val
+        return val
+
     def _cum_inc_update(self, series: list[Any]) -> float | None:
         """Incremental cumulative sum matching bar-mode ``ta.cum`` (last value).
 

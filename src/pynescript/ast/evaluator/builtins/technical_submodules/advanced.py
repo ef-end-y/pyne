@@ -1184,10 +1184,19 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.crowd_sentiment(price_agreement, volume_agreement, time_agreement)
         Returns: Score (0-100)
+
+        Bar-mode incremental last sample uses ``_crowd_sentiment_inc_update``.
         """
         msg = "ta.crowd_sentiment() requires 3 arguments"
         if len(args) < TERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._crowd_sentiment_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+            )
 
         price_agr = args[0] if isinstance(args[0], (int, float)) else 0.5
         vol_agr = args[1] if isinstance(args[1], (int, float)) else 0.5
@@ -1314,10 +1323,20 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.smart_money_flow(price_change, volume, time_since_high, time_since_low)
         Returns: Flow intensity (-1.0 to 1.0)
+
+        Bar-mode incremental last sample uses ``_smart_money_flow_inc_update``.
         """
         msg = "ta.smart_money_flow() requires 4 arguments"
         if len(args) < QUATERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._smart_money_flow_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
 
         price_change = args[0] if isinstance(args[0], (int, float)) else 0.0
         volume = args[1] if isinstance(args[1], (int, float)) else 1000.0
@@ -1421,11 +1440,23 @@ class AdvancedIndicators(TechnicalHelpers):
         ta.trend_confirmation_score(momentum, trend_alignment, strength, rsi,
                                      rsi_alignment, support_distance)
         Returns: float (0-100)
+
+        Bar-mode incremental last sample uses ``_trend_confirmation_score_inc_update``.
+        The sixth argument (support_distance) is unused after the length check.
         """
         senary = 6
         msg = "ta.trend_confirmation_score() requires 6 arguments"
         if len(args) < senary:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._trend_confirmation_score_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+                self._as_series_or_raw(args[4], last_sample_ok=True),
+            )
 
         momentum = args[0] if isinstance(args[0], (int, float)) else 0.0
         trend_alignment = args[1] if isinstance(args[1], (int, float)) else 0.0
@@ -1769,10 +1800,19 @@ class AdvancedIndicators(TechnicalHelpers):
 
         ta.max_loss_level(entry, account, max_loss_pct)
         Returns: Stop price.
+
+        Bar-mode incremental last sample uses ``_max_loss_level_inc_update``.
         """
         msg = "ta.max_loss_level() requires 3 arguments"
         if len(args) < TERNARY:
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._max_loss_level_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+            )
 
         entry = args[0] if isinstance(args[0], (int, float)) else 100.0
         account = args[1] if isinstance(args[1], (int, float)) else 10000.0
@@ -1793,10 +1833,20 @@ class AdvancedIndicators(TechnicalHelpers):
         ta.profit_lock_level(entry, current, trail_pct, direction)
         Direction: 1 for long, -1 for short.
         Returns: Stop price that trails behind price.
+
+        Bar-mode incremental last sample uses ``_profit_lock_level_inc_update``.
         """
         if len(args) < QUATERNARY:
             msg = "ta.profit_lock_level() requires 4 arguments"
             self._error(msg)
+
+        if self._use_incremental_ta():
+            return self._profit_lock_level_inc_update(
+                self._as_series_or_raw(args[0], last_sample_ok=True),
+                self._as_series_or_raw(args[1], last_sample_ok=True),
+                self._as_series_or_raw(args[2], last_sample_ok=True),
+                self._as_series_or_raw(args[3], last_sample_ok=True),
+            )
 
         entry = args[0] if isinstance(args[0], (int, float)) else 100.0
         current = args[1] if isinstance(args[1], (int, float)) else 100.0

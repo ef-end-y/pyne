@@ -19,7 +19,7 @@
 
 # PYNE Roadmap
 
-**Live package:** `hoox-pyne` **0.6.14**.
+**Live package:** `hoox-pyne` **0.6.18**.
 
 ---
 
@@ -105,6 +105,10 @@ Compile-mode `request.security` matches interpret on allowlisted HTF resample. L
 ### 0.6.14 — HTF allowlist, incremental TA, LSP
 
 Allowlisted HTF `ta.*` resample expanded through `vwap` / `ao` / `linreg` offset / `ta.cum` / 1-arg `ta.ao(fast)` / 1-arg `ta.change(source)` (disk IR v35). Incremental TA covers `sma_weighted`, `stoch_smooth`, `rsi_divergence`, pattern kernels, `ema_cross_signal`. LSP folding, selectionRange, documentColor, W001/W002/C002 QuickFixes. GitHub Release notes come from `CHANGELOG.md`.
+
+### 0.6.18 — HTF allowlist, incremental TA, LSP
+
+Allowlisted HTF `ta.*` resample expanded through `ta.emv` (disk IR v50). Incremental TA covers `volatility_regime` through `profit_lock_level`. LSP range tokens, hover Pine v6 docs links, linked editing, on-type formatting, inlay resolve plus parameter-name hints, `documentLink/resolve`.
 
 ---
 

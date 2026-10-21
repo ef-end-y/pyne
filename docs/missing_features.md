@@ -19,7 +19,7 @@
 
 # Missing Features — Pine Script v6 Implementation
 
-**Live package:** `hoox-pyne` **0.6.14** (`src/pynescript/__about__.py`).
+**Live package:** `hoox-pyne` **0.6.18** (`src/pynescript/__about__.py`).
 
 ---
 
@@ -160,11 +160,11 @@ Engine parity improvements, observability tooling, and documentation refresh.
 - **JSON key-store atomic save** — flock + `os.replace`
 - **Webhook DNS pin** — POST connects to the resolved public IP with HTTPS SNI on the original name
 
-### Unreleased (local, post-0.6.14)
+### 0.6.18 — HTF allowlist, incremental TA, LSP
 
-- **T2 incremental** — `rsi_oversold_overbought`, `zigzag`, `volatility_regime`, `momentum_filter`, `acceleration_factor`, `mean_reversion_score`, `market_condition`, `order_flow_imbalance`, `volume_thrust`, `liquidity_score`, `fear_greed_index`
-- **HTF allowlist** (D-06) — 0-arg `ta.obv()` / 1-arg `ta.cmf(n)` / 0-arg `ta.nvi()` / 0-arg `ta.pvi()` / 0-arg `ta.accdist()` / 0-arg `ta.wad()` / 0-arg `ta.tr()` / 2-arg `ta.tsi(short, long)` / 2-arg/3-arg `ta.bbw` / 1-arg/2-arg `ta.stoch` / 2-arg `ta.pivothigh` / `ta.pivotlow` / 3-arg `ta.percentile_nearest_rank` / `ta.percentile_linear_interpolation` (disk IR v44)
-- **LSP** — `textDocument/documentLink` for http(s) URLs in comments and strings, `textDocument/semanticTokens/range`, hover Pine v6 docs links, `textDocument/linkedEditingRange`, `textDocument/onTypeFormatting`, `inlayHint/resolve`, parameter-name inlay hints
+- **T2 incremental** — `rsi_oversold_overbought`, `zigzag`, `volatility_regime`, `momentum_filter`, `acceleration_factor`, `mean_reversion_score`, `market_condition`, `order_flow_imbalance`, `volume_thrust`, `liquidity_score`, `fear_greed_index`, `crowd_sentiment`, `smart_money_flow`, `trend_confirmation_score`, `atr_stop`, `max_loss_level`, `profit_lock_level`
+- **HTF allowlist** (D-06) — 0-arg `ta.obv()` / 1-arg `ta.cmf(n)` / 0-arg `ta.nvi()` / 0-arg `ta.pvi()` / 0-arg `ta.accdist()` / 0-arg `ta.wad()` / 0-arg `ta.tr()` / 2-arg `ta.tsi(short, long)` / 2-arg/3-arg `ta.bbw` / 1-arg/2-arg `ta.stoch` / 2-arg `ta.pivothigh` / `ta.pivotlow` / 3-arg `ta.percentile_nearest_rank` / `ta.percentile_linear_interpolation` / 1-arg `ta.dpo(n)` / 2-arg `ta.dpo(source, n)` / 2-arg `ta.crossover` / `ta.crossunder` / `ta.cross` of OHLCV names / 3-arg `ta.correlation` of two OHLCV names / 0-arg `ta.vpt()` / `ta.pvt()` / 1-arg `ta.wvad(n)` / 3-arg `ta.uo(n1, n2, n3)` / 3-arg `ta.apo(source, fast, slow)` / 1-arg `ta.emv(n)` (disk IR v50)
+- **LSP** — `textDocument/documentLink` for http(s) URLs in comments and strings, `documentLink/resolve`, `textDocument/semanticTokens/range`, hover Pine v6 docs links, `textDocument/linkedEditingRange`, `textDocument/onTypeFormatting`, `inlayHint/resolve`, parameter-name inlay hints
 
 ### 0.6.14 — HTF allowlist, incremental TA, LSP
 

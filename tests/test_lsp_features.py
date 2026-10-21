@@ -31,6 +31,7 @@ from pynescript.langserver.features.definitions import handle_definition
 from pynescript.langserver.features.document_color import handle_color_presentation
 from pynescript.langserver.features.document_color import handle_document_color
 from pynescript.langserver.features.document_link import handle_document_link
+from pynescript.langserver.features.document_link import handle_document_link_resolve
 from pynescript.langserver.features.folding import handle_folding_range
 from pynescript.langserver.features.formatting import handle_formatting
 from pynescript.langserver.features.formatting import handle_on_type_formatting
@@ -2360,6 +2361,46 @@ class TestDocumentLinkHandler:
         for url in found:
             assert _link_at(result, src, url).target == url
 
+    def test_comment_url_has_target_and_resolve_fills_tooltip(self) -> None:
+        """// https://example.com still has target; resolve sets tooltip to it."""
+        src = '//@version=6\nindicator("T")\n// https://example.com\nplot(close)\n'
+        result = handle_document_link(_link_params(), src)
+        link = _link_at(result, src, "https://example.com")
+        assert link.target == "https://example.com"
+        assert link.tooltip is None
+        resolved = handle_document_link_resolve(link)
+        assert resolved.tooltip == "https://example.com"
+        assert resolved.target == "https://example.com"
+
+    def test_handle_document_link_resolve_keeps_existing_tooltip(self) -> None:
+        """Already-resolved tooltip is not overwritten."""
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=19),
+        )
+        link = lsp.DocumentLink(
+            range=rng,
+            target="https://example.com",
+            tooltip="keep me",
+        )
+        resolved = handle_document_link_resolve(link)
+        assert resolved is link
+        assert resolved.tooltip == "keep me"
+
+    def test_handle_document_link_resolve_empty_and_malformed(self) -> None:
+        """Empty / malformed links are returned unchanged and never raise."""
+        from types import SimpleNamespace
+
+        rng = lsp.Range(
+            start=lsp.Position(line=0, character=0),
+            end=lsp.Position(line=0, character=1),
+        )
+        empty = lsp.DocumentLink(range=rng)
+        assert handle_document_link_resolve(empty) is empty
+        assert empty.tooltip is None
+        bogus = SimpleNamespace(tooltip=None, target=None)
+        assert handle_document_link_resolve(bogus) is bogus  # type: ignore[arg-type]
+
 
 class TestInlayHintParameters:
     """Builtin calls get Parameter inlay hints from metadata / well-known names."""
@@ -2418,6 +2459,100 @@ class TestInlayHintParameters:
         # Parameter labels are "name: ", not insertable type annotations (": type").
         assert isinstance(resolved_param.label, str)
         assert not resolved_param.label.startswith(": ")
+
+    def _param_labels(self, source: str) -> list[str]:
+        hints = handle_inlay_hints(self._params(), source)
+        assert hints is not None
+        return [
+            h.label if isinstance(h.label, str) else ""
+            for h in hints
+            if h.kind == lsp.InlayHintKind.Parameter
+        ]
+
+    def test_atr_length_parameter(self) -> None:
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.atr(14))\n')
+        assert any("length" in label for label in labels)
+
+    def test_correlation_parameter_names(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.correlation(close, volume, 20))\n'
+        )
+        assert any("source1" in label for label in labels)
+        assert any("source2" in label for label in labels)
+        assert any("length" in label for label in labels)
+
+    def test_roc_and_crossover_well_known_names(self) -> None:
+        roc = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.roc(close, 9))\n'
+        )
+        assert any("source" in label for label in roc)
+        assert any("length" in label for label in roc)
+        cross = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.crossover(close, open))\n'
+        )
+        assert any("source1" in label for label in cross)
+        assert any("source2" in label for label in cross)
+
+    def test_strategy_entry_and_input_int_names(self) -> None:
+        entry = self._param_labels(
+            '//@version=6\nstrategy("T")\nstrategy.entry("L", strategy.long)\n'
+        )
+        assert any("id" in label for label in entry)
+        assert any("direction" in label for label in entry)
+        inp = self._param_labels(
+            '//@version=6\nindicator("T")\nn = input.int(5, "n")\n'
+        )
+        assert any("defval" in label for label in inp)
+        assert any("title" in label for label in inp)
+
+    def test_cci_one_arg_is_length_not_source(self) -> None:
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.cci(14))\n')
+        assert any("length" in label for label in labels)
+        assert not any("source" in label for label in labels)
+
+    def test_cci_two_arg_source_length(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.cci(close, 14))\n'
+        )
+        assert any("source" in label for label in labels)
+        assert any("length" in label for label in labels)
+
+    def test_adx_one_arg_is_length_not_dilength(self) -> None:
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.adx(14))\n')
+        assert any("length" in label for label in labels)
+        assert not any("diLength" in label for label in labels)
+
+    def test_adx_two_arg_dilength_adxsmoothing(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.adx(14, 14))\n'
+        )
+        assert any("diLength" in label for label in labels)
+        assert any("adxSmoothing" in label for label in labels)
+
+    def test_mfi_and_bbw_one_arg_is_length(self) -> None:
+        mfi = self._param_labels('//@version=6\nindicator("T")\nplot(ta.mfi(14))\n')
+        assert any("length" in label for label in mfi)
+        assert not any("source" in label for label in mfi)
+        bbw = self._param_labels('//@version=6\nindicator("T")\nplot(ta.bbw(20))\n')
+        assert any("length" in label for label in bbw)
+        assert not any("source" in label for label in bbw)
+
+    def test_bbw_two_arg_is_length_mult_not_source(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.bbw(20, 2))\n'
+        )
+        assert any("length" in label for label in labels)
+        assert any("mult" in label for label in labels)
+        assert labels and "source" not in labels[0]
+        assert not any("source" in label for label in labels)
+
+    def test_bbw_three_arg_source_length_mult(self) -> None:
+        labels = self._param_labels(
+            '//@version=6\nindicator("T")\nplot(ta.bbw(close, 20, 2))\n'
+        )
+        assert any("source" in label for label in labels)
+        assert any("length" in label for label in labels)
+        assert any("mult" in label for label in labels)
 
 
 class TestInlayHintResolve:
@@ -2525,7 +2660,8 @@ class TestCapabilities:
         assert caps.folding_range_provider is True
         assert caps.selection_range_provider is True
         assert caps.color_provider is True
-        assert caps.document_link_provider is True
+        assert caps.document_link_provider is not None
+        assert caps.document_link_provider.resolve_provider is True
         assert caps.linked_editing_range_provider
         assert caps.document_on_type_formatting_provider is not None
         assert caps.document_on_type_formatting_provider.first_trigger_character == "\n"

@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T20:22:47Z
+  at: 2026-10-20T21:06:49Z
 sources:
   - id: tree
     resource: "tests"
@@ -65,7 +65,7 @@ okf_lock: generated
 * `test_indicators.py` — TestAccdistIndicator, TestIiiIndicator, TestNviPviIndicators, TestPhase7Integration, TestWadIndicator, TestWvadIndicator
 * `test_interp_compile_parity.py` — harness, test_close5_lookback_interp_compile_na_and_values, test_harness_cli_flags_registered, test_harness_compare_ignore_fill_keys, test_harness_compare_ignore_hline_keys, test_harness_constant_hline, test_harness_expected_error_classifier, test_harness_is_fill_background_key, test_harness_mismatch_detail_type_na_and_n_bad, test_harness_normalize_error_auto_fib, test_harness_series_allclose_nan_none, test_harness_summarize_buckets
 * `test_langserver.py` — TestApplyTextEdit, TestDiagnostics, TestTrailingIdent, TestWorkspace
-* `test_langserver_extras_coverage.py` — TestAsdlgen, TestAstMain, TestCollectWorkspaceSymbols, TestConfigExtras, TestDebounceSeconds, TestGenerateTools, TestInlayHints, TestJupyter, TestLangserverMain, TestMetadataDecrypt, TestNautilusStrategy, TestNodeTransformer
+* `test_langserver_extras_coverage.py` — TestAsdlgen, TestAstMain, TestCollectWorkspaceSymbols, TestConfigExtras, TestDebounceSeconds, TestDocumentLinkExtras, TestGenerateTools, TestInlayHints, TestJupyter, TestLangserverMain, TestMetadataDecrypt, TestNautilusStrategy
 * `test_lazy_calendar_plots.py` — TestLazyCalendarContext, TestLightPlots, TestRuntimeLazyCalendar
 * `test_lexer_corpus_fixes.py` — test_bare_name_equal_is_assign_not_reassign, test_bitwise_ops_shift_and_or, test_blank_lines_between_arrow_and_indented_method_body, test_bracket_wrap_any_indent_parity_with_parens, test_c_style_block_comment, test_color_literal_still_parses_after_hash_comment_rule, test_hash_line_comment_not_color, test_inline_block_comment, test_markdown_backticks_ignored, test_multiline_ternary_after_question_with_trailing_spaces, test_multiline_triple_quoted_string_roundtrip, test_multiline_type_new_nested_map_new
 * `test_library_export_import.py` — TestExportConstParse, TestLibraryExportConstRuntime, TestLibraryExportTypeAndEnum, TestLibraryImportRuntime, TestRuntimeGitPublishLibraries
@@ -132,7 +132,6 @@ okf_lock: generated
 * `test_strategy_risk_enforcement.py` — test_allow_entry_in_blocks_opposite_side, test_bar_mode_sma_returns_scalar, test_list_mode_sma_returns_series, test_max_drawdown_blocks_further_entries, test_max_position_size_caps_qty
 * `test_strategy_risk_intraday.py` — TestCompileBrokerParity, TestInterpretEnforcement, TestIntradayLossTypeParsing, test_fills_cap_rolls_next_day_dual_host, test_losing_strategy_blocked_dual_host, test_pending_limit_blocked_after_intraday_loss_dual_host, test_strategy_cash_identifier_dual_host
 * `test_strategy_runtime.py` — TestAvgPriceModel, TestLeverageFuturesUI, TestStrategyCashAndPyramiding, TestStrategyExtendedStats, TestStrategyGoldenMultiBar, TestStrategyInitialCapitalReassign, TestStrategySeriesVariables, TestStrategyWinLossStats
-* `test_ta_incremental.py` — test_as_series_cap_length, test_as_series_pineseries_cache_and_cap, test_builtin_sma_via_pineseries_matches_list_inc, test_builtin_ta_change_unary_defaults_length_one, test_change_na_propagation_last_sample, test_common_indicators_does_not_override_na_safe_helpers, test_crossover_crossunder_na_and_equal_prev, test_crossover_last_sample_matches_full_list, test_dema_tema_last_sample_skips_as_series, test_env_disable_uses_full_path, test_expect_int_float_and_series_period_coercion, test_expect_int_list_period_and_error_messages
 * `test_ta_indicators_1.py` — TestALMA, TestAPO, TestCMF, TestDEMA, TestKAMA, TestKlinger, TestMACDSignal, TestPhase8Integration, TestPhase8RoundTrip, TestRSIDivergence, TestStochSmooth, TestTEMA
 * `test_ta_indicators_2.py` — TestTier2Indicators
 * `test_ta_indicators_3.py` — TestBidAskImbalance, TestEngulfing, TestExpectedValue, TestGapDetector, TestGarmanKlass, TestHammer, TestKurtosis, TestParkinson, TestSkewness, TestVOI
@@ -155,6 +154,10 @@ okf_lock: generated
 * `test_v4_bare_aliases.py` — test_heikinashi_bare_alias, test_offset_series_lookback, test_random_and_round_to_mintick_bare_aliases, test_random_round_offset_runtime_script, test_security_bare_alias_dispatches_to_request_security, test_tickerid_constructs_exchange_symbol, test_v4_script_security_tickerid_roundtrip_and_run, test_v4_security_with_syminfo_tickerid
 * `test_v6_features.py` — TestBidAskVariables, TestDynamicForLoops, TestDynamicRequestCalls, TestExportConst, TestFootprintRequests, TestInputActiveParameter, TestMultilineStrings, TestPlotLinestyle, TestV6EdgeCases, TestV6FeatureIntegration, TestV6ScopeImprovements
 * `test_v6_surface_locks.py` — test_array_binary_search_udt_sort_field_lock, test_chart_is_heikinashi_alias, test_chart_is_pnf_and_visible_bar_times, test_enum_member_compare_runtime, test_export_enum_registers_on_library, test_import_stub_emits_warning, test_log_format_join_fallback, test_log_info_format_varargs, test_log_info_printf_varargs, test_log_info_single_arg, test_map_put_get_runtime, test_polyline_new_delete
+
+# Other files
+
+* `test_ta_incremental.py`
 
 # Packages
 
