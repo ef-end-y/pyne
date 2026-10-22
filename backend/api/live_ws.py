@@ -183,6 +183,11 @@ class LiveConnection:
         self._lock = threading.Lock()
         self._gens: dict[str, int] = {}
         self._owned: set[str] = set()
+        # AXB1 negotiation state per subscription id (HP PR 7): set on
+        # subscribe when the client asks for encoding "axb1", overwritten on
+        # resubscribe, popped on unsubscribe. "last_time" is the newest bar
+        # time seen so far — the re-tick vs append discriminator.
+        self._axb1_subs: dict[str, dict[str, Any]] = {}
 
     @property
     def closed(self) -> bool:
@@ -211,8 +216,46 @@ class LiveConnection:
             for cid in ids:
                 self._gens[cid] = self._gens.get(cid, 0) + 1
             self._owned.clear()
+            self._axb1_subs.clear()
         for cid in ids:
             self._detach(cid)
+
+    def _send(self, frame: dict[str, Any]) -> None:
+        """Single outbound path: negotiate AXB1 here; JSON stays the default."""
+        if self._sender is None:
+            return
+        self._sender(self.encode_outbound(frame))
+
+    def encode_outbound(self, frame: dict[str, Any]) -> dict[str, Any] | bytes:
+        """Map one reply/hub frame to AXB1 bytes when its sub negotiated it.
+
+        A pure negotiation step (no socket I/O) so ``serve_live_ws.dispatch``
+        and socket-free tests share the exact wire path. JSON is the default
+        and the compatibility guarantee: frames without a negotiated
+        subscription — or anything :func:`map_live_frame` cannot represent
+        losslessly (script frames, multi-bar deltas, ``idle`` status, control
+        frames) — pass through untouched.
+
+        Cursor discipline: the frame is classified with the PRE-bump cursor
+        (a single-bar delta is a re-tick only when its bar time is not newer),
+        then the cursor grows via ``max()`` — it never moves backwards.
+        """
+        if not isinstance(frame, dict):
+            return frame
+        raw_id = frame.get("id")
+        state = self._axb1_subs.get(str(raw_id)) if raw_id is not None else None
+        if state is None:
+            return frame
+        prev = state.get("last_time")
+        encoded: bytes | None = None
+        try:
+            encoded = map_live_frame(frame, last_time=prev)
+        except Exception:  # noqa: BLE001 — a bad frame must never kill the send path
+            logger.warning("axb1 encode failed for %s", frame.get("type"), exc_info=True)
+        derived = _axb1_cursor_time(frame)
+        if derived is not None and (prev is None or derived > prev):
+            state["last_time"] = derived
+        return frame if encoded is None else encoded
 
     def _claim(self, client_id: str) -> None:
         with self._lock:
@@ -251,7 +294,9 @@ class LiveConnection:
         if token is not None and not self.still_current(client_id, token):
             return
         if self._hub is not None and self._sender is not None:
-            self._hub.register(client_id, self._sender)
+            # Register the wrapped sender so hub frames go through the AXB1
+            # negotiation (encode_outbound) before they hit the socket.
+            self._hub.register(client_id, self._send)
         if self._closed or (token is not None and not self.still_current(client_id, token)):
             if self._hub is not None:
                 try:
@@ -358,13 +403,20 @@ class LiveConnection:
             return [self._err(None, "subscribe needs an id", "BAD_SUBSCRIBE")]
         client_id = str(req_id)
         token = self.generation(client_id)
+        # AXB1 negotiation (HP PR 7): binary outbound only when the client
+        # explicitly asked for it on subscribe. Resubscribe overwrites, and a
+        # subscribe without the flag drops back to all-JSON for this id.
+        if str(payload.get("encoding") or "") == "axb1":
+            self._axb1_subs[client_id] = {"last_time": None}
+        else:
+            self._axb1_subs.pop(client_id, None)
         # Tell the client we are fetching before the 4–9s first walk so the
         # HUD is honest and the socket is not silent during ensure.
         pending = self._registry.subscribe(client_id, str(kind), series_key, history_bars)
         self._claim(client_id)
         if self._sender is not None:
             try:
-                self._sender(
+                self._send(
                     {
                         "type": "status",
                         "id": req_id,
@@ -606,6 +658,7 @@ class LiveConnection:
             self.invalidate(client_id)
             with self._lock:
                 self._owned.discard(client_id)
+            self._axb1_subs.pop(client_id, None)
             self._detach(client_id)
         return [
             {
@@ -633,15 +686,21 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
         authed = code is None
 
     sock_thread = threading.current_thread()
-    outbound: _queue.Queue[dict[str, Any]] = _queue.Queue()
+    outbound: _queue.Queue[Any] = _queue.Queue()
     conn: LiveConnection
 
-    def sender(frame: dict[str, Any]) -> None:
+    def to_wire(data: dict[str, Any] | bytes) -> dict[str, Any] | bytes:
+        # AXB1 frames are already on the wire format; JSON stays json.dumps.
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+        return json.dumps(data)
+
+    def sender(frame: dict[str, Any] | bytes) -> None:
         # flask-sock is not safe from the feed thread; only this loop sends.
         if conn.closed:
             return
         if threading.current_thread() is sock_thread:
-            ws.send(json.dumps(frame))
+            ws.send(to_wire(frame))
             return
         outbound.put(frame)
 
@@ -654,7 +713,7 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
             if conn.closed:
                 continue
             try:
-                ws.send(json.dumps(frame))
+                ws.send(to_wire(frame))
             except Exception:  # noqa: BLE001
                 return
 
@@ -665,7 +724,9 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
     def dispatch(frame: dict[str, Any]) -> None:
         try:
             for reply in conn.handle_dict(frame):
-                sender(reply)
+                # encode_outbound is a no-op passthrough unless the client
+                # negotiated encoding "axb1" for this subscription id.
+                sender(conn.encode_outbound(reply))
         except Exception:  # noqa: BLE001 — a bad ensure must not kill the loop
             logger.exception("live frame handler failed")
 
@@ -925,3 +986,238 @@ def make_close(
     if req_id is not None:
         out["id"] = req_id
     return out
+
+
+# -- AXB1 outbound mapping (HP PR 7) --------------------------------------
+#
+# Pure JSON → AXB1 projection used by LiveConnection.encode_outbound. Each
+# helper maps one pyne frame type to exactly one AXB1 opcode and returns None
+# for anything it cannot represent losslessly — JSON fallback is the honesty
+# rule, never a mangled binary frame.
+
+
+def _axb1_cursor_time(frame: dict[str, Any]) -> int | None:
+    """Newest bar time a full/delta frame carries (cursor input, None if absent)."""
+    if frame.get("type") not in ("full", "delta"):
+        return None
+    payload = frame.get("payload")
+    if not isinstance(payload, dict):
+        return None
+    bars = payload.get("bars")
+    if not isinstance(bars, list) or not bars:
+        return None
+    last = bars[-1]
+    if not isinstance(last, dict) or "time" not in last:
+        return None
+    try:
+        return int(last["time"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _map_status(header: Any, payload: dict[str, Any]) -> bytes | None:
+    from pynescript.runtime import axb1 as _axb1
+
+    code = payload.get("code")
+    if code not in _axb1.AXB1_STATUS_CODES:  # "idle" and friends stay JSON
+        return None
+    detail = payload.get("message") or payload.get("detail") or ""
+    return _axb1.encode_status(
+        header,
+        status_code=str(code),
+        detail=str(detail),
+        have=int(payload.get("have") or 0),
+        need=int(payload.get("need") or 0),
+    )
+
+
+def _map_full(header: Any, payload: dict[str, Any], scale: int) -> bytes | None:
+    from pynescript.runtime import axb1 as _axb1
+
+    bars = payload.get("bars")
+    if not isinstance(bars, list) or not bars:
+        return None  # script snapshots (plots/series/bar_times/…) stay JSON
+    if set(payload) - {"seriesKey", "count", "closed_upto", "bars"}:
+        return None  # any structured leftover stays JSON, never JSON_BLOB
+    count = payload.get("count")
+    if not isinstance(count, int) or count != len(bars) or "closed_upto" not in payload:
+        return None
+    closed_upto = int(payload["closed_upto"])
+    time_s: list[int] = []
+    columns: dict[str, list] = {"open": [], "high": [], "low": [], "close": [], "volume": []}
+    try:
+        for bar in bars:
+            if not isinstance(bar, dict):
+                return None
+            time_s.append(int(bar["time"]))
+            for field in ("open", "high", "low", "close"):
+                columns[field].append(_axb1.price_to_ticks(float(bar[field]), scale))
+            columns["volume"].append(float(bar["volume"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    flags = [1 if t <= closed_upto else 2 for t in time_s]
+    return _axb1.encode_snapshot_ohlcv(
+        header,
+        price_scale=scale,
+        count=count,
+        closed_upto=closed_upto,
+        hot_from_index=0,
+        time_s=time_s,
+        flags=flags,
+        ohlcv=columns,
+    )
+
+
+def _map_delta(header: Any, payload: dict[str, Any], last_time: int | None, scale: int) -> bytes | None:
+    from pynescript.runtime import axb1 as _axb1
+
+    bars = payload.get("bars")
+    if payload.get("unchanged") is True:
+        leftovers = set(payload) - {"base_index", "count", "tail_len", "closed_upto", "forming", "unchanged"}
+        if leftovers or bars:  # data inside an "unchanged" frame is not droppable
+            return None
+        return _axb1.encode_unchanged(header)
+    if not isinstance(bars, list) or len(bars) != 1 or payload.get("tail_len") != 1:
+        return None  # script deltas (no bars) and multi-bar tails are not representable
+    if set(payload) - {"base_index", "count", "tail_len", "closed_upto", "forming", "bars"}:
+        return None
+    bar = bars[0]
+    if not isinstance(bar, dict) or "time" not in bar:
+        return None
+    try:
+        bar_time = int(bar["time"])
+    except (TypeError, ValueError):
+        return None
+    # Re-tick vs append: pyne's delta envelope is byte-identical for both
+    # (base_index == count - 1, tail_len == 1), so base/count/tail cannot
+    # classify them — the cursor (newest bar time) is the only discriminator.
+    # TIP_UPDATE never grows AXIS's count, so mapping an append as a tip would
+    # freeze the chart; anything newer than the cursor stays JSON instead.
+    if last_time is None or bar_time > last_time:
+        return None
+    mask = int(_axb1.TipMask.TIME)
+    tip: dict[str, Any] = {"flags": 1, "time_s": bar_time}
+    try:
+        for field, bit in (
+            ("open", _axb1.TipMask.OPEN),
+            ("high", _axb1.TipMask.HIGH),
+            ("low", _axb1.TipMask.LOW),
+            ("close", _axb1.TipMask.CLOSE),
+        ):
+            if field in bar:
+                mask |= int(bit)
+                tip[field] = _axb1.price_to_ticks(float(bar[field]), scale)
+        if "volume" in bar:
+            mask |= int(_axb1.TipMask.VOLUME)
+            tip["volume"] = float(bar["volume"])
+    except (TypeError, ValueError):
+        return None
+    tip["mask"] = mask
+    return _axb1.encode_tip_update(header, tip)
+
+
+def _map_close(header: Any, payload: dict[str, Any], scale: int) -> bytes | None:
+    from pynescript.runtime import axb1 as _axb1
+
+    if set(payload) - {"index", "time", "ohlcv", "tip"}:
+        return None
+    try:
+        index = int(payload["index"])
+        bar_time = int(payload["time"])
+        raw = payload["ohlcv"]
+        if not isinstance(raw, dict):
+            return None
+        ohlcv: dict[str, Any] = {}
+        for field in ("open", "high", "low", "close"):
+            ohlcv[field] = _axb1.price_to_ticks(float(raw[field]), scale)
+        ohlcv["volume"] = float(raw["volume"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    tip = payload.get("tip")
+    if tip is None:
+        return _axb1.encode_close_verify(header, index=index, time_s=bar_time, ohlcv=ohlcv)
+    if not isinstance(tip, dict) or "time" not in tip:
+        return None  # an odd tip shape must not be silently dropped
+    try:
+        tip_time = int(tip["time"])
+        mask = int(_axb1.TipMask.TIME)
+        tip_fields: dict[str, Any] = {"flags": int(tip.get("flags") or 1), "time_s": tip_time}
+        for field, bit in (
+            ("open", _axb1.TipMask.OPEN),
+            ("high", _axb1.TipMask.HIGH),
+            ("low", _axb1.TipMask.LOW),
+            ("close", _axb1.TipMask.CLOSE),
+        ):
+            if field in tip:
+                mask |= int(bit)
+                tip_fields[field] = _axb1.price_to_ticks(float(tip[field]), scale)
+        if "volume" in tip:
+            mask |= int(_axb1.TipMask.VOLUME)
+            tip_fields["volume"] = float(tip["volume"])
+        tip_fields["mask"] = mask
+    except (TypeError, ValueError):
+        return None
+    return _axb1.encode_append_bar(
+        header,
+        price_scale=scale,
+        closed_index=index,
+        closed_time=bar_time,
+        ohlcv=ohlcv,
+        tip=tip_fields,
+    )
+
+
+def _map_error(header: Any, frame: dict[str, Any], payload: dict[str, Any]) -> bytes | None:
+    from pynescript.runtime import axb1 as _axb1
+
+    code = frame.get("code", payload.get("code"))
+    message = frame.get("message", payload.get("message"))
+    if code is None or message is None:
+        return None
+    retryable = frame.get("retryable")
+    if retryable is None:
+        retryable = payload.get("retryable")
+    return _axb1.encode_error(header, code=str(code), message=str(message), retryable=bool(retryable))
+
+
+def map_live_frame(
+    frame: dict[str, Any],
+    *,
+    last_time: int | None = None,
+    price_scale: int | None = None,
+) -> bytes | None:
+    """Map one ``/ws/live`` JSON frame to AXB1 bytes; ``None`` = stay JSON.
+
+    Pure and socket-free: builds the header from the frame's id/session/seq,
+    dispatches per frame type, and returns None for anything it cannot
+    represent losslessly. Requires a resolvable subscription id (it becomes
+    ``sub_id_hash``, which the AXIS ingest side uses for routing).
+    """
+    from pynescript.runtime import axb1 as _axb1
+
+    if not isinstance(frame, dict):
+        return None
+    raw_id = frame.get("id")
+    if raw_id is None:
+        return None
+    payload = frame.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+    header = _axb1.Header(
+        seq=int(frame.get("seq") or 0),
+        sub_id_hash=_axb1.fnv1a32(str(raw_id)),
+        session_hash=_axb1.fnv1a32(str(frame.get("sessionId") or "")),
+        ts_ms=int(frame.get("ts") or time.time() * 1000),
+    )
+    scale = price_scale if price_scale is not None else _axb1.PRICE_SCALE_DEFAULT
+    mtype = frame.get("type")
+    if mtype == "status":
+        return _map_status(header, payload)
+    if mtype == "full":
+        return _map_full(header, payload, scale)
+    if mtype == "delta":
+        return _map_delta(header, payload, last_time, scale)
+    if mtype == "close":
+        return _map_close(header, payload, scale)
+    if mtype == "error":
+        return _map_error(header, frame, payload)
+    return None  # pong / auth.ok / unknown control frames stay JSON
