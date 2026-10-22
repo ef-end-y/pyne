@@ -14,17 +14,17 @@ import os
 import sys
 import threading
 
+from typing import ClassVar
+
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend.api.live_ws import (  # noqa: E402
-    LiveConnection,
-    LiveRegistry,
-    canonical_series_key,
-    clamp_history_bars,
-    extract_handshake_key,
-    serve_live_ws,
-)
+from backend.api.live_ws import LiveConnection
+from backend.api.live_ws import LiveRegistry
+from backend.api.live_ws import canonical_series_key
+from backend.api.live_ws import clamp_history_bars
+from backend.api.live_ws import extract_handshake_key
+from backend.api.live_ws import serve_live_ws
 
 
 META = {"exchange": "Binance", "market": "spot", "symbol": "btc/usdt", "interval": "1m"}
@@ -204,15 +204,18 @@ def test_unknown_type_and_non_dict():
 
 
 def test_next_seq_is_monotonic_per_subscription():
-    from backend.api.live_ws import LiveRegistry as LR
+    from backend.api.live_ws import LiveRegistry
 
-    reg = LR()
+    reg = LiveRegistry()
     assert [reg.next_seq("a"), reg.next_seq("a"), reg.next_seq("b")] == [1, 2, 1]
 
 
 def test_frame_builders_carry_seq_and_watermark():
     from backend.api.live_ws import closed_upto as _upto
-    from backend.api.live_ws import make_close, make_delta, make_full, make_status
+    from backend.api.live_ws import make_close
+    from backend.api.live_ws import make_delta
+    from backend.api.live_ws import make_full
+    from backend.api.live_ws import make_status
 
     status = make_status("live_1", "datafeed-loading", req_id="s", have=0, need=5000)
     assert status["payload"]["code"] == "datafeed-loading"
@@ -304,7 +307,7 @@ def test_subscribe_ready_emits_ready_calculating_full_live():
 def test_series_subscribe_carries_bars_not_plots():
     conn, bars = _ready_conn()
     replies = conn.handle_dict({"type": "subscribe", "id": "sub-s", "payload": {"kind": "series", "meta": META}})
-    full = [r for r in replies if r.get("type") == "full"][0]
+    full = next(r for r in replies if r.get("type") == "full")
     assert full["payload"]["bars"] == bars
     assert "plots" not in full["payload"]
 
@@ -338,7 +341,7 @@ class _QuietSocket:
     def send(self, data: str) -> None:
         self.sent.append(data)
 
-    def receive(self, timeout=None):  # noqa: ANN001 — transport signature
+    def receive(self, timeout=None):  # transport signature
         if self.frames:
             return self.frames.pop(0)
         if self.closed:
@@ -346,20 +349,20 @@ class _QuietSocket:
         # Timeout: simple-websocket returns None, it does not raise.
         return None
 
-    def close(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003 — transport API
+    def close(self, *args, **kwargs) -> None:  # transport API
         self.closed = True
 
 
 def test_quiet_socket_does_not_tear_down_the_live_plane(monkeypatch):
     """A timeout is not a disconnect: the loop must keep serving the socket."""
-    import backend.api.live_ws as live_ws
+    from backend.api import live_ws
 
     sock = _QuietSocket()
 
     def fake_request():
         class _Req:
-            headers = {}
-            args = {}
+            headers: ClassVar[dict[str, str]] = {}
+            args: ClassVar[dict[str, str]] = {}
 
         return _Req()
 
@@ -371,12 +374,11 @@ def test_quiet_socket_does_not_tear_down_the_live_plane(monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_receive(timeout=None):  # noqa: ANN001 — transport signature
+    def fake_receive(timeout=None):  # transport signature
         calls["n"] += 1
         if calls["n"] > 3:
             sock.closed = True
             raise ConnectionError("peer closed")
-        return None
 
     sock.receive = fake_receive  # type: ignore[method-assign]
     serve_live_ws(sock, LiveRegistry())

@@ -109,12 +109,13 @@ import pickle
 import sys
 import tempfile
 import time
+
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 from pathlib import Path
 from typing import Any
-from typing import Callable
 
 import numpy as np
 
@@ -122,6 +123,7 @@ from pynescript import stats as _stats
 from pynescript.ast.helper import parse
 from pynescript.compiler.compiler import CompilerVisitor
 from pynescript.debug import scope_enabled as _debug_scope
+
 
 try:
     import numba  # noqa: F401
@@ -585,7 +587,7 @@ def prewarm_scripts(
                     (time.perf_counter() - t_script0) * 1000.0,
                     len(src),
                 )
-            except Exception as exc:  # noqa: BLE001 — surface per-script; continue
+            except Exception as exc:  # surface per-script; continue
                 failed += 1
                 msg = f"scripts[{i}]: {type(exc).__name__}: {exc}"
                 if len(msg) > 240:

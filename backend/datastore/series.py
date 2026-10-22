@@ -408,7 +408,7 @@ def data_dir() -> Path:
 
 def get_store() -> SeriesStore:
     """Process-wide store under ``PYNE_DATA_DIR``; reopened if the directory changes."""
-    global _STORE  # noqa: PLW0603
+    global _STORE
     path = data_dir() / DB_FILENAME
     with _STORE_GUARD:
         if _STORE is None or _STORE.path != path:

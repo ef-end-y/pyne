@@ -56,13 +56,14 @@ from __future__ import annotations
 import json
 import sys
 import time
+
 from pathlib import Path
 from typing import Any
 
 import click
 
 # Explicit version: PyPI dist is ``hoox-pyne``; import package is ``pynescript``.
-from pynescript.__about__ import __version__ as _CLI_VERSION
+from pynescript.__about__ import __version__ as _cli_version
 from pynescript.mcp.cli import mcp_group
 from pynescript.mcp.cli import register_cli_commands
 from pynescript.util.runner_cli import runner_group
@@ -297,7 +298,7 @@ def _print_banner() -> None:
     epilog=_EPILOG,
 )
 @click.version_option(
-    _CLI_VERSION,
+    _cli_version,
     "--version",
     "-V",
     message="%(version)s",

@@ -28,11 +28,12 @@ Root causes covered:
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import math
 
+from pathlib import Path
+
 import pytest
+
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PINE = _ROOT / "tests" / "data" / "builtin_scripts" / "dividend_yield.pine"

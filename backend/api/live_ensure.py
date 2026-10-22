@@ -26,7 +26,7 @@ def parse_live_key(key_text: str) -> Any | None:
     exchange, market, symbol, interval = parts
     try:
         return series_store.make_key(exchange, symbol, interval, market)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -63,7 +63,7 @@ def ensure_live_session(
         return {"outcome": "error", "code": "BAD_KEY", "message": "Unparseable series key."}
     try:
         history = series_store.check_history_bars(history_bars)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {"outcome": "error", "code": "BAD_HISTORY", "message": "Unusable history_bars."}
 
     if kind == "script" and not script:
@@ -74,7 +74,7 @@ def ensure_live_session(
     if have < history:
         try:
             data_series.fetch_history(key, history)
-        except Exception as exc:  # noqa: BLE001 — upstream/CCXT failure is data, not a 500
+        except Exception as exc:  # upstream/CCXT failure is data, not a 500
             from backend.api.data_series import DataError
 
             if isinstance(exc, DataError):
@@ -117,7 +117,7 @@ def ensure_live_session(
         session_id, created = SESSIONS.acquire_shared(fingerprint, _factory)
     except RuntimeError:
         return {"outcome": "error", "code": "SESSIONS_FULL", "message": "Session capacity reached."}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": str(exc)[:500]}
 
     session = SESSIONS.get(session_id)
@@ -149,7 +149,7 @@ def resume_live_session(session_id: str) -> dict[str, Any]:
 
     try:
         session = SESSIONS.get(session_id)
-    except Exception:  # noqa: BLE001
+    except Exception:
         session = None
     if session is None:
         return {"outcome": "gone"}

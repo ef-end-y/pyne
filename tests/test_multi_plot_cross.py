@@ -103,8 +103,8 @@ hline(70, "Overbought", color=color.red, linewidth=1)
     assert r["plot_meta"]["RSI"].get("kind") in (None, "plot")
     assert r["plot_meta"]["RSI"].get("linewidth") == 2
     # Constant price repeated per bar
-    assert all(v == 30 or v == 30.0 for v in r["series"]["Oversold"] if v is not None)
-    assert all(v == 70 or v == 70.0 for v in r["series"]["Overbought"] if v is not None)
+    assert all(v == 30 for v in r["series"]["Oversold"] if v is not None)
+    assert all(v == 70 for v in r["series"]["Overbought"] if v is not None)
 
 
 def test_hline_series_keys_compile_matches_interpret():
@@ -128,10 +128,10 @@ hline(50)
         assert key in ri["series"], list(ri["series"].keys())
         assert key in rc["series"], list(rc["series"].keys())
         assert len(rc["series"][key]) == len(bars)
-    assert all(v == 30.0 or v == 30 for v in rc["series"]["Oversold"] if v is not None)
-    assert all(v == 70.0 or v == 70 for v in rc["series"]["Overbought"] if v is not None)
-    assert all(v == 0.0 or v == 0 for v in rc["series"]["hline"] if v is not None)
-    assert all(v == 50.0 or v == 50 for v in rc["series"]["hline_2"] if v is not None)
+    assert all(v == 30 for v in rc["series"]["Oversold"] if v is not None)
+    assert all(v == 70 for v in rc["series"]["Overbought"] if v is not None)
+    assert all(v == 0 for v in rc["series"]["hline"] if v is not None)
+    assert all(v == 50 for v in rc["series"]["hline_2"] if v is not None)
     # hline lives in series on both hosts; Runtime compile drawings are geometry-only
     kinds = {
         str(d.get("type") or d.get("kind") or "")

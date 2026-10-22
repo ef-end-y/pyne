@@ -39,6 +39,7 @@ import json
 import logging
 import threading
 import time
+
 from typing import Any
 
 
@@ -63,7 +64,7 @@ def canonical_series_key(meta: dict[str, Any]) -> str | None:
             meta.get("interval"),
             meta.get("market"),
         ).text
-    except Exception:  # noqa: BLE001
+    except Exception:
         return None
 
 
@@ -250,7 +251,7 @@ class LiveConnection:
         encoded: bytes | None = None
         try:
             encoded = map_live_frame(frame, last_time=prev)
-        except Exception:  # noqa: BLE001 — a bad frame must never kill the send path
+        except Exception:  # a bad frame must never kill the send path
             logger.warning("axb1 encode failed for %s", frame.get("type"), exc_info=True)
         derived = _axb1_cursor_time(frame)
         if derived is not None and (prev is None or derived > prev):
@@ -272,12 +273,12 @@ class LiveConnection:
                     str(record.get("series_key") or ""),
                     str(record.get("engine_session_id") or client_id),
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         if self._hub is not None:
             try:
                 self._hub.unregister(client_id)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         self._registry.release(client_id)
 
@@ -301,7 +302,7 @@ class LiveConnection:
             if self._hub is not None:
                 try:
                     self._hub.unregister(client_id)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
             return
         attacher = self._attacher
@@ -311,7 +312,7 @@ class LiveConnection:
             attacher = _attach_feed
         try:
             attacher(key_text, engine_session_id, client_id, self._registry, self._hub)
-        except Exception:  # noqa: BLE001 — attach failure degrades to snapshot-only
+        except Exception:  # attach failure degrades to snapshot-only
             logger.warning("feed attach failed for %s (%s)", key_text, client_id, exc_info=True)
             return
         if token is not None and not self.still_current(client_id, token):
@@ -410,7 +411,7 @@ class LiveConnection:
             self._axb1_subs[client_id] = {"last_time": None}
         else:
             self._axb1_subs.pop(client_id, None)
-        # Tell the client we are fetching before the 4–9s first walk so the
+        # Tell the client we are fetching before the 4-9s first walk so the
         # HUD is honest and the socket is not silent during ensure.
         pending = self._registry.subscribe(client_id, str(kind), series_key, history_bars)
         self._claim(client_id)
@@ -428,7 +429,7 @@ class LiveConnection:
                         },
                     }
                 )
-            except Exception:  # noqa: BLE001
+            except Exception:
                 logger.warning("early datafeed-loading send failed", exc_info=True)
         ensured = self._ensure(
             str(kind),
@@ -522,7 +523,7 @@ class LiveConnection:
             live_session = resumed.get("session")
             try:
                 result = live_session.result() if live_session is not None else {}
-            except Exception:  # noqa: BLE001
+            except Exception:
                 result = {}
             bars = self._bars_of(live_session)
             full_kwargs = {
@@ -587,7 +588,7 @@ class LiveConnection:
         bars = self._bars_of(live_session)
         try:
             result = live_session.result() if live_session is not None else {}
-        except Exception:  # noqa: BLE001
+        except Exception:
             result = {}
         key = parse_live_key(str(record.get("series_key") or ""))
         watermark = closed_upto(bars, int(key.interval_seconds) if key else 60, int(time.time()))
@@ -626,7 +627,7 @@ class LiveConnection:
             return []
         try:
             return series_store.get_store().window(key, max(1, limit))
-        except Exception:  # noqa: BLE001
+        except Exception:
             return []
 
     def _status_loading(self, client_id: str, ensured: dict[str, Any]) -> dict[str, Any]:
@@ -714,7 +715,7 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
                 continue
             try:
                 ws.send(to_wire(frame))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 return
 
     conn = LiveConnection(registry, authed=authed, hub=HUB, sender=sender)
@@ -727,7 +728,7 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
                 # encode_outbound is a no-op passthrough unless the client
                 # negotiated encoding "axb1" for this subscription id.
                 sender(conn.encode_outbound(reply))
-        except Exception:  # noqa: BLE001 — a bad ensure must not kill the loop
+        except Exception:  # a bad ensure must not kill the loop
             logger.exception("live frame handler failed")
 
     def run_ensure(frame: dict[str, Any], req_id: str) -> None:
@@ -747,21 +748,21 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
         inflight_keys.clear()
         try:
             conn.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.exception("live ws close failed")
         drain_outbound()
 
     if authed:
         try:
             ws.send(json.dumps({"type": "auth.ok"}))
-        except Exception:  # noqa: BLE001
+        except Exception:
             return
     while True:
         try:
             incoming = ws.receive(timeout=0.05)
         except TypeError:
             incoming = ws.receive()
-        except Exception as exc:  # noqa: BLE001 — timeout classes differ by transport
+        except Exception as exc:  # timeout classes differ by transport
             name = type(exc).__name__.lower()
             if "timeout" in name:
                 incoming = ""
@@ -786,7 +787,7 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
             continue
         try:
             msg = json.loads(incoming) if isinstance(incoming, str) else json.loads(incoming.decode("utf-8"))
-        except Exception:  # noqa: BLE001
+        except Exception:
             ws.send(json.dumps({"type": "error", "message": "Invalid JSON frame", "code": "BAD_JSON"}))
             continue
         mtype = str(msg.get("type") or "") if isinstance(msg, dict) else ""
@@ -827,7 +828,7 @@ def register_live_route(sock: Any, registry: LiveRegistry | None = None) -> None
 
 def subscription_fingerprint(kind: str, series_key: str, script: str = "") -> str:
     """Stable id for a (kind, series, script) subscription."""
-    digest = hashlib.sha256(f"{kind}|{series_key}|{script}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{kind}|{series_key}|{script}".encode()).hexdigest()
     return digest[:16]
 
 

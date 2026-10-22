@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pytest
 
+
 pytest.importorskip("lsprotocol")
 pytest.importorskip("pygls")
 

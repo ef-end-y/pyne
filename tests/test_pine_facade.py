@@ -108,7 +108,7 @@ def test_download_writes_and_can_skip_existing(monkeypatch, tmp_path: Path) -> N
     )
 
     def _fake_get(script_id_part, version, session=None):
-        return {"source": f"//@version=5\nindicator(\"{script_id_part}\")\n"}
+        return {"source": f'//@version=5\nindicator("{script_id_part}")\n'}
 
     monkeypatch.setattr("pynescript.util.pine_facade.get_script", _fake_get)
     first = download_builtin_scripts(

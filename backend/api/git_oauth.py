@@ -42,11 +42,13 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+
 from typing import Any
 
 from flask import Blueprint
 from flask import jsonify
 from flask import request
+
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +86,7 @@ def _form_body(params: dict[str, str]) -> bytes:
 
 
 def _post_form(url: str, params: dict[str, str]) -> tuple[int, dict[str, Any]]:
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 - fixed https endpoint
         url,
         data=_form_body(params),
         headers={
@@ -95,7 +97,7 @@ def _post_form(url: str, params: dict[str, str]) -> tuple[int, dict[str, Any]]:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed https endpoint
             raw = resp.read().decode("utf-8", errors="replace")
             status = int(getattr(resp, "status", 200) or 200)
     except urllib.error.HTTPError as e:
@@ -252,7 +254,7 @@ def device_start():
     try:
         started = _start_device(provider, client_id, scope)
         return jsonify({"status": "success", **started}), 200
-    except Exception as e:  # noqa: BLE001 — surface upstream OAuth errors cleanly
+    except Exception as e:  # surface upstream OAuth errors cleanly
         logger.warning("oauth start: %s", e)
         return (
             jsonify(
@@ -297,7 +299,7 @@ def device_poll():
     try:
         polled = _poll_device(provider, client_id, device_code)
         return jsonify(polled), 200
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("oauth poll: %s", e)
         return (
             jsonify(

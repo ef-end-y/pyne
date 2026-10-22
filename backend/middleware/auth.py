@@ -416,7 +416,7 @@ def _default_sqlite_path() -> str:
 def _build_key_store() -> APIKeyStore:
     backend_name = (os.environ.get("STORE_BACKEND") or "json").strip().lower()
     if backend_name in {"sqlite", "sql", "db"}:
-        from backend.middleware.key_store_sqlite import SQLiteKeyStore  # noqa: PLC0415
+        from backend.middleware.key_store_sqlite import SQLiteKeyStore
 
         path = _default_sqlite_path()
         parent = os.path.dirname(path)
@@ -424,7 +424,7 @@ def _build_key_store() -> APIKeyStore:
             os.makedirs(parent, exist_ok=True)
         return APIKeyStore(backend=SQLiteKeyStore(path))
     if backend_name in {"redis", "memorystore"}:
-        from backend.middleware.key_store_redis import RedisKeyStore  # noqa: PLC0415
+        from backend.middleware.key_store_redis import RedisKeyStore
 
         url = os.environ.get("REDIS_URL", "").strip()
         if not url:
@@ -503,7 +503,7 @@ def track_usage(f):
         result = f(*args, **kwargs)
         if isinstance(result, tuple):
             response, status_code = result
-            if status_code < 400:  # noqa: PLR2004 — HTTP success range
+            if status_code < 400:  # HTTP success range
                 api_key.increment_calls()
             return response, status_code
         api_key.increment_calls()

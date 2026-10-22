@@ -114,7 +114,7 @@ class CommonIndicators(TechnicalHelpers):
     def _builtin_ta_range(self, args: list[Any]) -> float | None:
         """Range = highest - lowest over a period.
 
-        2-arg ``ta.range(source, n)``; 1-arg ``ta.range(n)`` is high − low.
+        2-arg ``ta.range(source, n)``; 1-arg ``ta.range(n)`` is high - low.
         """
         if len(args) == UNARY and self._is_period_like(args[0]):
             period = self._expect_int(args[0], "Period must be an integer")

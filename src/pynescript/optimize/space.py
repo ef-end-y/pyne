@@ -28,6 +28,7 @@ from pynescript.optimize.types import ParamSpec
 from pynescript.optimize.types import ParamValue
 from pynescript.optimize.types import SearchSpace
 
+
 SEARCHABLE_KINDS = frozenset({"int", "float", "price", "bool", "enum"})
 SKIP_TYPES = frozenset(
     {"source", "timeframe", "symbol", "session", "color", "text", "unknown"}
@@ -179,7 +180,7 @@ def clamp_value(spec: ParamSpec, value: Any) -> ParamValue:
         if num > hi:
             num = lo + ((hi - lo) // spec.step) * spec.step
     if spec.kind == "int":
-        return int(round(num))
+        return round(num)
     return float(num)
 
 
@@ -210,9 +211,9 @@ def _axis_cardinality(spec: ParamSpec, *, max_points: int) -> int:
     lo = spec.min if spec.min is not None else 0.0
     hi = spec.max if spec.max is not None else lo
     if spec.step and spec.step > 0:
-        n = max(1, int(round((hi - lo) / spec.step)) + 1)
+        n = max(1, round((hi - lo) / spec.step) + 1)
         return max(1, min(n, max_points))
     if spec.kind == "int":
-        n = max(1, int(round(hi)) - int(round(lo)) + 1)
+        n = max(1, round(hi) - round(lo) + 1)
         return max(1, min(n, max_points))
     return max(2, min(max_points, 8))

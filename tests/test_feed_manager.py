@@ -14,12 +14,10 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from backend.api.feed_manager import (  # noqa: E402
-    ExchangeFeed,
-    FeedManager,
-    apply_feed_candles,
-    normalize_candles,
-)
+from backend.api.feed_manager import ExchangeFeed
+from backend.api.feed_manager import FeedManager
+from backend.api.feed_manager import apply_feed_candles
+from backend.api.feed_manager import normalize_candles
 
 
 def _candles(*times):
@@ -27,7 +25,7 @@ def _candles(*times):
 
 
 def test_normalize_candles_sorts_dedups_and_converts():
-    rows = _candles(3, 1, 2, 2) + [["junk"]]
+    rows = [*_candles(3, 1, 2, 2), ["junk"]]
     out = normalize_candles(rows)
     assert [b["time"] for b in out] == [1, 2, 3]
     assert out[0]["open"] == 100.0
@@ -196,7 +194,7 @@ def test_datafeed_error_falls_back_to_poll():
     class _Boom(_FakeStreamFeed):
         async def watch_ohlcv_for_symbols(self, pairs):
             raise DataFeedError("stream died")
-            yield  # noqa: RET501 — async generator so `async for` can start
+            yield  # async generator so `async for` can start
 
         async def fetch_ohlcv(self, symbol, timeframe, limit=2):
             feed_holder[0].stop()

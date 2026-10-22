@@ -124,13 +124,10 @@ def test_evaluator_chart_provider_security_matches_bars():
     ev = NodeLiteralEvaluator(data_provider=provider)
     # Direct handler
     closes = ev._handle_request_security(["AAPL", "D", "close"])
-    assert closes == [200.0, 201.0, 202.0, 203.0, 204.0, 205.0] or closes == [
-        201.0,
-        202.0,
-        203.0,
-        204.0,
-        205.0,
-    ] or len(closes) >= 5
+    assert closes in (
+        [200.0, 201.0, 202.0, 203.0, 204.0, 205.0],
+        [201.0, 202.0, 203.0, 204.0, 205.0],
+    ) or len(closes) >= 5
     # Full expression
     r = ev.visit(parse('request.security("AAPL", "D", "close")', mode="eval").body)
     assert isinstance(r, list) and len(r) >= 5

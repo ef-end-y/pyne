@@ -224,14 +224,14 @@ class VolatilityIndicators(TechnicalHelpers):
             return None
         a = s1[-length:]
         b = s2[-length:]
-        pairs = [(float(x), float(y)) for x, y in zip(a, b) if x is not None and y is not None]
+        pairs = [(float(x), float(y)) for x, y in zip(a, b, strict=False) if x is not None and y is not None]
         if len(pairs) < 2:
             return None
         xs = [p[0] for p in pairs]
         ys = [p[1] for p in pairs]
         mx = sum(xs) / len(xs)
         my = sum(ys) / len(ys)
-        num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+        num = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=False))
         denx = sum((x - mx) ** 2 for x in xs) ** 0.5
         deny = sum((y - my) ** 2 for y in ys) ** 0.5
         if denx == 0 or deny == 0:

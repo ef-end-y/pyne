@@ -55,7 +55,7 @@ def test_extract_hyphen_dated_heading() -> None:
 
 
 def test_missing_version_explains_unreleased_move() -> None:
-    with pytest.raises(ValueError, match="no ## \\[9.9.9\\] section"):
+    with pytest.raises(ValueError, match=r"no ## \[9\.9\.9\] section"):
         extract_changelog_section(_CHANGELOG, "9.9.9")
 
 

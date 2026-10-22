@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import json
 import re
+
 from pathlib import Path
 
 import pytest
+
 from click.testing import CliRunner
 
 from pynescript import __version__
@@ -64,7 +66,7 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
-def _combined(r) -> str:  # noqa: ANN001 — click.testing.Result
+def _combined(r) -> str:  # click.testing.Result
     """Stdout + stderr + exception text (Click may put status on either stream)."""
     parts = [r.output or "", getattr(r, "stderr", None) or "", str(r.exception or "")]
     return "".join(parts)

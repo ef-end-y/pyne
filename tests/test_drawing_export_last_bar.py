@@ -14,12 +14,10 @@ line was skipped — AXIS never received geometry.
 
 from __future__ import annotations
 
-from pynescript.ast.evaluator.builtins.drawing import (
-    DrawingRegistry,
-    Line,
-    LineFill,
-    _export_x_to_time,
-)
+from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
+from pynescript.ast.evaluator.builtins.drawing import Line
+from pynescript.ast.evaluator.builtins.drawing import LineFill
+from pynescript.ast.evaluator.builtins.drawing import _export_x_to_time
 
 
 class TestExportXToTime:
@@ -89,7 +87,7 @@ class TestFoldCompileDrawingMutations:
         ]
         out = DrawingRegistry.fold_compile_drawing_mutations(events)
         assert len(out) == 2
-        geom = [d for d in out if d.get("kind") == "line"][0]
+        geom = next(d for d in out if d.get("kind") == "line")
         assert geom["x2"] == 5
         assert geom["y2"] == 20.0
         assert any(d.get("kind") == "bgcolor" for d in out)

@@ -209,7 +209,7 @@ class TestDiagnostics:
         )
         diag = _lint_warning_to_diagnostic(warning, source)
         assert diag is not None
-        line_len = len(source.split("\n")[0])
+        line_len = len(source.split("\n", maxsplit=1)[0])
         assert diag.range.start.character == 5
         assert diag.range.end.character <= line_len
         assert diag.range.end.character > diag.range.start.character

@@ -49,6 +49,7 @@ from pynescript.ast.evaluator.builtins.drawing import LineFill
 from pynescript.ast.evaluator.builtins.drawing import Polyline
 from pynescript.ast.evaluator.builtins.drawing import Table
 
+
 # Sentinel for context.get — distinguishes missing key from stored None (na).
 _MISSING = object()
 from pynescript.ast.evaluator.builtins.matrix import Matrix
@@ -498,11 +499,10 @@ class NameEvaluator:
                             ps.update(current)
                 elif hasattr(ps, "update"):
                     ps.update(current)
+            elif hasattr(ps, "update"):
+                ps.update(current)
             else:
-                if hasattr(ps, "update"):
-                    ps.update(current)
-                else:
-                    ps.current = current
+                ps.current = current
             last_map[site] = bar_i
             try:
                 return ps[slice_]

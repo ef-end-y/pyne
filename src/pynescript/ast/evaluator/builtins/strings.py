@@ -183,8 +183,7 @@ class StringBuiltinsMixin(BuiltinDispatchMixin):
             return None
         value = raw if isinstance(raw, str) else str(raw)
         n = self._expect_int(count, "str.repeat takes string and int")
-        if n < 0:
-            n = 0
+        n = max(n, 0)
         return value * n
 
     @staticmethod

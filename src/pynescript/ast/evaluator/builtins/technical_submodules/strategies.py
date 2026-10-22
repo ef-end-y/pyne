@@ -68,11 +68,11 @@ class StrategiesIndicators(TechnicalHelpers):
         if len(args) != 5:
             self._error(msg)
 
-        high = self._expect_list(args[0], msg)
-        low = self._expect_list(args[1], msg)
+        self._expect_list(args[0], msg)
+        self._expect_list(args[1], msg)
         close = self._expect_list(args[2], msg)
-        left = self._expect_int(args[3], msg)
-        right = self._expect_int(args[4], msg)
+        self._expect_int(args[3], msg)
+        self._expect_int(args[4], msg)
 
         return {"pivot_price": close[-1] if close else 0.0, "structure": "fractal", "type": "high"}
 
@@ -208,7 +208,7 @@ class StrategiesIndicators(TechnicalHelpers):
         strength = self._expect_number(args[0], msg)
         vol_regime = self._expect_string(args[1], msg)
         trend_regime = self._expect_string(args[2], msg)
-        period = self._expect_int(args[3], msg)
+        self._expect_int(args[3], msg)
 
         adapted_strength = strength
         regime_fit = 1.0
@@ -266,18 +266,18 @@ class StrategiesIndicators(TechnicalHelpers):
             self._error(msg)
 
         try:
-            high = self._expect_list(args[0], msg)
-            low = self._expect_list(args[1], msg)
+            self._expect_list(args[0], msg)
+            self._expect_list(args[1], msg)
             close = self._expect_list(args[2], msg)
         except ValueError:
-            high = [self._expect_number(args[0], msg)]
-            low = [self._expect_number(args[1], msg)]
+            self._expect_number(args[0], msg)
+            self._expect_number(args[1], msg)
             close = [self._expect_number(args[2], msg)]
 
         try:
-            period = self._expect_int(args[3], msg)
+            self._expect_int(args[3], msg)
         except ValueError:
-            period = int(self._expect_number(args[3], msg))
+            int(self._expect_number(args[3], msg))
 
         if not close:
             return {"min": 0.0, "max": 0.0, "optimal": 0.0}
@@ -307,12 +307,11 @@ class StrategiesIndicators(TechnicalHelpers):
         current = self._expect_number(args[1], msg)
         atr = self._expect_number(args[2], msg)
         mult = self._expect_number(args[3], msg)
-        step = self._expect_number(args[4], msg)
+        self._expect_number(args[4], msg)
 
         trail_stop = 0.0
         if current > entry:
             # Long position
-            raw_stop = current - (atr * mult)
             # Ensure stop doesn't go below entry if we are far enough?
             # Or just simple trailing logic.
             # Test expects > 100 when entry=100, current=105, atr=10, mult=1.
@@ -363,7 +362,7 @@ class StrategiesIndicators(TechnicalHelpers):
             sma = [self._expect_number(args[1], msg)]
             stdev = [self._expect_number(args[2], msg)]
 
-        period = self._expect_int(args[3], msg)
+        self._expect_int(args[3], msg)
         threshold = self._expect_number(args[4], msg)
 
         p = price[-1] if isinstance(price[-1], (int, float)) else 0

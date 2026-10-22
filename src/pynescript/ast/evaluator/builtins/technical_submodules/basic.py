@@ -173,13 +173,13 @@ class BasicIndicators(TechnicalHelpers):
         cum_pv = 0.0
         cum_v = 0.0
         last = None
-        for i, price in enumerate(source):
-            if price is None:
+        for i, raw_price in enumerate(source):
+            if raw_price is None:
                 continue
             v = volume[i] if i < len(volume) and volume[i] is not None else 0.0
             try:
                 v = float(v)
-                price = float(price)
+                price = float(raw_price)
             except (TypeError, ValueError):
                 continue
             cum_pv += price * v
@@ -368,7 +368,7 @@ class BasicIndicators(TechnicalHelpers):
     def _builtin_ta_tr(self, args: list[Any]) -> Any:
         """True Range.
 
-        Reference Pine: ``ta.tr(handle_na)`` with 0–1 args (uses high/low/close
+        Reference Pine: ``ta.tr(handle_na)`` with 0-1 args (uses high/low/close
         from context). Also accepts the legacy 3-arg form for unit tests.
         """
         if len(args) <= UNARY:
@@ -384,7 +384,7 @@ class BasicIndicators(TechnicalHelpers):
             lows = self._context_series("low")
             closes = self._context_series("close")
             return self._finalize_series(self._tr(highs, lows, closes))
-        msg = "ta.tr expects high, low, and close (or 0–1 handle_na args)"
+        msg = "ta.tr expects high, low, and close (or 0-1 handle_na args)"
         if len(args) != TERNARY:
             self._error(msg)
         if self._use_incremental_ta():
@@ -881,7 +881,7 @@ class BasicIndicators(TechnicalHelpers):
     def _builtin_ta_range(self, args: list[Any]) -> float | None:
         """Range = highest - lowest over a period.
 
-        2-arg ``ta.range(source, n)``; 1-arg ``ta.range(n)`` is high − low.
+        2-arg ``ta.range(source, n)``; 1-arg ``ta.range(n)`` is high - low.
         """
         if len(args) == UNARY and self._is_period_like(args[0]):
             period = self._expect_int(args[0], "Period must be an integer")

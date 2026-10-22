@@ -176,7 +176,7 @@ def ticker_heikinashi(ticker_str: str) -> TickerInfo:
     return ticker
 
 
-def ticker_kagi(ticker_str: str, short: float = 3.0, style: str = None) -> TickerInfo:
+def ticker_kagi(ticker_str: str, short: float = 3.0, style: str | None = None) -> TickerInfo:
     """Create a Kagi chart ticker from a symbol.
 
     Applies Kagi charting transformation. v6 style support.
@@ -330,7 +330,7 @@ def _looks_like_number(v: Any) -> bool:
         return False
 
 
-def ticker_renko(ticker_str: str, boxsize: float = 1.0, style: str = None) -> TickerInfo:
+def ticker_renko(ticker_str: str, boxsize: float = 1.0, style: str | None = None) -> TickerInfo:
     """Create a Renko chart ticker from a symbol.
 
     Applies Renko charting transformation. v6: supports style="PercentageLTP" etc.

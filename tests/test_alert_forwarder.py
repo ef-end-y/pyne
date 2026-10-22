@@ -252,10 +252,10 @@ def test_maybe_forward_last_bar_only() -> None:
 
 def test_forward_exception_does_not_leak_message() -> None:
     """Webhook transport failures must not echo exception text to the client."""
-    secret = "secret traceback details"
+    detail = "secret traceback details"
 
     def boom(_url: str, _body: dict) -> int:
-        raise RuntimeError(secret)
+        raise RuntimeError(detail)
 
     meta = forward_alerts(
         [{"message": "a"}],
@@ -272,10 +272,10 @@ def test_forward_exception_does_not_leak_message() -> None:
 
 
 def test_forward_per_alert_exception_does_not_leak_message() -> None:
-    secret = "connection reset by peer: internal host"
+    detail = "connection reset by peer: internal host"
 
     def boom(_url: str, _body: dict) -> int:
-        raise OSError(secret)
+        raise OSError(detail)
 
     meta = forward_alerts(
         [{"message": "a", "bar_index": 3}],

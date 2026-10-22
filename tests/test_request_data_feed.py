@@ -25,6 +25,7 @@ OHLCV vs complex HTF UDF (MTF structure residual).
 
 from __future__ import annotations
 
+import itertools
 import math
 
 from datetime import datetime
@@ -424,7 +425,7 @@ plot(close, title="c")
         assert len(finite_tail) > 60
         for v in finite_tail:
             assert math.isfinite(float(v))
-        # Stepwise constancy: within hour 5 (bars 300–359) last completed is hour 4;
+        # Stepwise constancy: within hour 5 (bars 300-359) last completed is hour 4;
         # value should not change mid-hour.
         hour5 = hsma[5 * 60 : 6 * 60]
         assert all(not _is_na(x) for x in hour5)
@@ -1022,7 +1023,7 @@ plot(ta.linreg(close, 3), title="clin")
         assert abs(float(hlin[-1]) - expect_lin) < 1e-9
         win4 = daily_closes[-4:]
         up = down = 0.0
-        for a, b in zip(win4[:-1], win4[1:], strict=True):
+        for a, b in itertools.pairwise(win4):
             diff = b - a
             if diff > 0:
                 up += diff

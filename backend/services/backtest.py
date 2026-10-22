@@ -124,8 +124,6 @@ def run_backtest(
         BacktestResult with equity curve, trades, and metrics
     """
     close = ohlcv.get("close", [])
-    high = ohlcv.get("high", [])
-    low = ohlcv.get("low", [])
     n = len(close)
 
     if n == 0:
@@ -240,7 +238,6 @@ def run_quick_backtest(
 
 
 def _compute_metrics(equity_curve: list[float], trades: list[Trade], plot_chart: bool) -> BacktestResult:
-    equity_arr = [equity_curve[0]] + equity_curve
     returns = [
         equity_curve[i] / equity_curve[i - 1] - 1 if equity_curve[i - 1] != 0 else 0
         for i in range(1, len(equity_curve))
@@ -328,7 +325,7 @@ def generate_mock_ohlcv(n_bars: int = 252, base_price: float = 100.0) -> dict[st
         change = random.gauss(0.0005, 0.015)
         close_prices.append(round(close_prices[-1] * (1 + change), 2))
 
-    opens = [close_prices[0]] + close_prices[:-1]
+    opens = [close_prices[0], *close_prices[:-1]]
     highs = [max(o, c) * random.uniform(1.0, 1.01) for o, c in zip(opens, close_prices, strict=False)]
     lows = [min(o, c) * random.uniform(0.99, 1.0) for o, c in zip(opens, close_prices, strict=False)]
     volumes = [int(random.uniform(100000, 5000000)) for _ in range(n_bars)]

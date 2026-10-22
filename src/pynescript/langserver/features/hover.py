@@ -249,7 +249,7 @@ def _hover_user_decl(
 def _collect_user_decls(tree: Any, source: str) -> dict[str, dict[str, str]]:
     """Map identifier → first declaration (kind + source signature)."""
     found: dict[str, dict[str, str]] = {}
-    # Split once — a per-declaration split is O(decls × doc-size).
+    # Split once — a per-declaration split is O(decls x doc-size).
     lines = source.split("\n") if source else []
 
     def add(name: str | None, kind: str, node: Any, fallback: str) -> None:

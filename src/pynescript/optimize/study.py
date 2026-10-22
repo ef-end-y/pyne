@@ -25,6 +25,7 @@ import math
 import random
 import re
 import time
+
 from collections.abc import Callable
 from typing import Any
 
@@ -48,6 +49,7 @@ from pynescript.optimize.walk_forward import apply_warmup
 from pynescript.optimize.walk_forward import estimated_runs
 from pynescript.optimize.walk_forward import holdout_split
 from pynescript.optimize.walk_forward import rolling_windows
+
 
 # Same declaration header as ``runtime.host._SCRIPT_HEADER_RE``.
 _SCRIPT_DECL = re.compile(r"(?m)^\s*(indicator|strategy|library|study)\s*\(")
@@ -171,7 +173,7 @@ def run_once(
             inputs=dict(inputs) if inputs else None,
             libraries=libraries or None,
         )
-    except Exception as exc:  # noqa: BLE001 — trial isolation
+    except Exception as exc:  # trial isolation
         return None, f"{type(exc).__name__}: {exc}"
     if not isinstance(result, dict):
         return None, "engine returned a non-object"
@@ -242,8 +244,7 @@ def run_study(
         )
 
     n = int(n_trials)
-    if n < 1:
-        n = 1
+    n = max(n, 1)
     if n > MAX_TRIALS:
         warning = f"n_trials capped at {MAX_TRIALS}"
         n = MAX_TRIALS

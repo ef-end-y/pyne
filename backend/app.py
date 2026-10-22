@@ -71,7 +71,7 @@ def _load_env_file() -> bool:
     backend/requirements.txt`` installs it).
     """
     try:
-        from dotenv import load_dotenv  # noqa: PLC0415
+        from dotenv import load_dotenv
     except ImportError:
         logger.debug("python-dotenv not installed; .env is ignored")
         return False
@@ -115,8 +115,8 @@ from backend.middleware.schemas import SESSION_APPEND_SCHEMA
 from backend.middleware.schemas import SESSION_CREATE_SCHEMA
 from backend.middleware.schemas import SESSION_TICK_SCHEMA
 from backend.middleware.schemas import VALIDATE_KEY_SCHEMA
-from backend.middleware.sessions import SESSIONS
 from backend.middleware.schemas import validate
+from backend.middleware.sessions import SESSIONS
 from backend.runtime import Runtime
 from pynescript import stats as _stats
 from pynescript.debug import debug_enabled as _debug_on
@@ -203,7 +203,7 @@ _HOST_COMPILE_PREWARMED = False
 
 
 def _path_is_free_cors(path: str) -> bool:
-    if path == "/" or path == "":
+    if path in {"/", ""}:
         return True
     for p in _FREE_CORS_PATH_PREFIXES:
         if p != "/" and path.startswith(p.rstrip("/") if p.endswith("/") else p):
@@ -225,7 +225,7 @@ def _origin_allowed(origin: str) -> bool:
     import re
 
     for pat in allowed:
-        if pat == "*" or pat == origin:
+        if pat in {"*", origin}:
             return True
         try:
             if re.match(pat + ("" if pat.endswith("$") else "$"), origin) or re.match(pat, origin):
@@ -313,7 +313,7 @@ def _request_stats_end(resp):  # type: ignore[no-untyped-def]
         )
         if _debug_on() and duration > 0.5:
             logger.debug("slow request %s %s took %.1fms", request.method, endpoint, duration * 1000.0)
-    except Exception:  # noqa: BLE001 — stats must never break a response
+    except Exception:  # stats must never break a response
         pass
     return resp
 
@@ -385,7 +385,7 @@ def _maybe_host_compile_prewarm(*, force: bool = False) -> dict[str, Any] | None
         _HOST_COMPILE_PREWARMED = True
         _dbg("host compile prewarm done in %.1fms: %s", (time.perf_counter() - _t_pw0) * 1000.0, result)
         return result
-    except Exception as exc:  # noqa: BLE001 — never block /run on prewarm
+    except Exception as exc:  # never block /run on prewarm
         import logging as _logging
 
         _logging.getLogger(__name__).debug("host compile prewarm failed: %s", exc, exc_info=True)
@@ -410,7 +410,7 @@ def _err_to_dict(err: tuple) -> tuple[dict[str, Any], int]:
             "code": "VALIDATION_ERROR",
             "message": "Invalid request body",
         }
-    except Exception:  # noqa: BLE001
+    except Exception:
         payload = {
             "status": "error",
             "code": "VALIDATION_ERROR",
@@ -547,7 +547,7 @@ def _execute_run_payload_inner(
     if err is not None:
         return _err_to_dict(err)
 
-    assert validated is not None
+    assert validated is not None  # noqa: S101 - validator invariant
     script = validated["script"]
     ohlcv = validated["data"]
     symbol = validated.get("symbol") or "CHART"
@@ -606,7 +606,7 @@ def _execute_run_payload_inner(
             data_source=data_source,
             source_options=data_options if isinstance(data_options, dict) else {},
         )
-    except Exception as e:  # noqa: BLE001 — surface config errors cleanly
+    except Exception as e:  # surface config errors cleanly
         logger.warning("data source config: %s", e)
         return {
             "status": "error",
@@ -667,7 +667,7 @@ def _execute_run_payload_inner(
                 validated.get("from_bar"),
                 validated.get("to_bar"),
             )
-        except Exception:  # noqa: BLE001 — never fail a run over a trim
+        except Exception:  # never fail a run over a trim
             logger.warning("window trim failed; returning full envelope", exc_info=True)
 
     if "error" in result:
@@ -755,7 +755,7 @@ def _execute_run_payload_inner(
         )
         if alert_fwd is not None:
             resp["alert_forward"] = alert_fwd
-    except Exception as e:  # noqa: BLE001 — never fail the run on webhook errors
+    except Exception as e:  # never fail the run on webhook errors
         logger.warning("alert forward: %s", e)
         resp["alert_forward_error"] = "Alert forwarding failed"
 
@@ -788,7 +788,7 @@ def _compile_health_section() -> dict[str, Any]:
             "default_mode": deploy.get("default_runtime_mode", "auto"),
             "host_prewarmed": _HOST_COMPILE_PREWARMED,
         }
-    except Exception as exc:  # noqa: BLE001 — health must stay up
+    except Exception as exc:  # health must stay up
         logger.warning("compile health: %s", exc)
         return {
             "has_numba": False,
@@ -926,7 +926,7 @@ def _compile_cache_snapshot() -> dict[str, Any]:
         from pynescript.compiler.engine import compile_cache_stats
 
         return compile_cache_stats()
-    except Exception as exc:  # noqa: BLE001 — /stats must stay up
+    except Exception as exc:  # /stats must stay up
         logger.warning("stats compile cache: %s", exc)
         return {"error": "unavailable"}
 
@@ -937,7 +937,7 @@ def _sessions_snapshot() -> dict[str, Any]:
         st = SESSIONS.stats()
         _stats.set_gauge("sessions.active", int(st.get("sessions", 0) or 0))
         return st
-    except Exception as exc:  # noqa: BLE001 — /stats must stay up
+    except Exception as exc:  # /stats must stay up
         logger.warning("stats sessions: %s", exc)
         return {"error": "unavailable"}
 
@@ -1043,7 +1043,7 @@ def execute_optimize_payload(data: dict[str, Any]) -> tuple[dict[str, Any], int]
         validated, err = validate(data or {}, OPTIMIZE_SCHEMA)
         if err is not None:
             return _err_to_dict(err)
-        assert validated is not None
+        assert validated is not None  # noqa: S101 - validator invariant
         script = validated["script"]
         ohlcv = validated["data"]
         if not script:
@@ -1306,7 +1306,7 @@ def _session_window(result: Any, validated: dict[str, Any]) -> tuple[Any, dict[s
 
         trimmed = apply_window(result, validated.get("from_bar"), validated.get("to_bar"))
         return trimmed, trimmed.get("window")
-    except Exception as exc:  # noqa: BLE001 — never fail a tick over a trim
+    except Exception as exc:  # never fail a tick over a trim
         logger.warning("session window trim failed: %s", exc)
         return result, None
 
@@ -1352,7 +1352,7 @@ def create_session_route():
             profiler=bool(validated.get("profiler")),
             mode="interpret",
         )
-    except Exception as exc:  # noqa: BLE001 — surface engine failures cleanly
+    except Exception as exc:  # surface engine failures cleanly
         logger.warning("session create failed: %s", exc)
         return jsonify(
             {
@@ -1481,7 +1481,7 @@ def session_tick_route(session_id: str):
 
     try:
         result = session.update_last_bar(bar)
-    except Exception as exc:  # noqa: BLE001 — a bad tick must not 500
+    except Exception as exc:  # a bad tick must not 500
         logger.warning("session tick failed: %s", exc)
         return jsonify(
             {
@@ -1529,7 +1529,7 @@ def session_append_route(session_id: str):
 
     try:
         result = session.append_bars(bars_in, realtime_ticks=int(validated.get("realtime_ticks") or 1))
-    except Exception as exc:  # noqa: BLE001 — a bad append must not 500
+    except Exception as exc:  # a bad append must not 500
         logger.warning("session append failed: %s", exc)
         return jsonify(
             {
@@ -1828,7 +1828,7 @@ def compile_prewarm():
 
             result = prewarm_scripts(sources or None, force_builtins=force)
             _HOST_COMPILE_PREWARMED = True
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning("prewarm error: %s", exc)
             _dbg("POST /compile/prewarm failed: %s", exc)
             return jsonify(
@@ -1917,7 +1917,7 @@ if sock is not None:
                 break
             try:
                 msg = json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode("utf-8"))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 ws.send(
                     json.dumps(
                         {
@@ -2113,7 +2113,7 @@ def _run_pine_script_batch_inner():
             data_source=data_source,
             source_options=data_options if isinstance(data_options, dict) else {},
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("batch data source: %s", e)
         return jsonify(
             {
@@ -2139,7 +2139,7 @@ def _run_pine_script_batch_inner():
                 libraries=libraries or None,
                 **timeout_kw,
             )
-        except Exception as e:  # noqa: BLE001 — per-script isolation
+        except Exception as e:  # per-script isolation
             logger.warning("batch script error: %s", e)
             results.append(
                 {
@@ -2193,7 +2193,7 @@ def _run_pine_script_batch_inner():
             )
             if alert_fwd is not None:
                 item["alert_forward"] = alert_fwd
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.warning("batch alert forward: %s", e)
             item["alert_forward_error"] = "Alert forwarding failed"
         results.append(item)
@@ -2315,7 +2315,7 @@ try:
     from backend.runner.scheduler import maybe_start_background
 
     maybe_start_background()
-except Exception:  # noqa: BLE001 — boot must not fail if runner misconfigured
+except Exception:  # boot must not fail if runner misconfigured
     logger.exception("pyne runner scheduler failed to start")
 
 
@@ -2326,7 +2326,7 @@ try:
 
     _LOGGING_POLICY = _configure_logging()
     configure_logging = _configure_logging
-except Exception:  # noqa: BLE001 — logging setup must never block boot
+except Exception:  # logging setup must never block boot
     _LOGGING_POLICY = {"enabled": False, "error": "configure_logging failed"}
     logger.warning("logging setup failed; using defaults", exc_info=True)
 

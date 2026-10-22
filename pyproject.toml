@@ -243,6 +243,48 @@ ignore = [
   "ISC001",
   "S311",
   "ARG002",
+  # --- Domain-specific families kept off project-wide -------------------------
+  # Long lines are generated Pine→Python source strings / data tables that the
+  # formatter cannot split.
+  "E501",
+  # Pine OHLC shorthand (`l` for low, `O`/`I` for matrices) is deliberate.
+  "E741",
+  # Numeric thresholds, Pine style constants, and matrix indices.
+  "PLR2004",
+  # NaN detection is written as the `x != x` idiom throughout the evaluator.
+  "PLR0124",
+  # Evaluator/compiler dispatch tables and code generators are intentionally
+  # large; splitting them hurts readability more than it helps.
+  "C901",
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0915",
+  # Optional deps (numpy/numba/ccxt/pygls) are imported lazily on purpose.
+  "PLC0415",
+  # Imports follow sys.path / optional-dependency bootstrapping in entrypoints.
+  "E402",
+  # Pine-facing API names (plotshape, ta_*, …) intentionally mirror TradingView.
+  "N802",
+  # Math-style local variable names (N, M, X) mirror the formulas.
+  "N806",
+  # Domain exception names (BreakLoop, TooManyRuns) predate the rule.
+  "N818",
+  # Pine builtin argument names (open, id, type, range) must match the language.
+  "A002",
+  # Boolean flags are positional throughout the evaluator/host API surface.
+  "FBT001",
+  "FBT002",
+  "FBT003",
+  # Swallowing errors in feed/recorder loops is deliberate best-effort policy.
+  "S110",
+  # Exception message literals are part of the public error contract.
+  "EM101",
+  "EM102",
+  # Module-level registries/counters are the existing architecture.
+  "PLW0603",
+  # Callbacks/protocol hooks keep stable signatures even when unused.
+  "ARG001",
 ]
 
 [tool.ruff.lint.isort]
@@ -253,7 +295,7 @@ lines-after-imports = 2
 required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*" = ["ARG001", "C901", "F841", "PLR0912", "PLR2004", "S101", "T201", "TID252", "PLC0415"]
+"tests/**/*" = ["ARG001", "ARG005", "C901", "F841", "PLR0912", "PLR2004", "S101", "T201", "TID252", "PLC0415"]
 "src/pynescript/__main__.py" = ["ARG001", "EM101", "PLR0913", "B904", "PLC0415"]
 "src/pynescript/mcp/**" = ["PLC0415", "PLR0913", "PLR0917", "FBT001", "FBT002", "C901", "PLR0911", "PLR2004", "S110"]
 "src/pynescript/util/runner_cli.py" = ["FBT001", "PLR0913", "PLR0917", "EM101", "EM102", "C901", "S310"]
@@ -261,6 +303,8 @@ required-imports = ["from __future__ import annotations"]
 "src/pynescript/util/data.py" = ["DTZ005", "B904", "PLC0415"]
 "src/pynescript/ast/helper.py" = ["C901", "PLC0415", "PLR1704"]
 "src/pynescript/ast/type_system.py" = ["FBT001", "FBT002"]
+# ANTLR base classes keep the upstream `tokenText`/`recognizer` argument names.
+"src/pynescript/ast/grammar/antlr4/resource/*" = ["N803"]
 # Magic numbers intentional for Pine drawing style constants, array indices etc.
 "src/pynescript/ast/evaluator/builtins/drawing.py" = ["PLR2004"]
 "src/pynescript/ast/evaluator/builtins/arrays.py" = ["PLR2004"]

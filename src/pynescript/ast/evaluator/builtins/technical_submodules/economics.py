@@ -287,7 +287,7 @@ class EconomicsIndicators(TechnicalHelpers):
         close = self._expect_list(args[0], msg)
         sma = self._expect_list(args[1], msg)
         stdev = self._expect_list(args[2], msg)
-        period = self._expect_int(args[3], msg)
+        self._expect_int(args[3], msg)
 
         if not close or not sma or not stdev:
             return 50.0
@@ -471,7 +471,7 @@ class EconomicsIndicators(TechnicalHelpers):
 
         sent = self._expect_number(args[0], msg)
         vol = self._expect_number(args[1], msg)
-        time = self._expect_int(args[2], msg)
+        self._expect_int(args[2], msg)
 
         signal = "neutral"
         strength = 0.0
@@ -601,7 +601,7 @@ class EconomicsIndicators(TechnicalHelpers):
         vol = self._expect_list(args[0], msg)
         vola = self._expect_list(args[1], msg)
         spread = self._expect_list(args[2], msg)
-        period = self._expect_int(args[3], msg)
+        self._expect_int(args[3], msg)
 
         if not vol or not vola or not spread:
             return 50.0

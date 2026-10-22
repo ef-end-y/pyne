@@ -143,14 +143,14 @@ def _norm_leverage(value: Any, default: float = 1.0) -> float:
     """Normalize ``strategy(..., leverage=...)`` to a positive multiplier ≥ 1.
 
     Simpler futures UI alternative to reference Pine ``margin_long`` / ``margin_short``
-    percentages: ``leverage=10`` ≈ 10× buying power and margin = notional / 10.
-    Values in (0, 1) are treated as fractions of 1× and clamped up to 1.
+    percentages: ``leverage=10`` ≈ 10x buying power and margin = notional / 10.
+    Values in (0, 1) are treated as fractions of 1x and clamped up to 1.
     """
     lev = _soft_float_decl(value, default=default)
     if lev <= 0:
         return default
     if lev < 1.0:
-        # Accidental "0.1 for 10%" style → treat as 1× (full margin)
+        # Accidental "0.1 for 10%" style → treat as 1x (full margin)
         return 1.0
     return lev
 
@@ -292,7 +292,7 @@ class StrategyState:
         # avg_price_model: stock | futures | inverse (pynescript extension)
         # stock = multi-leg reweight on partial close; futures/inverse = sticky AEP
         self.avg_price_model: str = "stock"
-        # Leverage multiplier for futures-style margin / buying power (default 1×).
+        # Leverage multiplier for futures-style margin / buying power (default 1x).
         # Prefer this over margin_long/short percentages for simple perp UIs.
         self.leverage: float = 1.0
         # reference-style margin % of position (100 = no leverage). Derived from leverage
@@ -591,10 +591,8 @@ class StrategyState:
 
     def _track_equity_curve(self, equity: float) -> None:
         """Update peak/trough and max drawdown / runup from an equity sample."""
-        if equity > self._equity_peak:
-            self._equity_peak = equity
-        if equity < self._equity_trough:
-            self._equity_trough = equity
+        self._equity_peak = max(self._equity_peak, equity)
+        self._equity_trough = min(self._equity_trough, equity)
         # Drawdown: drop from peak
         dd = self._equity_peak - equity
         if dd > self._max_drawdown:
@@ -658,8 +656,7 @@ class StrategyState:
     def note_position_size(self) -> None:
         """Update max contracts held after a fill."""
         size = float(self.position_size)
-        if size > self.max_contracts_held_all:
-            self.max_contracts_held_all = size
+        self.max_contracts_held_all = max(self.max_contracts_held_all, size)
         if self.position_direction == "long" and size > self.max_contracts_held_long:
             self.max_contracts_held_long = size
         if self.position_direction == "short" and size > self.max_contracts_held_short:
@@ -958,7 +955,7 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         - ``percent_of_equity``: margin = equity * (pct/100); qty = margin * leverage / price
         - ``cash``: margin = cash amount; qty = margin * leverage / price
 
-        Leverage defaults to 1× (no effect). Futures UIs set ``leverage=N`` so
+        Leverage defaults to 1x (no effect). Futures UIs set ``leverage=N`` so
         percent/cash sizing uses buying power instead of 1:1 cash notional.
         """
         st = self._strategy_state
@@ -995,7 +992,7 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         return float(self._strategy_state.mintick or 0.01)
 
     def _apply_slippage(self, price: float, action: str) -> float:
-        """Shift fill price by strategy slippage (ticks × mintick)."""
+        """Shift fill price by strategy slippage (ticks x mintick)."""
         ticks = int(self._strategy_state.slippage_ticks or 0)
         if ticks <= 0:
             return float(price)
@@ -1487,13 +1484,13 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
     ) -> tuple[float | None, float | None]:
         """Parse trail_price / trail_offset / trail_points → (activation, offset_price).
 
-        Distances are in **ticks** (× :meth:`_mintick`) per Pine. Prefer
+        Distances are in **ticks** (x :meth:`_mintick`) per Pine. Prefer
         ``trail_points`` when it is a positive tick distance (TV: points wins
         over offset when both are set). ``na`` / ``≤0`` is ignored — not
         coerced to 0 — so a valid ``trail_offset`` can still apply.
         Returns ``(None, None)`` when no positive trail distance is configured.
         """
-        # Pine: … stop, trail_price, trail_points, trail_offset (indices 8–10 full form)
+        # Pine: … stop, trail_price, trail_points, trail_offset (indices 8-10 full form)
         trail_price = self._coerce_optional_price(kw.get("trail_price", args[8] if len(args) > 8 else None))
         trail_points = self._coerce_optional_price(kw.get("trail_points", args[9] if len(args) > 9 else None))
         trail_offset = self._coerce_optional_price(kw.get("trail_offset", args[10] if len(args) > 10 else None))
@@ -1592,7 +1589,7 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
         * ``qty_percent`` (kwargs or Pine positional) sizes the exit as a
           percent of the open target (whole position or ``from_entry`` size);
           wins over absolute ``qty`` when both are set.
-        * Trail: ``trail_points`` / ``trail_offset`` (ticks × mintick) with
+        * Trail: ``trail_points`` / ``trail_offset`` (ticks x mintick) with
           optional ``trail_price`` activation. Pending stop ratchets with
           favorable extremes after arming.
         * When ``from_entry`` is set, only that entry id's open qty is reduced;
@@ -1653,7 +1650,7 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
             )
             return
 
-        # Prefer kwargs. Full Pine positional: profit/limit/loss/stop at 4–7.
+        # Prefer kwargs. Full Pine positional: profit/limit/loss/stop at 4-7.
         # Simplified legacy (still supported): id, from_entry, qty, limit, stop.
         limit_raw = kw.get("limit")
         stop_raw = kw.get("stop")
@@ -2355,37 +2352,34 @@ class StrategyBuiltinsMixin(BuiltinDispatchMixin):
                             limit=order.limit_price,
                             stop=order.stop_price,
                         )
-            else:
-                if self._risk_allows_entry("long", fill_price):
-                    self._open_position_qty(
-                        "long", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission
-                    )
-        else:  # sell / short
-            if self._strategy_state.position_direction == "long":
-                max_cover = (
-                    self._entry_open_size(order_from_entry) if order_from_entry else self._strategy_state.position_size
+            elif self._risk_allows_entry("long", fill_price):
+                self._open_position_qty(
+                    "long", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission
                 )
-                cover = min(fill_qty, max_cover)
-                self._close_position(fill_price, cover, bar_time, from_entry=order_from_entry)
-                leftover = fill_qty - cover
-                if leftover > 1e-12:
-                    if self._risk_allows_entry("short", fill_price):
-                        self._open_position_qty(
-                            "short", leftover, fill_price, order.order_id, bar_index, bar_time, commission
-                        )
-                    else:
-                        self._emit_rejected_order(
-                            order_id=order.order_id,
-                            direction="short",
-                            reason="risk_blocked",
-                            limit=order.limit_price,
-                            stop=order.stop_price,
-                        )
-            else:
+        elif self._strategy_state.position_direction == "long":
+            max_cover = (
+                self._entry_open_size(order_from_entry) if order_from_entry else self._strategy_state.position_size
+            )
+            cover = min(fill_qty, max_cover)
+            self._close_position(fill_price, cover, bar_time, from_entry=order_from_entry)
+            leftover = fill_qty - cover
+            if leftover > 1e-12:
                 if self._risk_allows_entry("short", fill_price):
                     self._open_position_qty(
-                        "short", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission
+                        "short", leftover, fill_price, order.order_id, bar_index, bar_time, commission
                     )
+                else:
+                    self._emit_rejected_order(
+                        order_id=order.order_id,
+                        direction="short",
+                        reason="risk_blocked",
+                        limit=order.limit_price,
+                        stop=order.stop_price,
+                    )
+        elif self._risk_allows_entry("short", fill_price):
+            self._open_position_qty(
+                "short", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission
+            )
 
         self._record_strategy_event(
             StrategyEvent(

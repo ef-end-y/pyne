@@ -23,21 +23,22 @@ from __future__ import annotations
 import json
 import os
 import sys
+
 from pathlib import Path
+
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import pytest  # noqa: E402
+import pytest
 
-from backend.api.live_ws import (  # noqa: E402
-    LiveConnection,
-    LiveRegistry,
-    make_close,
-    make_delta,
-    make_status,
-    map_live_frame,
-)
-from pynescript.runtime import axb1  # noqa: E402
+from backend.api.live_ws import LiveConnection
+from backend.api.live_ws import LiveRegistry
+from backend.api.live_ws import make_close
+from backend.api.live_ws import make_delta
+from backend.api.live_ws import make_status
+from backend.api.live_ws import map_live_frame
+from pynescript.runtime import axb1
+
 
 VECTORS = json.loads((Path(__file__).parent / "data" / "axb1-vectors.json").read_text(encoding="utf-8"))
 

@@ -38,5 +38,6 @@ import sys
 
 from pynescript.runtime import host as _host
 
+
 # Same module object as pynescript.runtime.host (caches, CustomEvaluator, …).
 sys.modules[__name__] = _host

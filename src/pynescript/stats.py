@@ -160,7 +160,7 @@ def _swallow() -> Iterator[None]:
     """
     try:
         yield
-    except Exception:  # noqa: S110 — see docstring: observability must never raise
+    except Exception:  # see docstring: observability must never raise
         pass
 
 

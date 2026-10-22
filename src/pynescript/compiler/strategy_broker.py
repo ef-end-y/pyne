@@ -100,7 +100,7 @@ def _opt_float(value: Any) -> float | None:
 def _norm_dir(direction: Any) -> str | None:
     """Normalize to ``long``/``short``; ``None`` if unrecognised (reject, do not fill)."""
     # Compile path almost always passes "long" / "short" already.
-    if direction == "long" or direction == "short":
+    if direction in {"long", "short"}:
         return direction  # type: ignore[return-value]
     if direction is None:
         return None
@@ -858,8 +858,7 @@ class CompileStrategyBroker:
         (same as interpret ``StrategyState.note_position_size``).
         """
         size = abs(float(self.position_size))
-        if size > self.max_contracts_held_all:
-            self.max_contracts_held_all = size
+        self.max_contracts_held_all = max(self.max_contracts_held_all, size)
         if self.position_size > 0 and size > self.max_contracts_held_long:
             self.max_contracts_held_long = size
         elif self.position_size < 0 and size > self.max_contracts_held_short:
@@ -909,7 +908,7 @@ class CompileStrategyBroker:
             leg (``open_entry_count == 1``) with VWAP avg (F2).
             Pending same-id replacement is the ``pending_orders[id]`` upsert.
         """
-        d = direction if direction == "long" or direction == "short" else _norm_dir(direction)
+        d = direction if direction in {"long", "short"} else _norm_dir(direction)
         if d is None:
             return False
         q = abs(float(qty))
@@ -1054,11 +1053,11 @@ class CompileStrategyBroker:
         q, p = abs(qty), abs(price)
         ct = self.commission_type
         # Avoid .lower() when already a plain token
-        if ct == "percent" or ct == "strategy.commission.percent":
+        if ct in {"percent", "strategy.commission.percent"}:
             return q * p * (val / 100.0)
-        if ct == "cash_per_order" or ct == "strategy.commission.cash_per_order":
+        if ct in {"cash_per_order", "strategy.commission.cash_per_order"}:
             return val
-        if ct == "cash_per_contract" or ct == "strategy.commission.cash_per_contract":
+        if ct in {"cash_per_contract", "strategy.commission.cash_per_contract"}:
             return val * q
         ct_l = ct.lower()
         if ct_l in {"percent", "strategy.commission.percent"}:
@@ -1112,7 +1111,6 @@ class CompileStrategyBroker:
             return None
         hi = float(self._high)
         lo = float(self._low)
-        op = float(self._open)
         # Prefer OHLC path (same as interpret pending fills)
         if is_long:
             # Close long: sell limit (TP) when high >= lim; sell stop when low <= stop
@@ -1122,9 +1120,9 @@ class CompileStrategyBroker:
                 # Both touched: prefer stop (worse for long) — conservative
                 return float(stop_p)  # type: ignore[arg-type]
             if hit_lim:
-                return float(limit_p) if op > limit_p else float(limit_p)  # type: ignore[arg-type]
+                return float(limit_p)  # type: ignore[arg-type]
             if hit_stop:
-                return float(stop_p) if op < stop_p else float(stop_p)  # type: ignore[arg-type]
+                return float(stop_p)  # type: ignore[arg-type]
             return None
         if is_short:
             hit_lim = limit_p is not None and lo <= limit_p
@@ -1485,7 +1483,7 @@ class CompileStrategyBroker:
     ) -> tuple[float | None, float | None]:
         """Parse trail_* kwargs → (activation_price, offset_price units).
 
-        Distances are in **ticks** (× :attr:`mintick`) per Pine. Prefer
+        Distances are in **ticks** (x :attr:`mintick`) per Pine. Prefer
         ``trail_points`` when it is a positive tick distance (TV: points wins
         over offset when both are set). ``na`` / ``≤0`` is ignored — not
         coerced to 0 — so a valid ``trail_offset`` can still apply.
@@ -1596,7 +1594,7 @@ class CompileStrategyBroker:
         capped to the open target (whole lot or ``from_entry`` size); wins over
         absolute ``qty``.
 
-        Trail (``trail_offset`` / ``trail_points`` ticks × mintick, optional
+        Trail (``trail_offset`` / ``trail_points`` ticks x mintick, optional
         ``trail_price`` activation) places a pending stop that ratchets with
         bar high/low in :meth:`process_pending_orders` (interpret-aligned
         minimal trail).
@@ -2230,10 +2228,8 @@ class CompileStrategyBroker:
         eq = self.equity
         if eq != eq:  # NaN
             return
-        if eq > self._equity_peak:
-            self._equity_peak = eq
-        if eq < self._equity_trough:
-            self._equity_trough = eq
+        self._equity_peak = max(self._equity_peak, eq)
+        self._equity_trough = min(self._equity_trough, eq)
         dd = self._equity_peak - eq
         if dd > self._max_drawdown:
             self._max_drawdown = dd

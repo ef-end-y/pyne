@@ -37,6 +37,7 @@ from lsprotocol import types as lsp
 from pynescript.ast.linter import LintWarning
 from pynescript.langserver.features.formatting import handle_formatting
 
+
 # Same pattern as ``PineLinter._check_version`` (flexible whitespace).
 _VERSION_PRAGMA_RE = re.compile(r"//\s*@version\s*=\s*\d+")
 
@@ -53,7 +54,7 @@ def lint_warnings_to_diagnostics(warnings: list[LintWarning], source: str) -> li
         warning's severity string.
     """
     diagnostics = []
-    # Split once: per-warning whole-document splits are O(warnings × doc-size).
+    # Split once: per-warning whole-document splits are O(warnings x doc-size).
     lines = source.split("\n") if source else []
 
     for warning in warnings:

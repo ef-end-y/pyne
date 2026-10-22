@@ -21,7 +21,7 @@
 
 Audit 2026-08-10 Wave A: free compute (``POST /run``, ``/run/batch``,
 ``/compile/prewarm``, ``WS /ws/run``) had no bar caps, IP rate limits, or
-concurrency gates beyond the 5 MB body limit. When enabled, this module
+concurrency gates beyond the 5 MB body limit. When enabled, this module
 enforces:
 
 * max OHLCV bar count
@@ -40,6 +40,7 @@ from __future__ import annotations
 import os
 import threading
 import time
+
 from collections import defaultdict
 from collections import deque
 from typing import Any

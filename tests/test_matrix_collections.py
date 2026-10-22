@@ -112,7 +112,7 @@ class TestMatrixRowOperations:
         assert m.get(2, 0) == 2
 
     def test_add_row_empty_matrix_adopts_cols(self) -> None:
-        """0×0 matrix.add_row adopts column count from payload."""
+        """0x0 matrix.add_row adopts column count from payload."""
         m: Matrix[Any] = Matrix(0, 0)
         m.add_row([1, 2, 3], index=0)
         assert m.rows() == 1

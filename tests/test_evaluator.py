@@ -1002,7 +1002,7 @@ def test_evaluator_ta_sma(expression, expected):
     ("expression", "expected"),
     [
         (
-            # SMA seed (period=3): na, na, mean(1,2,3)=2, then α=0.5 recursion
+            # SMA seed (period=3): na, na, mean(1,2,3)=2, then a=0.5 recursion
             "ta.ema([1, 2, 3, 4, 5], 3)",
             [None, None, 2.0, 3.0, 4.0],
         ),
@@ -2338,7 +2338,8 @@ def test_timeframe_stubs():
     """Basic TDD test for timeframe stubs (plan §5).
     They should not raise and return expected types (bool/str).
     """
-    from pynescript.ast.evaluator.builtins.timeframe import timeframe_change, timeframe_from_seconds
+    from pynescript.ast.evaluator.builtins.timeframe import timeframe_change
+    from pynescript.ast.evaluator.builtins.timeframe import timeframe_from_seconds
 
     assert timeframe_change("D") is False
     assert isinstance(timeframe_from_seconds(86400), str)
@@ -2349,11 +2350,11 @@ def test_plotting_stubs_do_not_error():
     Using plot* functions in a script should not raise; they are no-ops
     for non-UI evaluators but must accept the call for compatibility.
     """
-    source = '''//@version=6
+    source = """//@version=6
 indicator("PlotTest")
 plot(close, title="close", color=color.blue)
 plotshape(close > open, title="shape", style=shape.triangleup)
-'''
+"""
     ast = helper.parse(source, mode="exec")
     evaluator = NodeLiteralEvaluator()
     # Should not raise
@@ -2565,8 +2566,8 @@ def test_stale_unversioned_bound_call_site_is_ignored():
 def test_eval_arg_plan_reuses_empty_kwargs_and_scratch():
     """Positional TA / plot sites must not allocate a kwargs dict per bar."""
     from pynescript.ast.evaluator.expressions import _EMPTY_KW
-    from pynescript.ast.evaluator.expressions import _classify_arg_plan
     from pynescript.ast.evaluator.expressions import _PS_NC
+    from pynescript.ast.evaluator.expressions import _classify_arg_plan
 
     ev = NodeLiteralEvaluator({"close": 1.0})
     tree = helper.parse("ta.sma(close, 14)", mode="eval")

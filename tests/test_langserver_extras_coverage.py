@@ -929,7 +929,7 @@ class TestNodeTransformer:
         from pynescript.ast.transformer import NodeTransformer
 
         class Replacer(NodeTransformer):
-            def visit_Constant(self, node: ast.Constant) -> Any:  # noqa: N802
+            def visit_Constant(self, node: ast.Constant) -> Any:
                 if node.value == 1:
                     return ast.Constant(value=99)
                 return node
@@ -944,7 +944,7 @@ class TestNodeTransformer:
         from pynescript.ast.transformer import NodeTransformer
 
         class Deleter(NodeTransformer):
-            def visit_Assign(self, node: ast.Assign) -> Any:  # noqa: N802
+            def visit_Assign(self, node: ast.Assign) -> Any:
                 return None
 
         script = ast.Script(
@@ -961,7 +961,7 @@ class TestNodeTransformer:
         from pynescript.ast.transformer import NodeTransformer
 
         class Splicer(NodeTransformer):
-            def visit_Constant(self, node: ast.Constant) -> Any:  # noqa: N802
+            def visit_Constant(self, node: ast.Constant) -> Any:
                 if node.value == 1:
                     return [ast.Constant(value=1), ast.Constant(value=2)]
                 return node
@@ -977,7 +977,7 @@ class TestNodeTransformer:
         from pynescript.ast.transformer import NodeTransformer
 
         class Renamer(NodeTransformer):
-            def visit_Name(self, node: ast.Name) -> Any:  # noqa: N802
+            def visit_Name(self, node: ast.Name) -> Any:
                 if isinstance(node.id, str):
                     return ast.Name(id=node.id.upper())
                 return node

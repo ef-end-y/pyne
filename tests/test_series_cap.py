@@ -31,19 +31,17 @@ import math
 import pytest
 
 from backend.runtime import Runtime
-from backend.series import (
-    DEFAULT_PINESERIES_HISTORY,
-    DEFAULT_SERIES_MAX,
-    SERIES_CAP_SLACK,
-    PineSeries,
-    estimate_series_bytes,
-    parse_max_bars_back_from_source,
-    pineseries_history_length,
-    resolve_series_cap,
-    series_cap_enabled,
-    series_cap_limit,
-    trim_series_lists,
-)
+from backend.series import DEFAULT_PINESERIES_HISTORY
+from backend.series import DEFAULT_SERIES_MAX
+from backend.series import SERIES_CAP_SLACK
+from backend.series import PineSeries
+from backend.series import estimate_series_bytes
+from backend.series import parse_max_bars_back_from_source
+from backend.series import pineseries_history_length
+from backend.series import resolve_series_cap
+from backend.series import series_cap_enabled
+from backend.series import series_cap_limit
+from backend.series import trim_series_lists
 
 
 def _clear_parse_cache() -> None:
@@ -56,7 +54,7 @@ def _clear_parse_cache() -> None:
         from pynescript.ast.helper import clear_parse_cache
 
         clear_parse_cache()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 

@@ -22,11 +22,13 @@
 from __future__ import annotations
 
 import math
+
 from typing import Any
 
 import pytest
 
 from pynescript.ast.evaluator import NodeLiteralEvaluator
+
 
 try:
     from pynescript.ast.helper import clear_parse_cache as _clear_parse_cache
@@ -3033,7 +3035,7 @@ def test_incremental_wma_strict_na_window() -> None:
         )
         # Explicit: bar with na still inside the window is None
         inc = _bar_walk_inc_wma(src, period)
-        for i, v in enumerate(src):
+        for i, _v in enumerate(src):
             if i + 1 < period:
                 continue
             window = src[i + 1 - period : i + 1]
@@ -4644,9 +4646,7 @@ def _bar_walk_inc_rci(src: list[Any], length: int) -> list[float | None]:
 
 def _bar_walk_full_vol_rci(src: list[Any], length: int) -> list[float | None]:
     """Full-recompute via the volatility mixin copy (not the MRO winner)."""
-    from pynescript.ast.evaluator.builtins.technical_submodules.volatility import (
-        VolatilityIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.volatility import VolatilityIndicators
 
     ev = _FullTA()
     return [
@@ -4754,9 +4754,7 @@ def test_incremental_rci_na_in_window() -> None:
 
 def test_incremental_rci_builtin_uses_inc_slot() -> None:
     """Bar-mode builtins (MRO + volatility mixin copy) consume the inc slot."""
-    from pynescript.ast.evaluator.builtins.technical_submodules.volatility import (
-        VolatilityIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.volatility import VolatilityIndicators
 
     src = _series(30)
     ev = _IncTA()
@@ -4845,7 +4843,7 @@ def test_incremental_bb_pct_constant_series() -> None:
 def test_incremental_bb_pct_clips_to_unit_interval() -> None:
     """%B is clipped to [0, 100], matching the full path."""
     src = _series(40)
-    src = src + [src[-1] + 80.0, src[-1] - 80.0]
+    src = [*src, src[-1] + 80.0, src[-1] - 80.0]
     got = _bar_walk_inc_bb_pct(src, 10, 2.0)
     _assert_series_close(got, _bar_walk_full_bb_pct(src, 10, 2.0))
     for v in got:
@@ -5048,9 +5046,7 @@ def _bar_walk_full_econ_cumulative_delta(
     close: list[Any], vol: list[Any], period: int
 ) -> list[float | None]:
     """Full-recompute via the economics mixin copy (not the MRO winner)."""
-    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
-        EconomicsIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import EconomicsIndicators
 
     ev = _FullTA()
     return [
@@ -5065,9 +5061,7 @@ def _bar_walk_full_adv_cumulative_delta(
     close: list[Any], vol: list[Any], period: int
 ) -> list[float | None]:
     """Full-recompute via the advanced mixin copy (MRO winner)."""
-    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
-        AdvancedIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import AdvancedIndicators
 
     ev = _FullTA()
     return [
@@ -5101,9 +5095,7 @@ def _bar_walk_inc_volume_momentum(
 def _bar_walk_full_econ_volume_momentum(
     vol: list[Any], period: int
 ) -> list[float | None]:
-    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
-        EconomicsIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import EconomicsIndicators
 
     ev = _FullTA()
     return [
@@ -5115,9 +5107,7 @@ def _bar_walk_full_econ_volume_momentum(
 def _bar_walk_full_adv_volume_momentum(
     vol: list[Any], period: int
 ) -> list[float | None]:
-    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
-        AdvancedIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import AdvancedIndicators
 
     ev = _FullTA()
     return [
@@ -5183,12 +5173,8 @@ def test_incremental_cumulative_delta_na_treated_as_zero() -> None:
 
 def test_incremental_cumulative_delta_builtin_uses_inc_slot() -> None:
     """Bar-mode builtins (MRO + economics + advanced copies) consume the inc slot."""
-    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
-        AdvancedIndicators,
-    )
-    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
-        EconomicsIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import AdvancedIndicators
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import EconomicsIndicators
 
     src = _series(30)
     vol = _vols(30)
@@ -5278,12 +5264,8 @@ def test_incremental_volume_momentum_clips_to_range() -> None:
 
 def test_incremental_volume_momentum_builtin_uses_inc_slot() -> None:
     """Bar-mode builtins (MRO + economics + advanced copies) consume the inc slot."""
-    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import (
-        AdvancedIndicators,
-    )
-    from pynescript.ast.evaluator.builtins.technical_submodules.economics import (
-        EconomicsIndicators,
-    )
+    from pynescript.ast.evaluator.builtins.technical_submodules.advanced import AdvancedIndicators
+    from pynescript.ast.evaluator.builtins.technical_submodules.economics import EconomicsIndicators
 
     vol = _vols(30)
     ev = _IncTA()

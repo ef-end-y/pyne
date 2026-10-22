@@ -686,16 +686,16 @@ class TestArrayEdgeCorrectness:
 
     def test_array_insert_negative_oob_errors(self) -> None:
         a = [1, 2]
-        with pytest.raises(ValueError, match="out of bounds|index"):
+        with pytest.raises(ValueError, match=r"out of bounds|index"):
             self._call("array.insert", [a, -10, 0])
 
     def test_array_insert_bad_index_type(self) -> None:
         a = [1, 2]
-        with pytest.raises(ValueError, match="index must be int|got"):
+        with pytest.raises(ValueError, match=r"index must be int|got"):
             self._call("array.insert", [a, "x", 0])
 
     def test_array_push_type_mismatch_message(self) -> None:
-        with pytest.raises(ValueError, match="expected array|got"):
+        with pytest.raises(ValueError, match=r"expected array|got"):
             self._call("array.push", [42, 1])
 
     def test_array_push_zero_arg_soft_noop(self) -> None:
@@ -719,7 +719,7 @@ class TestArrayEdgeCorrectness:
         assert a == [1]
 
     def test_array_abs_non_numeric_message(self) -> None:
-        with pytest.raises(ValueError, match="numeric|got"):
+        with pytest.raises(ValueError, match=r"numeric|got"):
             self._call("array.abs", [["a", "b"]])
 
     def test_array_pop_empty_soft_na(self) -> None:
@@ -730,7 +730,7 @@ class TestArrayEdgeCorrectness:
             self._call("array.first", [[]])
 
     def test_map_type_mismatch_message(self) -> None:
-        with pytest.raises(ValueError, match="expected map|got"):
+        with pytest.raises(ValueError, match=r"expected map|got"):
             self._call("map.put", [42, "k", 1])
 
     def test_map_accepts_plain_dict_handle(self) -> None:
@@ -742,7 +742,7 @@ class TestArrayEdgeCorrectness:
         assert self._call("map.size", [d]) == 1
 
     def test_matrix_type_mismatch_message(self) -> None:
-        with pytest.raises(ValueError, match="expected matrix|got"):
+        with pytest.raises(ValueError, match=r"expected matrix|got"):
             self._call("matrix.get", [42, 0, 0])
 
 

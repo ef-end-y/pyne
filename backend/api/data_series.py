@@ -121,7 +121,7 @@ def _filter_walk(candles: list[dict[str, float | int]], since_ms: int) -> list[d
     return [c for c in candles if int(c["time"]) * 1000 >= since_ms]
 
 
-def _cached_walk(  # noqa: PLR0913 — provider, key, window, budget + owner
+def _cached_walk(  # provider, key, window, budget + owner
     provider: Any,
     key: SeriesKey,
     *,
@@ -227,7 +227,7 @@ def _provider_cache_key(exchange: str, credentials: dict[str, str] | None, marke
     """Cache key that separates credential sets without storing secrets."""
     try:
         fp = hashlib.sha256(json.dumps(credentials or {}, sort_keys=True, default=str).encode()).hexdigest()[:12]
-    except Exception:  # noqa: BLE001 — unserializable creds still need a key
+    except Exception:  # unserializable creds still need a key
         fp = "nofp"
     mkt = str(market or "spot").strip().lower() or "spot"
     return f"{str(exchange or '').strip().lower()}|{mkt}|{fp}"
