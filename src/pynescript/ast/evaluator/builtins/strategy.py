@@ -35,6 +35,7 @@ owns an isolated :class:`StrategyState` (not class-level shared state).
 from __future__ import annotations
 
 import math
+import os
 
 from dataclasses import dataclass
 from dataclasses import replace
@@ -47,6 +48,20 @@ from pynescript.strategy_risk_core import StrategyRiskCore
 from .base import BuiltinDispatchMixin
 from .base import BuiltinHandler
 from .timeframe import calendar_day_bucket
+
+
+def _contracts_risk_mode() -> bool:
+    """True when ``PYNE_STRATEGY_RISK_CONTRACTS`` opts into absolute contracts.
+
+    Default (unset) keeps the pinned %-of-equity ``max_position_size``
+    semantics on both hosts; opt-in matches reference Pine (contracts).
+    """
+    return os.environ.get("PYNE_STRATEGY_RISK_CONTRACTS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _soft_int_decl(value: Any, default: int = 0) -> int:
@@ -308,6 +323,9 @@ class StrategyState(StrategyRiskCore):
         self.max_contracts_held_short: float = 0.0
         # Risk: max position size as % of equity (None = unlimited)
         self.max_position_size_percent: float | None = None
+        # Opt-in absolute contracts cap (PYNE_STRATEGY_RISK_CONTRACTS=1);
+        # mutually exclusive with the percent cap above.
+        self.max_position_size_contracts: float | None = None
         self.max_drawdown_risk: float | None = None  # absolute equity drawdown cap
         self.max_drawdown_risk_percent: float | None = None  # optional % of peak
         self.max_cons_loss_days: int | None = None
@@ -1185,6 +1203,10 @@ class StrategyBuiltinsMixin(StrategyBracketCore, BuiltinDispatchMixin):
             max_qty = (equity * (pct / 100.0)) / fill_price
             if qty > max_qty:
                 qty = float(max_qty)
+        # Opt-in absolute contracts cap (reference Pine; see setter)
+        contracts = self._strategy_state.max_position_size_contracts
+        if contracts is not None and contracts > 0 and qty > contracts:
+            qty = float(contracts)
         if qty <= 0 or not math.isfinite(qty):
             self._emit_rejected_order(
                 order_id=entry_id,
@@ -1212,6 +1234,10 @@ class StrategyBuiltinsMixin(StrategyBracketCore, BuiltinDispatchMixin):
                 limit_price,
                 stop_price,
                 str(kw.get("comment", "") or ""),
+                max_fill_per_bar=self._coerce_number(
+                    kw.get("max_fill_per_bar", self._strategy_state.default_max_fill_per_bar),
+                    default=0.0,
+                ),
             )
             self._strategy_state.pending_orders[entry_id] = order
             self._record_strategy_event(
@@ -2820,16 +2846,30 @@ class StrategyBuiltinsMixin(StrategyBracketCore, BuiltinDispatchMixin):
 
     def _handle_strategy_risk_max_position_size(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> None:
         """
-        strategy.risk.max_position_size(percent)
+        strategy.risk.max_position_size(value)
 
-        Set maximum position size as percentage of account equity.
+        Default: maximum position size as percentage of account equity.
         Subsequent entries cap qty so (qty * price) <= equity * percent/100.
+
+        With ``PYNE_STRATEGY_RISK_CONTRACTS=1`` the value is an absolute
+        contracts cap (reference Pine semantics) instead; invalid values
+        are ignored.
         """
         kw = kwargs or {}
-        percent = kw.get("percent", args[0] if len(args) > 0 else None)
-        if percent is None:
+        raw = kw.get("percent", args[0] if len(args) > 0 else None)
+        if raw is None:
             return
-        self._strategy_state.max_position_size_percent = float(percent)
+        if _contracts_risk_mode():
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                return
+            if not math.isfinite(value) or value <= 0:
+                return
+            self._strategy_state.max_position_size_contracts = value
+            self._strategy_state.max_position_size_percent = None
+            return
+        self._strategy_state.max_position_size_percent = float(raw)
 
     def _handle_strategy_risk_max_intraday_filled_orders(
         self, args: list[Any], kwargs: dict[str, Any] | None = None

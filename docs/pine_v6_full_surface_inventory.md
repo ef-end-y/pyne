@@ -130,8 +130,8 @@ flowchart TB
 
 ```mermaid
 pie title Inventory rows by status
-  "implemented" : 701
-  "partial" : 2
+  "implemented" : 702
+  "partial" : 1
   "missing" : 0
 ```
 
@@ -207,7 +207,7 @@ Some absences are intentional product boundaries rather than incomplete ports: t
 | Item | Status | Notes |
 |------|--------|-------|
 | request.* real market data | ⚙️ by design | Mock/synthetic + data_feed hooks |
-| strategy.* full broker sim | 🔄 partial | Open/close/equity depth improved; not full TV tester |
+| strategy.* full broker sim | 🔄 partial | OHLC-path broker; entry/pending parity incl. `max_fill_per_bar`; tick-path/margin by design out of scope |
 | strategy percent / avg series | ✅ improved | Wired as zero-arg series builtins (2026-07); inventory snapshot may lag |
 | Pine Profiler | ⬜ n/a | Editor-only |
 | Live TradingView libraries network | ❌ missing | In-process registry only |
@@ -448,7 +448,7 @@ Strategy order handlers, risk helpers, and performance series (position, equity,
 | `strategy.position_size` | series/var | ✅ implemented | no | dispatch | Signed: +long / -short |
 | `strategy.risk.max_intraday_filled_orders` | function | ✅ implemented | no | dispatch |  |
 | `strategy.risk.max_intraday_loss` | function | ✅ implemented | yes | dispatch |  |
-| `strategy.risk.max_position_size` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `strategy.risk.max_position_size` | function | ✅ implemented | yes | dispatch | %-of-equity default (pinned); absolute contracts via `PYNE_STRATEGY_RISK_CONTRACTS=1` |
 | `strategy.short` | constant | ✅ implemented | no | dispatch |  |
 | `strategy.wintrades` | series/var | ✅ implemented | no | dispatch |  |
 
@@ -1538,7 +1538,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `strategy.position_size` | `strategy` | series/var | ✅ implemented | no | dispatch |
 | `strategy.risk.max_intraday_filled_orders` | `strategy` | function | ✅ implemented | no | dispatch |
 | `strategy.risk.max_intraday_loss` | `strategy` | function | ✅ implemented | yes | dispatch |
-| `strategy.risk.max_position_size` | `strategy` | function | 🔄 partial | yes | dispatch |
+| `strategy.risk.max_position_size` | `strategy` | function | ✅ implemented | yes | dispatch |
 | `strategy.short` | `strategy` | constant | ✅ implemented | no | dispatch |
 | `strategy.wintrades` | `strategy` | series/var | ✅ implemented | no | dispatch |
 | `syminfo.basecurrency` | `syminfo` | series/var | ✅ implemented | no | series_catalog |

@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-23T16:54:36Z
+  at: 2026-10-23T17:02:20Z
 sources:
   - id: tree
     resource: "tests"
@@ -133,6 +133,7 @@ okf_lock: generated
 * `test_set06_udf_volume_shadow.py` — test_corpus_get_counts_arity_and_run, test_corpus_if_var_convert_to_account, test_corpus_request_security_udt, test_request_security_udt_is_object_handle, test_udf_if_var_convert_to_account_is_valid_python, test_udf_local_vol_def_call_arity_match, test_udf_local_vol_reads_chart_volume
 * `test_set06_udt_switch_drawing.py` — test_box_copy_is_dict_not_none, test_chart_point_copy_not_list_none, test_corpus_0018_distance_ratio_library_compiles, test_corpus_13720_pivothigh_udt_length, test_corpus_1626_drawing_copy, test_corpus_5027_enum_udt, test_pivothigh_nan_length_is_nan, test_switch_with_nested_if_assigns_local, test_ta_cum_none_src_does_not_raise, test_udf_returns_udt_field_not_float_dict, test_udt_get_field_helper
 * `test_strategy_events.py` — TestBarIndexInEvents, TestCrossRequestLeakPrevention, TestEventCapture, TestKwargsPassedToBuiltinHandlers, TestPerBarEventReset, TestStrategyEventDataclass, TestStrategyHandlersReadKwargs, TestStrategyLongShortConstants
+* `test_strategy_risk_contracts.py` — test_contracts_mode_caps_absolute_qty, test_contracts_mode_compile_parity, test_contracts_mode_invalid_ignored, test_entry_pending_honors_max_fill_per_bar, test_entry_pending_max_fill_compile_parity, test_percent_mode_compile_pinned, test_percent_mode_default_pinned
 * `test_strategy_risk_day_resume.py` — TestCompileBrokerDayResume, TestInterpretDayResume, test_calendar_id_utc_vs_ny_disagrees_after_utc_midnight, test_fills_cap_uses_ny_calendar_bucket_dual_host, test_intraday_loss_resumes_next_ny_day_dual_host, test_max_drawdown_halt_survives_ny_day_roll_dual_host, test_utc_vs_ny_disagree_on_resume_bar_dual_host
 * `test_strategy_risk_enforcement.py` — test_allow_entry_in_blocks_opposite_side, test_bar_mode_sma_returns_scalar, test_list_mode_sma_returns_series, test_max_drawdown_blocks_further_entries, test_max_position_size_caps_qty
 * `test_strategy_risk_intraday.py` — TestCompileBrokerParity, TestInterpretEnforcement, TestIntradayLossTypeParsing, test_fills_cap_rolls_next_day_dual_host, test_losing_strategy_blocked_dual_host, test_pending_limit_blocked_after_intraday_loss_dual_host, test_strategy_cash_identifier_dual_host

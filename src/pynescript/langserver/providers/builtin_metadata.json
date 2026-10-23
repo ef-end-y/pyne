@@ -6034,7 +6034,7 @@
     "kind": "function",
     "detail": "strategy.risk.max_position_size(...)",
     "brief": "strategy",
-    "documentation": "strategy.risk.max_position_size(percent)\n\nSet maximum position size as percentage of account equity.\nSubsequent entries cap qty so (qty * price) <= equity * percent/100.",
+    "documentation": "strategy.risk.max_position_size(value)\n\nDefault: maximum position size as percentage of account equity.\nSubsequent entries cap qty so (qty * price) <= equity * percent/100.\n\nWith ``PYNE_STRATEGY_RISK_CONTRACTS=1`` the value is an absolute\ncontracts cap (reference Pine semantics) instead; invalid values\nare ignored.",
     "snippet": "strategy.risk.max_position_size(${1:param1}, ${2:param2})",
     "category": "strategy"
   },

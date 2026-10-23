@@ -56,6 +56,7 @@ Hot-path notes
 from __future__ import annotations
 
 import math
+import os
 
 from dataclasses import dataclass
 from dataclasses import replace
@@ -64,6 +65,20 @@ from typing import Any
 from pynescript.ast.evaluator.builtins.timeframe import calendar_day_bucket
 from pynescript.strategy_risk_core import StrategyBracketCore
 from pynescript.strategy_risk_core import StrategyRiskCore
+
+
+def _contracts_risk_mode() -> bool:
+    """True when ``PYNE_STRATEGY_RISK_CONTRACTS`` opts into absolute contracts.
+
+    Mirrors the interpret host: default keeps the pinned %-of-equity
+    ``max_position_size`` semantics; opt-in matches reference Pine.
+    """
+    return os.environ.get("PYNE_STRATEGY_RISK_CONTRACTS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _is_na(value: Any) -> bool:
@@ -361,6 +376,9 @@ class CompileStrategyBroker(StrategyRiskCore, StrategyBracketCore):
         # strategy.risk.* subset (not full TV risk engine; interpret-aligned halt cascade)
         self.allow_entry_in: str = "all"  # all | long | short
         self.max_position_size_percent: float | None = None
+        # Opt-in absolute contracts cap (PYNE_STRATEGY_RISK_CONTRACTS=1);
+        # mutually exclusive with the percent cap above.
+        self.max_position_size_contracts: float | None = None
         self.max_drawdown_risk: float | None = None  # absolute equity drawdown cap
         self.max_drawdown_risk_percent: float | None = None  # % of peak equity
         self.max_cons_loss_days: int | None = None
@@ -1150,7 +1168,11 @@ class CompileStrategyBroker(StrategyRiskCore, StrategyBracketCore):
             self.allow_entry_in = "all"
 
     def risk_max_position_size(self, percent: Any = None, **_kwargs: Any) -> None:
-        """``strategy.risk.max_position_size(percent)`` — cap entry notional vs equity."""
+        """``strategy.risk.max_position_size(value)`` — cap entry notional vs equity.
+
+        With ``PYNE_STRATEGY_RISK_CONTRACTS=1`` the value is an absolute
+        contracts cap (reference Pine semantics) instead.
+        """
         raw = percent if percent is not None else _kwargs.get("percent", _kwargs.get("value"))
         if raw is None or _is_na(raw):
             return
@@ -1159,6 +1181,10 @@ class CompileStrategyBroker(StrategyRiskCore, StrategyBracketCore):
         except (TypeError, ValueError):
             return
         if not math.isfinite(p) or p <= 0:
+            return
+        if _contracts_risk_mode():
+            self.max_position_size_contracts = p
+            self.max_position_size_percent = None
             return
         self.max_position_size_percent = p
 
@@ -1323,7 +1349,10 @@ class CompileStrategyBroker(StrategyRiskCore, StrategyBracketCore):
         return True
 
     def _cap_qty_by_max_position(self, qty: float, fill_price: float) -> float:
-        """Apply ``max_position_size_percent`` of equity at *fill_price*."""
+        """Apply the position-size cap (percent of equity, or contracts opt-in)."""
+        contracts = self.max_position_size_contracts
+        if contracts is not None and contracts > 0:
+            return min(float(qty), float(contracts))
         pct = self.max_position_size_percent
         if pct is None or pct <= 0 or fill_price <= 0 or fill_price != fill_price:
             return qty
@@ -1417,6 +1446,7 @@ class CompileStrategyBroker(StrategyRiskCore, StrategyBracketCore):
                 limit_price=_opt_float(limit),
                 stop_price=_opt_float(stop),
                 comment=comment,
+                max_fill_per_bar=float(_kwargs.get("max_fill_per_bar") or 0.0),
                 is_entry=True,
             )
             self._emit(
