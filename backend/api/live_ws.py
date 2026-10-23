@@ -780,10 +780,13 @@ def serve_live_ws(ws: Any, registry: LiveRegistry | None = None) -> None:
                 break
             continue
         if incoming == "":
-            dead = [k for k, t in inflight.items() if not t.is_alive()]
+            # Snapshot: ensure threads pop themselves from ``inflight`` on exit.
+            dead = [k for k, t in list(inflight.items()) if not t.is_alive()]
             for k in dead:
-                inflight.pop(k, None)
-                inflight_keys.pop(k, None)
+                t = inflight.get(k)
+                if t is not None and not t.is_alive():
+                    inflight.pop(k, None)
+                    inflight_keys.pop(k, None)
             continue
         try:
             msg = json.loads(incoming) if isinstance(incoming, str) else json.loads(incoming.decode("utf-8"))

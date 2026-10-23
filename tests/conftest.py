@@ -25,12 +25,21 @@ Provides optional ``--example-scripts-dir`` and parametrizes
 
 from __future__ import annotations
 
+import os
+
 from pathlib import Path
 
 import pytest
 
 from pytest import Metafunc
 from pytest import Parser
+
+
+# ``backend.app`` loads a developer's ``.env`` at import time (override=False).
+# Pin the store backend before that happens so a local ``STORE_BACKEND=redis``
+# cannot leak into the suite and turn key validation into a network call.
+# Tests that exercise sqlite/redis override this with ``monkeypatch.setenv``.
+os.environ.setdefault("STORE_BACKEND", "json")
 
 
 tests_dir = Path(__file__).parent
