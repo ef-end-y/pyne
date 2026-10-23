@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-23T12:25:31Z
+  at: 2026-10-23T13:33:40Z
 sources:
   - id: tree
     resource: "tests"
@@ -134,6 +134,7 @@ okf_lock: generated
 * `test_strategy_risk_enforcement.py` — test_allow_entry_in_blocks_opposite_side, test_bar_mode_sma_returns_scalar, test_list_mode_sma_returns_series, test_max_drawdown_blocks_further_entries, test_max_position_size_caps_qty
 * `test_strategy_risk_intraday.py` — TestCompileBrokerParity, TestInterpretEnforcement, TestIntradayLossTypeParsing, test_fills_cap_rolls_next_day_dual_host, test_losing_strategy_blocked_dual_host, test_pending_limit_blocked_after_intraday_loss_dual_host, test_strategy_cash_identifier_dual_host
 * `test_strategy_runtime.py` — TestAvgPriceModel, TestLeverageFuturesUI, TestStrategyCashAndPyramiding, TestStrategyExtendedStats, TestStrategyGoldenMultiBar, TestStrategyInitialCapitalReassign, TestStrategySeriesVariables, TestStrategyWinLossStats
+* `test_ta_duplicate_parity.py` — test_atr_parity_with_volatility_copy, test_bb_parity_with_volatility_copy, test_kc_parity_with_volatility_copy, test_stdev_parity_with_basic_copy, test_supertrend_parity_with_basic_copy, test_tr_parity_with_volatility_copy
 * `test_ta_indicators_1.py` — TestALMA, TestAPO, TestCMF, TestDEMA, TestKAMA, TestKlinger, TestMACDSignal, TestPhase8Integration, TestPhase8RoundTrip, TestRSIDivergence, TestStochSmooth, TestTEMA
 * `test_ta_indicators_2.py` — TestTier2Indicators
 * `test_ta_indicators_3.py` — TestBidAskImbalance, TestEngulfing, TestExpectedValue, TestGapDetector, TestGarmanKlass, TestHammer, TestKurtosis, TestParkinson, TestSkewness, TestVOI
