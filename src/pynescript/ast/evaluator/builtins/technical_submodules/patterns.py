@@ -43,8 +43,7 @@ class PatternIndicators(TechnicalHelpers):
         Returns SAR series.
         """
         msg = "ta.sar expects high, low, start, increment, max"
-        if len(args) != 5:  # QUINARY
-            self._error(msg)
+        self._require_len(args, 5, msg)  # QUINARY
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         start = self._expect_number(args[2], msg)

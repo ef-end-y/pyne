@@ -529,6 +529,16 @@ class BuiltinDispatchMixin:
     def _error(message: str) -> NoReturn:
         raise ValueError(message)
 
+    def _require_len(self, args: list[Any], expected: int, message: str) -> None:
+        """Assert an exact positional-argument count for a builtin handler.
+
+        Canonical arity guard: lives on the dispatch base next to ``_error``
+        so every category mixin can use it without importing a sibling, and
+        so the message is the only thing a handler has to spell out.
+        """
+        if len(args) != expected:
+            self._error(message)
+
     def _expect_int(self, value: Any, message: str) -> int:
         """Canonical int coerce for builtins (periods, offsets, indices).
 

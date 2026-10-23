@@ -5685,8 +5685,7 @@ class TechnicalHelpers:
         With ``last_sample_ok`` + incremental TA, pass sources through for
         stateful crossover / last-sample kernels (no PineSeries reverse).
         """
-        if len(args) != BINARY:
-            self._error("Function takes two series arguments")
+        self._require_len(args, BINARY, "Function takes two series arguments")
         if last_sample_ok and self._use_incremental_ta():
             return args[0], args[1]
         return (
