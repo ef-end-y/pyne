@@ -117,6 +117,28 @@ plot(x.flag ? x.a + x.b : -1.0, title="p")
         out = compiled.run(o, h, l, c, v)
         np.testing.assert_allclose(out["p"], c + 1.0)
 
+    def test_udt_keyword_overrides_positional_like_interpret(self) -> None:
+        """``Type.new(10.0, a=20.0)``: the keyword wins and 10.0 does not slide onto ``b``."""
+        src = """//@version=6
+indicator("udt-kw-overlap")
+type Box
+    float a = 1.0
+    float b = 2.0
+x = Box.new(10.0, a=20.0)
+plot(x.a, title="a")
+plot(x.b, title="b")
+"""
+        bars = [
+            {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0, "time": i * 60_000}
+            for i in range(5)
+        ]
+        ri = Runtime().run(src, bars, mode="interpret")
+        rc = Runtime().run(src, bars, mode="compile")
+        assert "error" not in ri and "error" not in rc
+        for title, want in (("a", 20.0), ("b", 2.0)):
+            assert float(ri["series"][title][-1]) == want
+            assert float(rc["series"][title][-1]) == want
+
 
 class TestMapCompile:
     def test_map_put_get(self) -> None:

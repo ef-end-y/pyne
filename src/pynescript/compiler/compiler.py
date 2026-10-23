@@ -7610,18 +7610,17 @@ class CompilerVisitor(NodeVisitor):
             else:
                 positional.append(expr)
         items = [f"'__type__': {type_name!r}"]
-        pos_i = 0
-        for f in fields:
-            # Named args bind to that field. Positionals fill the remaining
-            # fields in declaration order. A keyword must not slide onto the
-            # next field (``Type.new(res=array.new())`` used to overwrite
-            # ``valid``). Omitted args use the type-body default. ``np.nan``
-            # for missing bools is ``True`` under ``bool()`` and flips flags.
+        for i, f in enumerate(fields):
+            # Named args bind to that field. Positional ``i`` is field ``i``,
+            # and a keyword for the same field wins (as in interpret). A keyword
+            # must not slide onto the next field (``Type.new(res=array.new())``
+            # used to overwrite ``valid``). Omitted args use the type-body
+            # default. ``np.nan`` for missing bools is ``True`` under ``bool()``
+            # and flips flags.
             if f in named:
                 v = named[f]
-            elif pos_i < len(positional):
-                v = positional[pos_i]
-                pos_i += 1
+            elif i < len(positional):
+                v = positional[i]
             else:
                 v = defaults.get(f, "np.nan")
             items.append(f"{f!r}: {v}")
