@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-23T13:33:40Z
+  at: 2026-10-23T16:08:12Z
 sources:
   - id: tree
     resource: "tests"
@@ -57,6 +57,7 @@ okf_lock: generated
 * `test_drawing_all_and_last_bar.py` — TestDrawingAllCollections, TestLastBarVars, TestRiskMaxPositionSize
 * `test_drawing_export_last_bar.py` — TestCompilePathDrawingDelete, TestExportForApiLastBarLine, TestExportLineFill, TestExportXToTime, TestFoldCompileDrawingMutations
 * `test_drawing_gc.py` — TestDrawingGarbageCollection
+* `test_drawings_plot_parity.py` — test_all_collections_and_merge_cells, test_plot_family_kinds, test_time_and_last_bar
 * `test_error_handling.py` — TestBodyTypeErrorFailClosed, TestCamarillaPlotLinewidth, TestColorNewKwargsDispatch, TestRequestSoftFailPreserved, TestRuntimeErrorClassification, TestStrategyDeclarationFailClosed, TestTypeErrorHelper
 * `test_evaluator.py` — test_bid_ask_default_na_when_host_omits_quotes, test_bid_ask_host_supplied_quotes_win, test_callee_body_typeerror_fail_closed, test_defs_locked_skips_top_level_indicator_after_first_visit, test_eval_arg_plan_reuses_empty_kwargs_and_scratch, test_evaluator_abs, test_evaluator_array_abs, test_evaluator_array_avg, test_evaluator_array_binary_search, test_evaluator_array_binary_search_leftmost, test_evaluator_array_binary_search_rightmost, test_evaluator_array_concat
 * `test_expr_parity_r8.py` — TestElementwiseSoftConcat, TestPeriodOrNone, TestRuntimeIfBlock, TestRuntimePeriodOrNone, TestRuntimeSoftConcatAndNaArith, TestRuntimeSwitchNa, TestRuntimeUtilityBare, TestSwitchCaseMatchHelper

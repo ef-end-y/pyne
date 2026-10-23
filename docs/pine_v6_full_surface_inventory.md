@@ -19,7 +19,7 @@
 
 # Pine Script v6 — Full Surface Inventory (pynescript)
 
-**Generated:** 2026-10-08  
+**Generated:** 2026-10-23  
 **Scope:** Every registered evaluator builtin, major series/variables, language constructs, and known gaps.  
 **Sources:** live `NodeLiteralEvaluator` dispatch map, `builtin_metadata.json`, base context constants, design docs.
 
@@ -51,7 +51,7 @@ Status values are intentionally coarse. They distinguish fully usable paths from
 
 ## Summary counts
 
-Regenerated from live `NodeLiteralEvaluator._build_builtin_map()` on 2026-10-08.
+Regenerated from live `NodeLiteralEvaluator._build_builtin_map()` on 2026-10-23.
 
 | Metric | Count |
 |--------|------:|
@@ -130,8 +130,8 @@ flowchart TB
 
 ```mermaid
 pie title Inventory rows by status
-  "implemented" : 613
-  "partial" : 30
+  "implemented" : 687
+  "partial" : 16
   "missing" : 0
 ```
 
@@ -147,7 +147,7 @@ graph LR
     strategy[strategy.* 🔄 deep sim]
     request[request.* 🔄 mock+feed]
     collections[array/matrix/map ✅]
-    drawing[drawing/plot 🔄]
+    drawing[drawing/plot ✅]
     lib[import/export ✅]
   end
   parser --> ast --> eval
@@ -616,7 +616,7 @@ Chart labels and the `label.all` collection. Constructors and mutators are regis
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `label.all` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `label.all` | series/var | ✅ implemented | no | series_catalog | Active (non-deleted) labels via DrawingRegistry |
 | `label.copy` | function | ✅ implemented | yes | dispatch |  |
 | `label.delete` | function | ✅ implemented | yes | dispatch |  |
 | `label.get_text` | function | ✅ implemented | yes | dispatch |  |
@@ -711,7 +711,7 @@ Rectangular drawing objects and the `box.all` collection. Creation, coordinate u
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `box.all` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `box.all` | series/var | ✅ implemented | no | series_catalog | Active (non-deleted) boxes via DrawingRegistry |
 | `box.copy` | function | ✅ implemented | yes | dispatch |  |
 | `box.delete` | function | ✅ implemented | yes | dispatch |  |
 | `box.get_bottom` | function | ✅ implemented | yes | dispatch |  |
@@ -763,7 +763,7 @@ Line drawings and `line.all`. As with other drawing namespaces, the runtime reco
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `line.all` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `line.all` | series/var | ✅ implemented | no | series_catalog | Active (non-deleted) lines via DrawingRegistry |
 | `line.copy` | function | ✅ implemented | yes | dispatch |  |
 | `line.delete` | function | ✅ implemented | yes | dispatch |  |
 | `line.get_x1` | function | ✅ implemented | yes | dispatch |  |
@@ -818,8 +818,8 @@ Core price, volume, and bar-index series (`open`, `high`, `low`, `close`, `volum
 | `hl2` | series/var | ✅ implemented | no | series_catalog |  |
 | `hlc3` | series/var | ✅ implemented | no | series_catalog |  |
 | `hlcc4` | series/var | ✅ implemented | no | series_catalog |  |
-| `last_bar_index` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
-| `last_bar_time` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `last_bar_index` | series/var | ✅ implemented | no | series_catalog | Bar-count scalar (`n-1`), dual-host parity |
+| `last_bar_time` | series/var | ✅ implemented | no | series_catalog | Last bar open time, dual-host parity |
 | `low` | series/var | ✅ implemented | no | series_catalog |  |
 | `ohlc4` | series/var | ✅ implemented | no | series_catalog |  |
 | `open` | series/var | ✅ implemented | no | series_catalog |  |
@@ -872,7 +872,7 @@ On-chart tables for tabular annotation. Cell and style updates are registered th
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `table.all` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `table.all` | series/var | ✅ implemented | no | series_catalog | Active (non-deleted) tables via DrawingRegistry |
 | `table.cell` | function | ✅ implemented | yes | dispatch |  |
 | `table.cell_get_text` | function | ✅ implemented | yes | dispatch |  |
 | `table.cell_set_bgcolor` | function | ✅ implemented | yes | dispatch |  |
@@ -882,7 +882,7 @@ On-chart tables for tabular annotation. Cell and style updates are registered th
 | `table.cell_set_text_color` | function | ✅ implemented | yes | dispatch |  |
 | `table.clear` | function | ✅ implemented | yes | dispatch |  |
 | `table.delete` | function | ✅ implemented | yes | dispatch |  |
-| `table.merge_cells` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `table.merge_cells` | function | ✅ implemented | yes | dispatch | Validated merge onto Table.merged; soft-ignore overlaps |
 | `table.new` | function | ✅ implemented | yes | dispatch |  |
 
 ### `time` (12)
@@ -897,8 +897,8 @@ Calendar and clock helpers (`year`, `month`, `dayofweek`, `timestamp`, trading-d
 | `minute` | function | ✅ implemented | yes | dispatch |  |
 | `month` | function | ✅ implemented | yes | dispatch |  |
 | `second` | function | ✅ implemented | yes | dispatch |  |
-| `time` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `time_close` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `time` | function | ✅ implemented | yes | dispatch | Bar-open time + session args; time_close falls back to time |
+| `time_close` | function | ✅ implemented | yes | dispatch | Next-bar open time; last bar +1d fallback |
 | `time_tradingday` | function | ✅ implemented | yes | dispatch |  |
 | `timestamp` | function | ✅ implemented | yes | dispatch |  |
 | `weekofyear` | function | ✅ implemented | yes | dispatch |  |
@@ -942,20 +942,20 @@ Cross-symbol, multi-timeframe, and fundamental data requests. Dynamic symbol and
 
 ### `plotting` (10)
 
-Chart output functions (`plot`, `plotshape`, `hline`, `bgcolor`, and related helpers). The evaluator’s `PlotRegistry` records real side-effect objects for backends and tests even without a UI; several styling paths remain partial relative to full TradingView visual fidelity. Compile object mode captures the same calls as structured drawing events.
+Chart output functions (`plot`, `plotshape`, `hline`, `bgcolor`, and related helpers). The evaluator’s `PlotRegistry` records real side-effect objects for backends and tests even without a UI. Compile object mode captures the same calls as structured drawing events.
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `barcolor` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `bgcolor` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `fill` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `hline` | function | 🔄 partial | yes | dispatch | Lightweight/stub styling |
+| `barcolor` | function | ✅ implemented | yes | dispatch | PlotRegistry barcolor cell |
+| `bgcolor` | function | ✅ implemented | yes | dispatch | PlotRegistry bgcolor cell |
+| `fill` | function | ✅ implemented | yes | dispatch | PlotRegistry fill between two plot handles |
+| `hline` | function | ✅ implemented | yes | dispatch | PlotRegistry hline at fixed price |
 | `plot` | function | ✅ implemented | yes | dispatch | PlotRegistry real object; linestyle v6 |
-| `plotarrow` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `plotbar` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `plotcandle` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `plotchar` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `plotshape` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `plotarrow` | function | ✅ implemented | yes | dispatch | PlotRegistry plotarrow series |
+| `plotbar` | function | ✅ implemented | yes | dispatch | PlotRegistry OHLC bars |
+| `plotcandle` | function | ✅ implemented | yes | dispatch | PlotRegistry OHLC candles |
+| `plotchar` | function | ✅ implemented | yes | dispatch | PlotRegistry char markers |
+| `plotshape` | function | ✅ implemented | yes | dispatch | PlotRegistry shape markers |
 
 ### `session` (9)
 
@@ -1089,11 +1089,11 @@ Plot linestyle constants (`plot.linestyle_solid`, dashed, dotted) used as argume
 
 ### `polyline` (3)
 
-Multi-segment polylines (`polyline.new`, `delete`, and the `polyline.all` collection). Creation is dispatch-backed; the collection series may still be partial relative to full host-managed lifetime semantics.
+Multi-segment polylines (`polyline.new`, `delete`, and the `polyline.all` collection). Creation and the active-collection view are dispatch-backed via DrawingRegistry.
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `polyline.all` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `polyline.all` | series/var | ✅ implemented | no | series_catalog | Active (non-deleted) polylines via DrawingRegistry |
 | `polyline.delete` | function | ✅ implemented | yes | dispatch |  |
 | `polyline.new` | function | ✅ implemented | yes | dispatch |  |
 
@@ -1117,11 +1117,11 @@ Accessors on footprint volume-row objects (`up_price`, `down_price`). Used toget
 
 ### `linefill` (1)
 
-Fill regions between lines. The inventory currently catalogues `linefill.all`; fuller constructor and style parity with TradingView’s linefill API remains limited compared to `line`/`box`/`label`.
+Fill regions between lines (`line.new` pair + `linefill.new`, plus the `linefill.all` active-collection view). Creation, delete, and property accessors are dispatch-backed via DrawingRegistry.
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `linefill.all` | series/var | 🔄 partial | no | series_catalog | stub/mock/limited semantics |
+| `linefill.all` | series/var | ✅ implemented | no | series_catalog | Active (non-deleted) linefills via DrawingRegistry |
 
 ## Appendix A — Flat master table (all inventory rows)
 
@@ -1192,7 +1192,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `barstate.islastconfirmedhistory` | `barstate` | series/var | ✅ implemented | no | series_catalog |
 | `barstate.isnew` | `barstate` | series/var | ✅ implemented | no | series_catalog |
 | `barstate.isrealtime` | `barstate` | series/var | ✅ implemented | no | series_catalog |
-| `box.all` | `box` | series/var | 🔄 partial | no | series_catalog |
+| `box.all` | `box` | series/var | ✅ implemented | no | series_catalog |
 | `box.copy` | `box` | function | ✅ implemented | yes | dispatch |
 | `box.delete` | `box` | function | ✅ implemented | yes | dispatch |
 | `box.get_bottom` | `box` | function | ✅ implemented | yes | dispatch |
@@ -1286,7 +1286,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `input.symbol` | `input` | function | ✅ implemented | yes | dispatch |
 | `input.time` | `input` | function | ✅ implemented | yes | dispatch |
 | `input.timeframe` | `input` | function | ✅ implemented | yes | dispatch |
-| `label.all` | `label` | series/var | 🔄 partial | no | series_catalog |
+| `label.all` | `label` | series/var | ✅ implemented | no | series_catalog |
 | `label.copy` | `label` | function | ✅ implemented | yes | dispatch |
 | `label.delete` | `label` | function | ✅ implemented | yes | dispatch |
 | `label.get_text` | `label` | function | ✅ implemented | yes | dispatch |
@@ -1311,7 +1311,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `label.set_xy` | `label` | function | ✅ implemented | yes | dispatch |
 | `label.set_y` | `label` | function | ✅ implemented | yes | dispatch |
 | `label.set_yloc` | `label` | function | ✅ implemented | yes | dispatch |
-| `line.all` | `line` | series/var | 🔄 partial | no | series_catalog |
+| `line.all` | `line` | series/var | ✅ implemented | no | series_catalog |
 | `line.copy` | `line` | function | ✅ implemented | yes | dispatch |
 | `line.delete` | `line` | function | ✅ implemented | yes | dispatch |
 | `line.get_x1` | `line` | function | ✅ implemented | yes | dispatch |
@@ -1328,7 +1328,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `line.set_xloc` | `line` | function | ✅ implemented | yes | dispatch |
 | `line.set_y1` | `line` | function | ✅ implemented | yes | dispatch |
 | `line.set_y2` | `line` | function | ✅ implemented | yes | dispatch |
-| `linefill.all` | `linefill` | series/var | 🔄 partial | no | series_catalog |
+| `linefill.all` | `linefill` | series/var | ✅ implemented | no | series_catalog |
 | `log.error` | `log` | function | ✅ implemented | yes | dispatch |
 | `log.info` | `log` | function | ✅ implemented | yes | dispatch |
 | `log.warning` | `log` | function | ✅ implemented | yes | dispatch |
@@ -1408,17 +1408,17 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `plot.linestyle_dashed` | `plot` | constant | ✅ implemented | yes | dispatch |
 | `plot.linestyle_dotted` | `plot` | constant | ✅ implemented | yes | dispatch |
 | `plot.linestyle_solid` | `plot` | constant | ✅ implemented | yes | dispatch |
-| `barcolor` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `bgcolor` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `fill` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `hline` | `plotting` | function | 🔄 partial | yes | dispatch |
+| `barcolor` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `bgcolor` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `fill` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `hline` | `plotting` | function | ✅ implemented | yes | dispatch |
 | `plot` | `plotting` | function | ✅ implemented | yes | dispatch |
-| `plotarrow` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `plotbar` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `plotcandle` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `plotchar` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `plotshape` | `plotting` | function | 🔄 partial | yes | dispatch |
-| `polyline.all` | `polyline` | series/var | 🔄 partial | no | series_catalog |
+| `plotarrow` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `plotbar` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `plotcandle` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `plotchar` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `plotshape` | `plotting` | function | ✅ implemented | yes | dispatch |
+| `polyline.all` | `polyline` | series/var | ✅ implemented | no | series_catalog |
 | `polyline.delete` | `polyline` | function | ✅ implemented | yes | dispatch |
 | `polyline.new` | `polyline` | function | ✅ implemented | yes | dispatch |
 | `request.currency_rate` | `request` | function | 🔄 partial | yes | dispatch |
@@ -1440,8 +1440,8 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `hl2` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `hlc3` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `hlcc4` | `series` | series/var | ✅ implemented | no | series_catalog |
-| `last_bar_index` | `series` | series/var | 🔄 partial | no | series_catalog |
-| `last_bar_time` | `series` | series/var | 🔄 partial | no | series_catalog |
+| `last_bar_index` | `series` | series/var | ✅ implemented | no | series_catalog |
+| `last_bar_time` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `low` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `ohlc4` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `open` | `series` | series/var | ✅ implemented | no | series_catalog |
@@ -1739,7 +1739,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `ta.wpr` | `ta` | function | ✅ implemented | yes | dispatch |
 | `ta.wvad` | `ta` | function | ✅ implemented | yes | dispatch |
 | `ta.zigzag` | `ta` | function | ✅ implemented | yes | dispatch |
-| `table.all` | `table` | series/var | 🔄 partial | no | series_catalog |
+| `table.all` | `table` | series/var | ✅ implemented | no | series_catalog |
 | `table.cell` | `table` | function | ✅ implemented | yes | dispatch |
 | `table.cell_get_text` | `table` | function | ✅ implemented | yes | dispatch |
 | `table.cell_set_bgcolor` | `table` | function | ✅ implemented | yes | dispatch |
@@ -1749,7 +1749,7 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `table.cell_set_text_color` | `table` | function | ✅ implemented | yes | dispatch |
 | `table.clear` | `table` | function | ✅ implemented | yes | dispatch |
 | `table.delete` | `table` | function | ✅ implemented | yes | dispatch |
-| `table.merge_cells` | `table` | function | 🔄 partial | yes | dispatch |
+| `table.merge_cells` | `table` | function | ✅ implemented | yes | dispatch |
 | `table.new` | `table` | function | ✅ implemented | yes | dispatch |
 | `ticker.heikinashi` | `ticker` | function | ✅ implemented | yes | dispatch |
 | `ticker.kagi` | `ticker` | function | ✅ implemented | yes | dispatch |
@@ -1765,8 +1765,8 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `minute` | `time` | function | ✅ implemented | yes | dispatch |
 | `month` | `time` | function | ✅ implemented | yes | dispatch |
 | `second` | `time` | function | ✅ implemented | yes | dispatch |
-| `time` | `time` | function | 🔄 partial | yes | dispatch |
-| `time_close` | `time` | function | 🔄 partial | yes | dispatch |
+| `time` | `time` | function | ✅ implemented | yes | dispatch |
+| `time_close` | `time` | function | ✅ implemented | yes | dispatch |
 | `time_tradingday` | `time` | function | ✅ implemented | yes | dispatch |
 | `timestamp` | `time` | function | ✅ implemented | yes | dispatch |
 | `weekofyear` | `time` | function | ✅ implemented | yes | dispatch |
