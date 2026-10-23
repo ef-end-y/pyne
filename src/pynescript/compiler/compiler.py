@@ -825,6 +825,12 @@ class CompilerVisitor(NodeVisitor):
     # or collide with the ``na`` → ``np.nan`` builtin if assigned as locals.
     _MODULE_SHADOW_IDENTS = frozenset({"np", "na"})
 
+    # ``barstate.*`` flags are bar-loop locals. Module-scope UDFs cannot close
+    # over them, so a UDF that reads ``barstate.isrealtime`` / ``isconfirmed``
+    # / ``ishistory`` / ``isnew`` must receive them as trailing context params
+    # (same plumbing as the chart OHLCV arrays and ``__bar_idx``).
+    _BARSTATE_CTX = ("__isrealtime", "__ishistory", "__isnew", "__isconfirmed")
+
     def _series_arr_name(self, name: str) -> str:
         """Python array identifier for a user series (mangles chart collisions)."""
         if name in self._CHART_ARR_BASES:
@@ -2967,6 +2973,8 @@ class CompilerVisitor(NodeVisitor):
                 "range",
                 "__bar_idx",
                 "n_bars",
+                # barstate flags: plain bools (loop locals or UDF ctx params)
+                *self._BARSTATE_CTX,
             ):
                 continue
             if bare.startswith("numba_"):
@@ -7317,6 +7325,7 @@ class CompilerVisitor(NodeVisitor):
                 "vol_arr",
                 "time_arr",
                 "__bar_idx",
+                *self._BARSTATE_CTX,
             ):
                 call_args.append(extra)
         if _meta(self.func_needs_strategy, False):
@@ -9452,6 +9461,7 @@ class CompilerVisitor(NodeVisitor):
             "close_arr",
             "vol_arr",
             "time_arr",
+            *self._BARSTATE_CTX,
         )
         # Nested callees may need __st_* state arrays passed through this frame
         st_refs = sorted(set(re.findall(r"__st_[A-Za-z_][A-Za-z0-9_]*", body_text)))
@@ -9563,6 +9573,7 @@ class CompilerVisitor(NodeVisitor):
                 "vol_arr",
                 "time_arr",
                 "__bar_idx",
+                *self._BARSTATE_CTX,
             ]
             param_list.extend(e for e in extra if e not in param_list)
             _bind_func_meta(self.func_needs_bar, True)

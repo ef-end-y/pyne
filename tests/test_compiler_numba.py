@@ -468,14 +468,9 @@ f() =>
 plot(f(), title="f")
 """
         code = transpile(src)
-        assert (
-            "def f(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx)"
-            in code
-        )
-        assert (
-            "f(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx)"
-            in code
-        )
+        # Trailing params are chart ctx + barstate flags.
+        assert "def f(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx," in code
+        assert "f(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx," in code
         compiled = compile_script(src)
         o, h, l, c, v = _ohlcv(20)
         out = compiled.run(o, h, l, c, v)
@@ -493,14 +488,8 @@ f() =>
 plot(f(), title="n")
 """
         code = transpile(src)
-        assert (
-            "def g(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx)"
-            in code
-        )
-        assert (
-            "def f(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx)"
-            in code
-        )
+        assert "def g(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx," in code
+        assert "def f(open_arr, high_arr, low_arr, close_arr, vol_arr, time_arr, __bar_idx," in code
         compiled = compile_script(src)
         o, h, l, c, v = _ohlcv(15)
         out = compiled.run(o, h, l, c, v)
@@ -549,7 +538,10 @@ plot(time, title="t")
         compiled = compile_script(src)
         o, h, l, c, v = _ohlcv(20)
         out = compiled.run(o, h, l, c, v)
-        assert abs(out["r"][-1] - c[-1]) < 1e-9
+        # lookahead_off: last *completed* HTF bar. The synthetic 1m chart bars
+        # all sit inside one daily bucket, so this is the previous chart bar's
+        # close (interpret agrees); it is not the forming bar's close.
+        assert abs(out["r"][-1] - c[-2]) < 1e-9
         assert abs(out["mt"][-1] - 0.01) < 1e-9
         assert abs(out["t"][-1] - (len(c) - 1) * 60000.0) < 1e-6
 
@@ -825,20 +817,26 @@ plot(_ema(close, 0.5), title="e")
         expected2 = 0.5 * c[2] + 0.5 * e[1]
         assert abs(e[2] - expected2) < 1e-9
 
-    def test_alertcondition_noop(self) -> None:
+    def test_alertcondition_and_alert_lowered_to_emit(self) -> None:
         src = """//@version=5
 indicator("x")
 alertcondition(close > open, title="up", message="up bar")
-alert(close > open, "alert msg")
+alert("alert msg", alert.freq_once_per_bar)
 plot(close, title="c")
 """
         code = transpile(src)
-        assert "alertcondition" not in code
-        assert "alert(" not in code
+        # No direct Pine calls survive; both lower to the __emit_alert helper.
+        assert not re.search(r"(?<!\w)alertcondition\(", code)
+        assert not re.search(r"(?<!\w)alert\(", code)
+        assert "__emit_alert(" in code
         compiled = compile_script(src)
         o, h, l, c, v = _ohlcv(20)
         out = compiled.run(o, h, l, c, v)
         assert abs(out["c"][-1] - c[-1]) < 1e-9
+        # close == open on this fixture, so alertcondition never fires; the
+        # unconditional alert() fires once per bar.
+        assert len(out["__alerts"]) == len(c)
+        assert out["__alerts"][-1]["message"] == "alert msg"
 
     def test_str_tostring_and_format(self) -> None:
         src = """//@version=5
@@ -888,13 +886,17 @@ r = security(tickerid, "D", close)
 plot(r, title="r")
 """
         code = transpile(src)
-        assert "close_arr[__bar_idx]" in code
+        # Bare v3 tickerid is chart identity, so this lowers to the HTF resample
+        # helper instead of an unconditional ``np.nan``.
+        assert "compile_security_htf_value('ohlcv', 'close'" in code
         assert "r_arr[__bar_idx] = np.nan" not in code
         # use_cache=False: bare tickerid emit was fixed post-disk-cache entries
         compiled = compile_script(src, use_cache=False)
         o, h, l, c, v = _ohlcv(20)
         out = compiled.run(o, h, l, c, v)
-        assert abs(out["r"][-1] - c[-1]) < 1e-9
+        # Same lookahead_off contract as syminfo.tickerid: last completed HTF
+        # value (previous chart bar here), not the forming bar's close.
+        assert abs(out["r"][-1] - c[-2]) < 1e-9
 
     def test_math_sum_and_random(self) -> None:
         src = """//@version=5
