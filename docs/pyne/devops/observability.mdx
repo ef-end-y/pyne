@@ -100,6 +100,7 @@ What it traces:
 | **Prewarm** | Builtins warm duration, per-script results, totals, failures |
 | **Delta calculation** | `append_bars` delta size + start index; `update_last_bar` tick duration |
 | **Datafeed** | CCXT Pro connect/subscribe/first updates/reconnects; REST `fetch_ohlcv` symbol normalization and bar counts; the `/datafeed/*` gateway; `WS /datafeed/watch` connect/close |
+| **Best-effort host plumbing** | Intentionally swallowed errors surface as `ignored <what> (<Exc>) in <fn>()` — metrics, realtime scope snapshot/restore, plot-column extension, strategy-history commit, drawing/alert export |
 | **HTTP** | Every request: method, path, status, duration; slow requests flagged |
 
 `PYNE_DEBUG=1 POST /run` on a fresh process, for example:
