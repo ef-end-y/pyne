@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "pinescript_implementation_status.md"
-description: "Live package: hoox-pyne 0.6.18."
+description: "Live package: hoox-pyne 0.6.19."
 resource: "docs/pinescript_implementation_status.md"
 tags: [doc, docs, pinescript-implementation-status]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-20T22:22:56Z
+  at: 2026-10-23T17:51:55Z
 sources:
   - id: tree
     resource: "docs/pinescript_implementation_status.md"

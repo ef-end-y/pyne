@@ -1,13 +1,13 @@
 ---
 type: "Document"
 title: "missing_features.md"
-description: "Live package: hoox-pyne 0.6.18 (src/pynescript/about.py)."
+description: "Live package: hoox-pyne 0.6.19 (src/pynescript/about.py)."
 resource: "docs/missing_features.md"
 tags: [doc, docs, missing-features]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-20T22:22:56Z
+  at: 2026-10-23T17:51:55Z
 sources:
   - id: tree
     resource: "docs/missing_features.md"
@@ -44,7 +44,7 @@ Repo path `docs/missing_features.md`.
   * 0.6.11 — Live Plane and Sessions
   * 0.6.12 — Production Hardening
   * 0.6.13 — Dual-host HTF, LSP, host hardening
-  * 0.6.18 — HTF allowlist, incremental TA, LSP
+  * 0.6.19 — HTF allowlist, incremental TA, LSP
   * 0.6.14 — HTF allowlist, incremental TA, LSP
 * Recommendations
 
