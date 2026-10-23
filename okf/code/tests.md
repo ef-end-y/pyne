@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-23T16:08:12Z
+  at: 2026-10-23T16:45:12Z
 sources:
   - id: tree
     resource: "tests"
@@ -110,6 +110,7 @@ okf_lock: generated
 * `test_realtime_rollback.py` — TestScopeHelpers, test_plain_assignment_recomputes_from_confirmed, test_single_tick_unchanged, test_snapshot_restores_once_fired, test_var_array_push_rolls_back_unconfirmed_ticks, test_var_map_put_rolls_back_unconfirmed_ticks, test_var_matrix_set_rolls_back_unconfirmed_ticks, test_var_nested_array_push_rolls_back_unconfirmed_ticks, test_var_rolls_back_across_intermediate_ticks, test_var_udt_field_rolls_back_unconfirmed_ticks, test_varip_array_pushes_persist_across_ticks, test_varip_persists_across_intermediate_ticks
 * `test_request_data_feed.py` — TestForeignSecurityNaPolicy, TestHtfSimpleTaResample, TestProviderHtfBarmerge, TestRequestDataFeed, TestRequestSecurityBarmerge, TestRequestSecurityHonestyMeta, TestSameSymbolSecurityPolicy
 * `test_request_foreign_na.py` — TestForeignSecurityNa, TestSameSymbolPassthrough
+* `test_request_fundamentals_honest.py` — test_currency_rate_prefers_feed_pair, test_fundamental_na_records_policy, test_fundamentals_are_na_without_provider, test_fundamentals_na_when_hook_misses, test_fundamentals_use_provider_hook_when_wired, test_request_seed_unchanged
 * `test_request_security_compile_htf.py` — TestCompileHtfBarmerge, TestCompileHtfOhlcvResample, TestCompileHtfSimpleTaResample, TestCompileProviderHtfBarmerge, TestCompileSecurityKeepLimits
 * `test_runtime_package.py` — test_backend_runtime_shim_is_host_module, test_derived_hl2_hlc3_ohlc4_time_close_still_correct, test_historical_default_isrealtime_false_var_varip_same, test_import_runtime_from_package, test_indicator_skips_strategy_snapshot_but_strategy_still_events, test_input_source_hl2_override_updates_derived, test_interpret_tiny_script, test_realtime_bars_default_zero_keeps_historical, test_realtime_from_bar_window, test_realtime_last_bar_single_tick_sets_isrealtime, test_realtime_ticks_implies_last_bar_realtime, test_ta_vwap_default_source_uses_live_hlc3
 * `test_runtime_parity_host_r8.py` — TestAutoDoesNotPaperOverValues, TestCompileSeriesEnvelope, TestInterpretCompileHostPackingParity, TestSharedOhlcvPacking

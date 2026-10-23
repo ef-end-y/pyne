@@ -94,7 +94,7 @@ The Numba compile path handles pure numeric scripts: series assignments, arithme
 
 ### Request Data
 
-`request.security` on foreign symbols or complex expressions returns `na` on both interpret and compile hosts. This is an honest policy — no chart-close is invented as foreign fundamentals. Real multi-symbol market data requires a host adapter (B1 in the roadmap).
+`request.security` on foreign symbols or complex expressions returns `na` on both interpret and compile hosts. This is an honest policy — no chart-close is invented as foreign fundamentals. Fundamental fields (`request.dividends` / `earnings` / `splits` / `financial` / `quandl` / `economic` / `currency_rate`) follow the same rule: without a host `fetch_fundamental(kind, symbol, **params)` hook on `data_feed` / `data_provider` (or a live feed FX pair for `currency_rate`) they return `na` — the former mock tables are gone. Real multi-symbol market data requires a host adapter (B1 in the roadmap).
 
 ### Auto Fib and Pivot-Heavy Scripts
 

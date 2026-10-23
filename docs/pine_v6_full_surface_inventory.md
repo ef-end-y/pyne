@@ -56,7 +56,7 @@ Regenerated from live `NodeLiteralEvaluator._build_builtin_map()` on 2026-10-23.
 | Metric | Count |
 |--------|------:|
 | Dispatch builtins (callable) | 941 |
-| Dispatch partial-heuristic (docstring stub/mock) | 10 |
+| Dispatch partial-heuristic (docstring stub/mock) | 2 |
 | Namespaces (top-level prefixes) | 255 |
 
 ### By namespace (dispatch keys)
@@ -130,8 +130,8 @@ flowchart TB
 
 ```mermaid
 pie title Inventory rows by status
-  "implemented" : 687
-  "partial" : 16
+  "implemented" : 695
+  "partial" : 8
   "missing" : 0
 ```
 
@@ -924,21 +924,21 @@ Key–value maps for associative state within a script. The interpreter uses ord
 
 ### `request` (11)
 
-Cross-symbol, multi-timeframe, and fundamental data requests. Dynamic symbol and timeframe arguments are resolved per call; live values depend on an injected `data_feed` or `data_provider`. Without either, handlers return deterministic mock series so scripts remain evaluable offline. Real broker/market feeds are intentionally out of scope for this library.
+Cross-symbol, multi-timeframe, and fundamental data requests. Dynamic symbol and timeframe arguments are resolved per call; live values depend on an injected `data_feed` or `data_provider`. Fundamental fields (`dividends`, `earnings`, `splits`, `financial`, `quandl`, `economic`, `currency_rate`) are honest-na: without a host `fetch_fundamental(kind, symbol, **params)` hook (or a live feed FX pair for `currency_rate`) they return `na` rather than invented values. `request.seed` remains an RNG-seeding utility. Real broker/market feeds are intentionally out of scope for this library.
 
 | Name | Kind | Status | Metadata | Source | Notes |
 |------|------|--------|----------|--------|-------|
-| `request.currency_rate` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `request.dividends` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `request.earnings` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `request.economic` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `request.financial` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `request.currency_rate` | function | ✅ implemented | yes | dispatch | Live feed FX pair, else provider hook, else honest na |
+| `request.dividends` | function | ✅ implemented | yes | dispatch | Provider hook, else honest na (no invented values) |
+| `request.earnings` | function | ✅ implemented | yes | dispatch | Provider hook, else honest na (no invented values) |
+| `request.economic` | function | ✅ implemented | yes | dispatch | Provider hook, else honest na (no invented values) |
+| `request.financial` | function | ✅ implemented | yes | dispatch | Provider hook, else honest na (no invented values) |
 | `request.footprint` | function | ✅ implemented | yes | dispatch | Mock footprint + volume_row methods |
-| `request.quandl` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `request.quandl` | function | ✅ implemented | yes | dispatch | Provider hook, else honest na (no invented values) |
 | `request.security` | function | ✅ implemented | yes | dispatch | Dynamic symbol/tf; data_feed or mock series |
 | `request.security_lower_tf` | function | ✅ implemented | yes | dispatch |  |
-| `request.seed` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
-| `request.splits` | function | 🔄 partial | yes | dispatch | stub/mock/limited semantics |
+| `request.seed` | function | ✅ implemented | yes | dispatch | RNG seed; stored on context (drives footprint sampling) |
+| `request.splits` | function | ✅ implemented | yes | dispatch | Provider hook, else honest na (no invented values) |
 
 ### `plotting` (10)
 
@@ -1421,17 +1421,17 @@ A denormalized listing of every inventory row, suitable for sorting and diffing 
 | `polyline.all` | `polyline` | series/var | ✅ implemented | no | series_catalog |
 | `polyline.delete` | `polyline` | function | ✅ implemented | yes | dispatch |
 | `polyline.new` | `polyline` | function | ✅ implemented | yes | dispatch |
-| `request.currency_rate` | `request` | function | 🔄 partial | yes | dispatch |
-| `request.dividends` | `request` | function | 🔄 partial | yes | dispatch |
-| `request.earnings` | `request` | function | 🔄 partial | yes | dispatch |
-| `request.economic` | `request` | function | 🔄 partial | yes | dispatch |
-| `request.financial` | `request` | function | 🔄 partial | yes | dispatch |
+| `request.currency_rate` | `request` | function | ✅ implemented | yes | dispatch |
+| `request.dividends` | `request` | function | ✅ implemented | yes | dispatch |
+| `request.earnings` | `request` | function | ✅ implemented | yes | dispatch |
+| `request.economic` | `request` | function | ✅ implemented | yes | dispatch |
+| `request.financial` | `request` | function | ✅ implemented | yes | dispatch |
 | `request.footprint` | `request` | function | ✅ implemented | yes | dispatch |
-| `request.quandl` | `request` | function | 🔄 partial | yes | dispatch |
+| `request.quandl` | `request` | function | ✅ implemented | yes | dispatch |
 | `request.security` | `request` | function | ✅ implemented | yes | dispatch |
 | `request.security_lower_tf` | `request` | function | ✅ implemented | yes | dispatch |
-| `request.seed` | `request` | function | 🔄 partial | yes | dispatch |
-| `request.splits` | `request` | function | 🔄 partial | yes | dispatch |
+| `request.seed` | `request` | function | ✅ implemented | yes | dispatch |
+| `request.splits` | `request` | function | ✅ implemented | yes | dispatch |
 | `ask` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `bar_index` | `series` | series/var | ✅ implemented | no | series_catalog |
 | `bid` | `series` | series/var | ✅ implemented | no | series_catalog |

@@ -4,6 +4,10 @@
 
 - **AXB1 binary encoder + negotiated `encoding: "axb1"` on `WS /ws/live`.** New `pynescript.runtime.axb1` — a pure-stdlib byte-for-byte mirror of the AXIS AXB1 v1 wire codec (`axis/src/hp/axb1/encode.ts`), pinned by the cross-repo golden vectors (`tests/data/axb1-vectors.json`, shared with `axis/tests/hp/axb1-vectors.json`; 12 envelope vectors + FNV-1a hash checks asserted by `tests/test_axb1.py`). `WS /ws/live` accepts `encoding: "axb1"` on `subscribe`: mappable frames (status, series `full` snapshots, forming re-tip deltas, closes, errors) leave as `AXB1` bytes; JSON remains the default, and unmapped frames (script frames, multi-bar deltas, `idle` status, control frames, anything without a subscription id) fall back to JSON untouched. A single-bar delta is classified re-tick vs append by the per-subscription cursor (bar time vs newest seen) because pyne's delta envelope is byte-identical for both — an append is never guessed as a tip.
 
+### Fixed
+
+- **Fundamental `request.*` calls are honest-`na` without a provider hook.** `request.dividends` / `earnings` / `splits` / `financial` / `quandl` / `economic` / `currency_rate` no longer return invented mock tables (hardcoded AAPL/MSFT values, static FX rates, canned Quandl/economic series) when no host supplies the data. Without a `fetch_fundamental(kind, symbol, **params)` hook on `data_feed` / `data_provider` (or a live feed FX pair for `currency_rate`) they return `na` and record a `fundamental_na` policy tag — matching the compile host, which already lowers these calls to `na`. `request.seed` (RNG utility) is unchanged. Pinned by `tests/test_request_fundamentals_honest.py`; mock-pinned assertions in `tests/test_evaluator.py` and `tests/test_request_data_feed.py` updated to `na`.
+
 ## [0.6.18] — 2026-10-21
 
 ### Added

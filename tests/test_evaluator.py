@@ -1767,102 +1767,100 @@ def test_evaluator_request_security_lower_tf(expression, expected_type):
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_symbol", "expected_type"),
+    ("expression", "expected_symbol"),
     [
-        ("request.dividends('AAPL')", "AAPL", float),
-        ("request.dividends('MSFT')", "MSFT", float),
+        ("request.dividends('AAPL')", "AAPL"),
+        ("request.dividends('MSFT')", "MSFT"),
     ],
 )
-def test_evaluator_request_dividends(expression, expected_symbol, expected_type):
+def test_evaluator_request_dividends(expression, expected_symbol):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
+    assert result is None  # honest na without a fundamentals provider
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_symbol", "expected_type"),
+    ("expression", "expected_symbol"),
     [
-        ("request.earnings('AAPL')", "AAPL", float),
-        ("request.earnings('JNJ')", "JNJ", float),
+        ("request.earnings('AAPL')", "AAPL"),
+        ("request.earnings('JNJ')", "JNJ"),
     ],
 )
-def test_evaluator_request_earnings(expression, expected_symbol, expected_type):
+def test_evaluator_request_earnings(expression, expected_symbol):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
+    assert result is None  # honest na without a fundamentals provider
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_symbol", "expected_type"),
+    ("expression", "expected_symbol"),
     [
-        ("request.splits('AAPL')", "AAPL", float),
-        ("request.splits('TSLA')", "TSLA", float),
+        ("request.splits('AAPL')", "AAPL"),
+        ("request.splits('TSLA')", "TSLA"),
     ],
 )
-def test_evaluator_request_splits(expression, expected_symbol, expected_type):
+def test_evaluator_request_splits(expression, expected_symbol):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
-    assert result >= 1.0
+    assert result is None  # honest na without a fundamentals provider
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_type"),
+    "expression",
     [
-        ("request.financial('AAPL', 'REVENUE')", float),
-        ("request.financial('MSFT', 'NET_INCOME')", float),
+        "request.financial('AAPL', 'REVENUE')",
+        "request.financial('MSFT', 'NET_INCOME')",
     ],
 )
-def test_evaluator_request_financial(expression, expected_type):
+def test_evaluator_request_financial(expression):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
+    assert result is None  # honest na without a fundamentals provider
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_type"),
+    "expression",
     [
-        ("request.quandl('EIA/PET_RWTC_D')", list),
+        "request.quandl('EIA/PET_RWTC_D')",
     ],
 )
-def test_evaluator_request_quandl(expression, expected_type):
+def test_evaluator_request_quandl(expression):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
+    assert result is None  # honest na without a fundamentals provider
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_type"),
+    "expression",
     [
-        ("request.economic('US', 'UNRATE')", list),
-        ("request.economic('EU', 'INFLATION')", list),
+        "request.economic('US', 'UNRATE')",
+        "request.economic('EU', 'INFLATION')",
     ],
 )
-def test_evaluator_request_economic(expression, expected_type):
+def test_evaluator_request_economic(expression):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
+    assert result is None  # honest na without a fundamentals provider
 
 
 @pytest.mark.parametrize(
-    ("expression", "expected_type"),
+    "expression",
     [
-        ("request.currency_rate('USD', 'EUR')", float),
-        ("request.currency_rate('GBP', 'USD')", float),
+        "request.currency_rate('USD', 'EUR')",
+        "request.currency_rate('GBP', 'USD')",
     ],
 )
-def test_evaluator_request_currency_rate(expression, expected_type):
+def test_evaluator_request_currency_rate(expression):
     ast = helper.parse(expression, mode="eval")
     evaluator = NodeLiteralEvaluator()
     result = evaluator.visit(ast.body)
-    assert isinstance(result, expected_type)
-    assert result > 0
+    assert result is None  # honest na without a feed pair or provider hook
 
 
 @pytest.mark.parametrize(

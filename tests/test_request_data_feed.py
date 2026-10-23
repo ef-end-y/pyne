@@ -125,12 +125,11 @@ class TestRequestDataFeed:
         rate = _eval(ev, 'request.currency_rate("EUR", "USD")')
         assert abs(float(rate) - 1.12) < 0.01
 
-    def test_dividends_scales_with_feed_price(self) -> None:
+    def test_dividends_is_na_without_fundamentals_hook(self) -> None:
         feed = MockDataFeed(symbol="AAPL", start_price=200.0)
         ev = NodeLiteralEvaluator(data_feed=feed)
-        # base AAPL div 0.24 scaled by last/100
-        div = _eval(ev, 'request.dividends("AAPL")')
-        assert float(div) > 0.24  # scaled up vs base at 100
+        # No fetch_fundamental hook on the feed → honest na, not a mock value
+        assert _eval(ev, 'request.dividends("AAPL")') is None
 
     def test_request_seed_stored_in_context(self) -> None:
         ev = NodeLiteralEvaluator()

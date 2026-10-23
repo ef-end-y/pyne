@@ -17,14 +17,23 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""request.* builtins — live/historical fetch with intentional mock soft-fail.
+"""request.* builtins — live/historical fetch with honest-na fundamentals.
 
 Data-path failures (missing feed, network, bad provider payload) are **soft**:
-helpers catch ``Exception`` and fall through to built-in mock prices so
-indicator scripts keep evaluating without a real market data backend.
+security helpers catch ``Exception`` and fall through to chart passthrough
+or legacy mock prices so indicator scripts keep evaluating without a real
+market data backend.
+
+Fundamental fields (``request.dividends`` / ``earnings`` / ``splits`` /
+``financial`` / ``quandl`` / ``economic`` / ``currency_rate``) are
+**honest-na**: without a host-supplied ``fetch_fundamental(kind, symbol,
+**params)`` hook on ``data_feed`` / ``data_provider`` (or a live feed FX
+pair for ``currency_rate``) they return ``na`` — never invented mock
+values. This matches the compile host, which already lowers these calls
+to ``na``.
 
 Do **not** harden these into hard failures without an explicit host flag —
-Runtime hosts and corpus demos rely on mock fallbacks. Programming errors
+Runtime hosts and corpus demos rely on soft fallbacks. Programming errors
 inside expression evaluation still propagate via the normal bar loop.
 """
 
@@ -4658,6 +4667,33 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         self._note_security_policy(tag, **extra)
         return value
 
+    def _fundamental_lookup(self, kind: str, symbol: str, **params: Any) -> Any:
+        """Best-effort fundamental via the optional host hook.
+
+        Hosts may expose ``fetch_fundamental(kind, symbol, **params)`` on
+        ``data_feed`` (consulted first) or ``data_provider``. Returns the
+        hooked value, or ``None`` when no host supplies the field — callers
+        surface that as ``na`` rather than inventing mock values.
+        """
+        data_feed, data_provider = self._get_request_data()
+        for source in (data_feed, data_provider):
+            hook = getattr(source, "fetch_fundamental", None)
+            if hook is None:
+                continue
+            try:
+                value = hook(kind, symbol, **params)
+            except Exception:
+                _LOG.debug("fetch_fundamental failed for %s %s", kind, symbol)
+                continue
+            if value is not None:
+                return value
+        return None
+
+    def _fundamental_return(self, value: Any, kind: str, symbol: str) -> Any:
+        """Return a fundamental with an honesty policy tag."""
+        tag = "fundamental_hook" if value is not None else "fundamental_na"
+        return self._security_return(value, tag, kind=kind, symbol=symbol)
+
     def _ticker_last(self, symbol: str) -> float | None:
         """Best-effort last price from data_feed (if wired)."""
         data_feed, _ = self._get_request_data()
@@ -5546,7 +5582,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return out if n != 1 else out[0]
         return intrabar_prices
 
-    def _handle_request_dividends(self, args: list[Any]) -> float:
+    def _handle_request_dividends(self, args: list[Any]) -> Any:
         """
         request.dividends(symbol, currency)
 
@@ -5556,26 +5592,15 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             symbol: Symbol/ticker string (str)
             currency: Currency code (str or None)
 
-        Returns dividend amount as float.
-        This is a mock implementation.
+        Returns the dividend amount, or na when no host supplies
+        fundamentals via fetch_fundamental("dividends", symbol, ...).
         """
         symbol = self._resolve_symbol(args[0] if len(args) > 0 else "AAPL")
-        # currency = args[1] if len(args) > 1 else "USD"
+        currency = args[1] if len(args) > 1 else None
+        value = self._fundamental_lookup("dividends", symbol, currency=currency)
+        return self._fundamental_return(value, "dividends", symbol)
 
-        data_feed, _ = self._get_request_data()
-        # If data_feed available, could derive 'yield' from price, but keep simple mock scaled
-        base_div = {"AAPL": 0.24, "MSFT": 0.62, "JNJ": 1.13}
-        val = base_div.get(symbol, 0.0)
-        if data_feed and hasattr(data_feed, "fetch_latest_ticker"):
-            try:
-                t = data_feed.fetch_latest_ticker(symbol)
-                last = t.get("last") or t.get("close") or 100.0
-                val = round(val * (last / 100.0), 2)  # naive dynamic scale
-            except Exception:
-                pass
-        return val
-
-    def _handle_request_earnings(self, args: list[Any]) -> float:
+    def _handle_request_earnings(self, args: list[Any]) -> Any:
         """
         request.earnings(symbol, currency)
 
@@ -5585,25 +5610,15 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             symbol: Symbol/ticker string (str)
             currency: Currency code (str or None)
 
-        Returns earnings per share as float.
-        This is a mock implementation.
+        Returns earnings per share, or na when no host supplies
+        fundamentals via fetch_fundamental("earnings", symbol, ...).
         """
         symbol = self._resolve_symbol(args[0] if len(args) > 0 else "AAPL")
-        # currency = args[1] if len(args) > 1 else "USD"
+        currency = args[1] if len(args) > 1 else None
+        value = self._fundamental_lookup("earnings", symbol, currency=currency)
+        return self._fundamental_return(value, "earnings", symbol)
 
-        data_feed, _ = self._get_request_data()
-        base_eps = {"AAPL": 5.61, "MSFT": 9.27, "JNJ": 9.13}
-        val = base_eps.get(symbol, 0.0)
-        if data_feed and hasattr(data_feed, "fetch_latest_ticker"):
-            try:
-                t = data_feed.fetch_latest_ticker(symbol)
-                last = t.get("last") or t.get("close") or 100.0
-                val = round(val * (last / 150.0), 2)
-            except Exception:
-                pass
-        return val
-
-    def _handle_request_splits(self, args: list[Any]) -> float:
+    def _handle_request_splits(self, args: list[Any]) -> Any:
         """
         request.splits(symbol, currency)
 
@@ -5613,19 +5628,15 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             symbol: Symbol/ticker string (str)
             currency: Currency code (str or None)
 
-        Returns split ratio as float.
-        This is a mock implementation.
+        Returns the split ratio, or na when no host supplies
+        fundamentals via fetch_fundamental("splits", symbol, ...).
         """
         symbol = self._resolve_symbol(args[0] if len(args) > 0 else "AAPL")
-        # currency = args[1] if len(args) > 1 else "USD"
+        currency = args[1] if len(args) > 1 else None
+        value = self._fundamental_lookup("splits", symbol, currency=currency)
+        return self._fundamental_return(value, "splits", symbol)
 
-        base_splits = {"AAPL": 4.0, "TSLA": 3.0, "MSFT": 1.0}
-        val = base_splits.get(symbol, 1.0)
-        # Optional feed hook: if ticker available, keep known ratio (no change)
-        _ = self._ticker_last(symbol)
-        return val
-
-    def _handle_request_financial(self, args: list[Any]) -> float:
+    def _handle_request_financial(self, args: list[Any]) -> Any:
         """
         request.financial(symbol, financial_id, period)
 
@@ -5636,27 +5647,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             financial_id: Financial metric identifier (str)
             period: Reporting period (str, e.g., "FQ", "FY")
 
-        Returns financial metric value as float.
-        Mock table with optional price-based scaling when data_feed is wired.
+        Returns the financial metric value, or na when no host supplies
+        fundamentals via fetch_fundamental("financial", symbol, ...).
         """
         symbol = self._resolve_symbol(args[0] if len(args) > 0 else "AAPL")
         financial_id = args[1] if len(args) > 1 else "REVENUE"
-        # period = args[2] if len(args) > 2 else "FY"
-
-        # Mock: return financial metrics (symbol dynamic)
-        financials = {
-            ("AAPL", "REVENUE"): 383285000000,
-            ("AAPL", "NET_INCOME"): 96995000000,
-            ("MSFT", "REVENUE"): 198716000000,
-            ("MSFT", "NET_INCOME"): 72794000000,
-        }
-        key = (symbol, str(financial_id).upper())
-        val = float(financials.get(key, 0.0))
-        last = self._ticker_last(symbol)
-        if last is not None and val > 0:
-            # Naive dynamic scale so feed presence is observable in tests
-            val = val * (last / max(last, 1.0))
-        return val
+        period = args[2] if len(args) > 2 else "FY"
+        value = self._fundamental_lookup("financial", symbol, financial_id=financial_id, period=period)
+        return self._fundamental_return(value, "financial", symbol)
 
     def _handle_request_quandl(self, args: list[Any]) -> Any:
         """
@@ -5668,22 +5666,13 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             quandl_code: Quandl dataset code (str)
             column: Column name within dataset (str)
 
-        Returns series data from Quandl dataset.
-        This is a mock implementation.
+        Returns the dataset series, or na when no host supplies data
+        via fetch_fundamental("quandl", quandl_code, ...).
         """
         quandl_code = self._resolve_symbol(args[0] if len(args) > 0 else "EIA/PET_RWTC_D", default="EIA/PET_RWTC_D")
-        # column = args[1] if len(args) > 1 else "Value"
-
-        # Mock: return time series data for common Quandl datasets
-        if "PET_RWTC" in str(quandl_code):
-            # Oil prices (WTI Crude Oil)
-            return [50.0, 51.5, 52.0, 51.0, 53.5, 55.0, 54.5, 56.0]
-        if "GDPC" in str(quandl_code):
-            # GDP data
-            return [21060000, 21200000, 21400000, 21600000]
-
-        # Default: return generic series
-        return [100.0, 101.0, 102.0, 101.5, 103.0]
+        column = args[1] if len(args) > 1 else "Value"
+        value = self._fundamental_lookup("quandl", quandl_code, column=column)
+        return self._fundamental_return(value, "quandl", quandl_code)
 
     def _handle_request_economic(self, args: list[Any]) -> Any:
         """
@@ -5695,32 +5684,15 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             country: Country code (str, e.g., "US", "EU")
             indicator_code: Economic indicator code (str)
 
-        Returns economic data as series or value.
-        This is a mock implementation.
+        Returns the indicator series, or na when no host supplies data
+        via fetch_fundamental("economic", country, ...).
         """
         country = self._resolve_symbol(args[0] if len(args) > 0 else "US", default="US")
         indicator_code = args[1] if len(args) > 1 else "UNRATE"
+        value = self._fundamental_lookup("economic", country, indicator_code=indicator_code)
+        return self._fundamental_return(value, "economic", country)
 
-        # Mock: return economic indicators
-        if str(indicator_code).upper() == "UNRATE":
-            # US Unemployment Rate (%)
-            if str(country).upper() == "US":
-                return [3.5, 3.4, 3.6, 3.7, 3.8]
-            # EU Unemployment Rate (%)
-            if str(country).upper() == "EU":
-                return [6.1, 6.0, 6.2, 6.3, 6.4]
-
-        if str(indicator_code).upper() == "INFLATION":
-            # Inflation Rate (%)
-            if str(country).upper() == "US":
-                return [3.4, 3.2, 3.0, 2.9, 2.8]
-            if str(country).upper() == "EU":
-                return [2.6, 2.4, 2.2, 2.1, 2.0]
-
-        # Default: return generic series
-        return [100.0, 101.0, 102.0, 101.5, 103.0]
-
-    def _handle_request_currency_rate(self, args: list[Any]) -> float:
+    def _handle_request_currency_rate(self, args: list[Any]) -> Any:
         """
         request.currency_rate(from_currency, to_currency)
 
@@ -5730,36 +5702,27 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             from_currency: Source currency code (str, e.g., "USD")
             to_currency: Target currency code (str, e.g., "EUR")
 
-        Returns exchange rate as float.
-        This is a mock implementation.
+        Returns the live feed pair rate when available, else a hooked
+        fetch_fundamental("currency_rate", pair, ...) value, else na —
+        never an invented static table.
         """
         from_currency = self._resolve_symbol(args[0] if len(args) > 0 else "USD", default="USD")
-        to_currency = self._resolve_symbol(args[1] if len(args) > 1 else "EUR", default="EUR")
+        to_currency = self._resolve_symbol(args[1] if len(args) > 0 else "EUR", default="EUR")
 
         # Prefer live feed pair if available (e.g. EUR/USD last)
         pair = f"{from_currency}/{to_currency}"
         last = self._ticker_last(pair)
         if last is not None and last > 0:
-            return float(last)
+            return self._fundamental_return(float(last), "currency_rate", pair)
 
-        # Mock: return exchange rates
-        rates = {
-            ("USD", "EUR"): 0.92,
-            ("USD", "GBP"): 0.79,
-            ("USD", "JPY"): 149.5,
-            ("EUR", "USD"): 1.09,
-            ("EUR", "GBP"): 0.86,
-            ("GBP", "USD"): 1.27,
-        }
-
-        key = (str(from_currency).upper(), str(to_currency).upper())
-        return rates.get(key, 1.0)
+        value = self._fundamental_lookup("currency_rate", pair, from_currency=from_currency, to_currency=to_currency)
+        return self._fundamental_return(value, "currency_rate", pair)
 
     def _handle_request_seed(self, args: list[Any]) -> None:
         """
         request.seed(seed_value)
 
-        Seed the random number generator for reproducible mock request data.
+        Seed the random number generator for reproducible request data.
         Stores the seed on evaluator context and optional numpy RNG.
         """
         seed_value = args[0] if len(args) > 0 else 0
