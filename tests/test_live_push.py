@@ -106,9 +106,32 @@ def _serve_loop(ws, registry, **conn_kw):
     ws_mod.LiveConnection = fake_conn_factory  # type: ignore[assignment]
     try:
         with app.test_request_context("/ws/live"):
-            serve_live_ws(ws, registry)
+            serve_live_ws(_DisconnectOnNone(ws), registry)
     finally:
         ws_mod.LiveConnection = real_conn_cls
+
+
+class _DisconnectOnNone:
+    """Test-socket adapter: ``receive() -> None`` means "peer closed".
+
+    ``serve_live_ws`` follows ``simple_websocket`` semantics, where ``None``
+    only means "timeout" and the loop ends when ``connected`` goes false.
+    The fakes in this module signal a close by returning ``None`` (timeouts
+    raise ``TimeoutError`` / return ``""``), so translate that convention.
+    """
+
+    def __init__(self, ws):
+        self._ws = ws
+        self.connected = True
+
+    def receive(self, timeout=None):
+        msg = self._ws.receive(timeout)
+        if msg is None:
+            self.connected = False
+        return msg
+
+    def send(self, raw):
+        self._ws.send(raw)
 
 
 def _join_ensure_workers(timeout=2.0):
