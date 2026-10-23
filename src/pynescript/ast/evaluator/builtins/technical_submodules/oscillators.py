@@ -98,8 +98,7 @@ class OscillatorIndicators(TechnicalHelpers):
             lows = self._context_series("low")
             return self._stoch_k(source, highs, lows, length)
         msg = "ta.stoch expects source, high, low, length (or high, low, close, length, smooth)"
-        if len(args) != QUINARY:
-            self._error(msg)
+        self._require_len(args, QUINARY, msg)
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         closes = self._expect_list(args[2], msg)
@@ -201,8 +200,7 @@ class OscillatorIndicators(TechnicalHelpers):
                 return self._cci_inc_update(series, series, series, period)
             return self._cci(series, series, series, period)
         msg = "ta.cci expects source, length (or high, low, close, length)"
-        if len(args) != QUATERNARY:
-            self._error(msg)
+        self._require_len(args, QUATERNARY, msg)
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         closes = self._expect_list(args[2], msg)
@@ -234,8 +232,7 @@ class OscillatorIndicators(TechnicalHelpers):
             closes = self._context_series("close")
             return self._wpr(highs, lows, closes, length)
         msg = "ta.wpr expects length (or high, low, close, length)"
-        if len(args) != QUATERNARY:
-            self._error(msg)
+        self._require_len(args, QUATERNARY, msg)
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         closes = self._expect_list(args[2], msg)
@@ -347,8 +344,7 @@ class OscillatorIndicators(TechnicalHelpers):
                 )
             series = self._context_series("close")
             return self._tsi(series, long_period, short_period)
-        if len(args) != TERNARY:
-            self._error(msg)
+        self._require_len(args, TERNARY, msg)
         # reference Pine docs: ta.tsi(source, short_length, long_length)
         short_period = self._expect_int(args[1], msg)
         long_period = self._expect_int(args[2], msg)

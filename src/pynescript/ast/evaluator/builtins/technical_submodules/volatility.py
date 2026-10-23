@@ -60,8 +60,7 @@ class VolatilityIndicators(TechnicalHelpers):
                 return self._atr_inc_update(highs, lows, closes, length)
             return self._finalize_series(self._atr(highs, lows, closes, length))
         msg = "ta.atr expects length, or high, low, close, and length"
-        if len(args) != QUATERNARY:
-            self._error(msg)
+        self._require_len(args, QUATERNARY, msg)
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         closes = self._expect_list(args[2], msg)
@@ -80,8 +79,7 @@ class VolatilityIndicators(TechnicalHelpers):
                 return self._tr_inc_update(highs, lows, closes)
             return self._finalize_series(self._tr(highs, lows, closes))
         msg = "ta.tr expects high, low, and close"
-        if len(args) != TERNARY:
-            self._error(msg)
+        self._require_len(args, TERNARY, msg)
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         closes = self._expect_list(args[2], msg)
@@ -208,8 +206,7 @@ class VolatilityIndicators(TechnicalHelpers):
 
         ta.correlation(source1, source2, length)
         """
-        if len(args) != TERNARY:
-            self._error("ta.correlation requires source1, source2, length")
+        self._require_len(args, TERNARY, "ta.correlation requires source1, source2, length")
         length = self._expect_int(args[2], "length")
         if self._use_incremental_ta():
             s1 = self._as_series_or_raw(args[0], last_sample_ok=True)

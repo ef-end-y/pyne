@@ -336,8 +336,7 @@ class BasicIndicators(TechnicalHelpers):
     def _builtin_ta_mom(self, args: list[Any]) -> float:
         """Momentum."""
         if self._use_incremental_ta():
-            if len(args) != BINARY:
-                self._error("ta.mom requires series and period")
+            self._require_len(args, BINARY, "ta.mom requires series and period")
             period = self._expect_int(args[1], "Second argument must be an integer (period)")
             return self._mom_inc_update(args[0], period)
         series, period = self._expect_series(args, length=BINARY)
@@ -359,8 +358,7 @@ class BasicIndicators(TechnicalHelpers):
 
     def _builtin_ta_swma(self, args: list[Any]) -> float | None:
         """Symmetrically Weighted Moving Average. reference Pine: ``ta.swma(source)``."""
-        if len(args) != UNARY:
-            self._error("ta.swma expects one source argument")
+        self._require_len(args, UNARY, "ta.swma expects one source argument")
         if self._use_incremental_ta():
             return self._swma_inc_update(args[0])
         return self._swma(self._as_series(args[0]))
@@ -385,8 +383,7 @@ class BasicIndicators(TechnicalHelpers):
             closes = self._context_series("close")
             return self._finalize_series(self._tr(highs, lows, closes))
         msg = "ta.tr expects high, low, and close (or 0-1 handle_na args)"
-        if len(args) != TERNARY:
-            self._error(msg)
+        self._require_len(args, TERNARY, msg)
         if self._use_incremental_ta():
             return self._tr_inc_update(args[0], args[1], args[2])
         highs = self._expect_list(args[0], msg)
@@ -412,8 +409,7 @@ class BasicIndicators(TechnicalHelpers):
             lows = self._context_series("low")
             return self._finalize_series(self._sar(highs, lows, start, increment, maximum))
         msg = "ta.sar expects start, increment, max (or high, low, start, increment, max)"
-        if len(args) != QUINARY:
-            self._error(msg)
+        self._require_len(args, QUINARY, msg)
         start = self._expect_number(args[2], msg)
         increment = self._expect_number(args[3], msg)
         maximum = self._expect_number(args[4], msg)
@@ -484,8 +480,7 @@ class BasicIndicators(TechnicalHelpers):
             closes = self._context_series("close")
             return self._finalize_series(self._atr(highs, lows, closes, length))
         msg = "ta.atr expects length, or high, low, close, and length"
-        if len(args) != QUATERNARY:
-            self._error(msg)
+        self._require_len(args, QUATERNARY, msg)
         length = self._expect_int(args[3], msg)
         if self._use_incremental_ta():
             return self._atr_inc_update(args[0], args[1], args[2], length)
@@ -849,8 +844,7 @@ class BasicIndicators(TechnicalHelpers):
 
         Bar-mode incremental last sample uses ``_zigzag_inc_update``.
         """
-        if len(args) != BINARY:
-            self._error("ta.zigzag takes source series and percent threshold")
+        self._require_len(args, BINARY, "ta.zigzag takes source series and percent threshold")
 
         if self._use_incremental_ta():
             return self._zigzag_inc_update(
@@ -939,9 +933,7 @@ class BasicIndicators(TechnicalHelpers):
 
     def _builtin_ta_cum(self, args: list[Any]) -> float | None:
         """Cumulative sum. reference Pine: ``ta.cum(source)`` — ``na`` treated as 0."""
-        msg = "ta.cum expects a series"
-        if len(args) != UNARY:
-            self._error(msg)
+        self._require_len(args, UNARY, "ta.cum expects a series")
         if self._use_incremental_ta():
             return self._cum_inc_update(args[0])
         series = self._as_series(args[0])
@@ -1052,9 +1044,7 @@ class BasicIndicators(TechnicalHelpers):
 
     def _builtin_ta_barssince(self, args: list[Any]) -> int | None:
         """Bars since condition was last true."""
-        if len(args) != 1:
-            msg = "ta.barssince() takes exactly one argument"
-            self._error(msg)
+        self._require_len(args, 1, "ta.barssince() takes exactly one argument")
         condition = args[0]
         if self._use_incremental_ta():
             return self._barssince_inc_update(condition)

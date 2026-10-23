@@ -187,8 +187,7 @@ class CommonIndicators(TechnicalHelpers):
     def _builtin_ta_cum(self, args: list[Any]) -> float:
         """Cumulative sum of values in series."""
         msg = "ta.cum expects a series"
-        if len(args) != UNARY:
-            self._error(msg)
+        self._require_len(args, UNARY, msg)
         if self._use_incremental_ta():
             return self._cum_inc_update(args[0])  # type: ignore[return-value]
         series = self._expect_list(args[0], msg)
@@ -411,16 +410,13 @@ class CommonIndicators(TechnicalHelpers):
     def _builtin_ta_vwap(self, args: list[Any]) -> float:
         """Volume Weighted Average Price."""
         msg = "ta.vwap expects price-volume values"
-        if len(args) != UNARY:
-            self._error(msg)
+        self._require_len(args, UNARY, msg)
         sequence = self._expect_list(args[0], msg)
         return self._vwap(sequence)
 
     def _builtin_ta_barssince(self, args: list[Any]) -> int | None:
         """Bars since condition was last true."""
-        if len(args) != 1:
-            msg = "ta.barssince() takes exactly one argument"
-            self._error(msg)
+        self._require_len(args, 1, "ta.barssince() takes exactly one argument")
         condition = args[0]
         if self._use_incremental_ta():
             return self._barssince_inc_update(condition)
@@ -665,8 +661,7 @@ class CommonIndicators(TechnicalHelpers):
 
     def _builtin_ta_supertrend(self, args: list[Any]) -> tuple[float, float, int]:
         """Supertrend indicator (returns final_lowerband, final_upperband, direction)."""
-        if len(args) != TERNARY:
-            self._error("ta.supertrend takes high, low series and length, multiplier")
+        self._require_len(args, TERNARY, "ta.supertrend takes high, low series and length, multiplier")
 
         highs = self._expect_list(args[0], "ta.supertrend takes high, low, length, multiplier")
         lows = self._expect_list(args[1], "ta.supertrend takes high, low, length, multiplier")
@@ -704,8 +699,7 @@ class CommonIndicators(TechnicalHelpers):
 
     def _builtin_ta_zigzag(self, args: list[Any]) -> tuple[float, float, int]:
         """Zigzag pattern detector (returns high, low, direction)."""
-        if len(args) != BINARY:
-            self._error("ta.zigzag takes source series and percent threshold")
+        self._require_len(args, BINARY, "ta.zigzag takes source series and percent threshold")
 
         series = self._expect_list(args[0], "ta.zigzag takes source series and percent threshold")
         threshold = args[1] if isinstance(args[1], (int, float)) else 5.0
@@ -751,8 +745,7 @@ class CommonIndicators(TechnicalHelpers):
             if self._use_incremental_ta():
                 return self._adx_inc_update(highs, lows, closes, adx_len)
             return self._adx(highs, lows, closes, adx_len)
-        if len(args) != QUATERNARY:
-            self._error(msg)
+        self._require_len(args, QUATERNARY, msg)
         highs = self._expect_list(args[0], msg)
         lows = self._expect_list(args[1], msg)
         closes = self._expect_list(args[2], msg)

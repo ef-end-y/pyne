@@ -143,8 +143,7 @@ class VolumeIndicators(TechnicalHelpers):
             volumes = volumes[-n:]
             return self._mfi(series, series, series, volumes, length)
         msg = "ta.mfi expects source, length (or high, low, close, volume, length)"
-        if len(args) != QUINARY:
-            self._error(msg)
+        self._require_len(args, QUINARY, msg)
         length = self._expect_int(args[4], msg)
         if use_inc:
             return self._mfi_inc_update(args[0], args[1], args[2], args[3], length)

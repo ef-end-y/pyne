@@ -140,15 +140,6 @@ class NumericBuiltinsMixin(BuiltinDispatchMixin):
             break
         return value
 
-    def _require_len(
-        self,
-        args: list[Any],
-        expected: int,
-        message: str,
-    ) -> None:
-        if len(args) != expected:
-            self._error(message)
-
     def _builtin_abs(self, args: list[Any]) -> Any:
         self._require_len(args, UNARY, "abs takes exactly one argument")
         n = args[0]
