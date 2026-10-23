@@ -20,6 +20,13 @@ modes become loud instead of silent.
 
 If a change here is intentional, update ``KNOWN_DUPLICATES`` in the same
 commit and say why in the commit message.
+
+Not every losing copy is a valid reference for the winner. The audit split
+them into *oracles* (same full-recompute result; safe to pin),
+*stale copies* (drifted algorithm — never use as an oracle) and one
+*fallback*. ``tests/test_ta_duplicate_parity.py`` pins the highest-risk
+oracle pairs (``atr``, ``bb``, ``kc``, ``stdev``, ``tr``, ``supertrend``) and
+its docstring lists the stale ones.
 """
 
 from __future__ import annotations
