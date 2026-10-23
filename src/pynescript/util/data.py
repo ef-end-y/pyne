@@ -53,16 +53,13 @@ from typing import Any
 from urllib.parse import urlparse
 
 from pynescript import stats as _stats
-from pynescript.debug import scope_enabled as _debug_scope
+from pynescript.debug import scoped_debug
 
 
 _log = logging.getLogger(__name__)
 
-
-def _dbg(msg: str, *args: Any) -> None:
-    """Emit one historical-provider debug line when ``PYNE_DEBUG`` is enabled."""
-    if _debug_scope(__name__):
-        _log.debug(msg, *args)
+#: Emit one debug line for this module when ``PYNE_DEBUG`` is enabled.
+_dbg = scoped_debug(__name__, _log)
 
 
 class DataProvider(ABC):

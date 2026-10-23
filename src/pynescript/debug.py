@@ -45,6 +45,7 @@ from __future__ import annotations
 import logging
 import os
 
+from collections.abc import Callable
 from typing import Any
 
 
@@ -54,6 +55,7 @@ __all__ = [
     "debug_enabled",
     "debug_scopes",
     "scope_enabled",
+    "scoped_debug",
 ]
 
 
@@ -131,3 +133,21 @@ def scope_enabled(logger_name: str) -> bool:
 def reset_debug_caches() -> None:
     """Drop memoized env values (tests that mutate ``PYNE_DEBUG`` in-process)."""
     _CACHE.update({"raw": None, "value": False, "scope_raw": None, "scopes": frozenset()})
+
+
+def scoped_debug(module: str, logger: logging.Logger) -> Callable[..., None]:
+    """Return a ``_dbg("fmt %s", value)`` helper scoped to *module*.
+
+    Engine modules used to copy the same three-line helper. Keep one
+    implementation so the allocation-free disabled path (and the
+    ``PYNE_DEBUG_SCOPE`` filtering) cannot drift between them.
+
+    Call as ``_dbg("fmt %s", value)`` — arguments are only formatted when the
+    flag is on, so the disabled path stays allocation-free.
+    """
+
+    def _dbg(msg: str, *args: Any) -> None:
+        if scope_enabled(module):
+            logger.debug(msg, *args)
+
+    return _dbg

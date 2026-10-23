@@ -46,6 +46,7 @@ from pynescript import stats as _stats
 from pynescript.ast.helper import _scrub_pine_call_sites
 from pynescript.ast.helper import parse
 from pynescript.debug import scope_enabled as _debug_scope
+from pynescript.debug import scoped_debug
 from pynescript.util.time_parts import utc_parts_from_ms
 
 from .evaluator import CustomEvaluator
@@ -61,20 +62,13 @@ from .series import trim_series_lists
 
 _log = logging.getLogger(__name__)
 
+#: Emit one debug line for this module when ``PYNE_DEBUG`` is enabled.
+_dbg = scoped_debug(__name__, _log)
+
 
 def _dbg_on() -> bool:
     """Fast gate for this module's debug logging (``PYNE_DEBUG``)."""
     return _debug_scope(__name__)
-
-
-def _dbg(msg: str, *args: Any) -> None:
-    """Emit one engine debug line when ``PYNE_DEBUG`` is enabled.
-
-    Always call as ``_dbg("fmt %s", value)`` — the arguments are only
-    formatted when the flag is on, so the disabled path stays allocation-free.
-    """
-    if _debug_scope(__name__):
-        _log.debug(msg, *args)
 
 
 # Bare calendar series keys (Pine time components written into host context).

@@ -122,7 +122,7 @@ import numpy as np
 from pynescript import stats as _stats
 from pynescript.ast.helper import parse
 from pynescript.compiler.compiler import CompilerVisitor
-from pynescript.debug import scope_enabled as _debug_scope
+from pynescript.debug import scoped_debug
 
 
 try:
@@ -134,11 +134,8 @@ except ImportError:  # pragma: no cover
 
 _log = logging.getLogger(__name__)
 
-
-def _dbg(msg: str, *args: Any) -> None:
-    """Emit one compile-pipeline debug line when ``PYNE_DEBUG`` is enabled."""
-    if _debug_scope(__name__):
-        _log.debug(msg, *args)
+#: Emit one debug line for this module when ``PYNE_DEBUG`` is enabled.
+_dbg = scoped_debug(__name__, _log)
 
 
 # ---------------------------------------------------------------------------
