@@ -219,6 +219,24 @@ _SECURITY_POLICY_NOTES: tuple[str, ...] = (
 )
 
 
+def _nums(seq: list[float | None], n: int | None = None, *, nan_as: float = math.nan) -> list[float]:
+    """Coerce a possibly-``na`` series to floats for the HTF full-series helpers.
+
+    ``n`` truncates to the first *n* samples when given (the HTF prefix walk).
+    ``nan_as`` decides how ``na`` / non-numeric / NaN samples are filled:
+    ``math.nan`` keeps them (NaN-propagating indicators such as ADX/MFI/TSI)
+    and ``0.0`` neutralises them (accumulators such as CMF/WVAD/EMV).
+    """
+    acc: list[float] = []
+    for v in seq if n is None else seq[:n]:
+        try:
+            fv = float(v) if v is not None else nan_as
+        except (TypeError, ValueError):
+            fv = nan_as
+        acc.append(nan_as if fv != fv else fv)
+    return acc
+
+
 @dataclass(frozen=True)
 class HtfOffsetExpr:
     """Bare OHLCV history offset for HTF resample (``close[1]``).
@@ -242,9 +260,13 @@ class HtfSimpleTaExpr:
     """
 
     name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation | vpt | wvad | uo | apo | emv
-    source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), 0-arg tr (h/l/c), 3-arg uo (h/l/c), and 1-arg emv (h/l/v); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a; 3-arg apo is source Name
+    source: (
+        str | None
+    )  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), 0-arg tr (h/l/c), 3-arg uo (h/l/c), and 1-arg emv (h/l/v); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a; 3-arg apo is source Name
     length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5-34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20); 3-arg uo stores n1; 3-arg apo stores slow; 1-arg emv stores n
-    extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); 3-arg uo: n2*1000+n3 (1 <= n2,n3 <= 999); 3-arg apo: fast; else None
+    extra: int | None = (
+        None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); 3-arg uo: n2*1000+n3 (1 <= n2,n3 <= 999); 3-arg apo: fast; else None
+    )
 
 
 def _const_int_ge(node: Any, minimum: int) -> int | None:
@@ -2216,9 +2238,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_percentile_nearest_rank_at(
-        window: list[float | None], percentage: int
-    ) -> float | None:
+    def _htf_percentile_nearest_rank_at(window: list[float | None], percentage: int) -> float | None:
         """Last-sample ``ta.percentile_nearest_rank`` on a chronological window.
 
         Inlines ``_percentile_nearest_rank_inc_update`` without ``_ta_next_slot``.
@@ -2242,9 +2262,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return float(sorted_w[rank - 1])
 
     @staticmethod
-    def _htf_percentile_linear_interpolation_at(
-        window: list[float | None], percentage: int
-    ) -> float | None:
+    def _htf_percentile_linear_interpolation_at(window: list[float | None], percentage: int) -> float | None:
         """Last-sample ``ta.percentile_linear_interpolation`` on a chronological window.
 
         Inlines ``_percentile_linear_inc_update`` without ``_ta_next_slot``.
@@ -2284,9 +2302,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if n == 0 or period <= 0:
             return out
         for i in range(period - 1, n):
-            out[i] = self._htf_percentile_nearest_rank_at(
-                src[i - period + 1 : i + 1], percentage
-            )
+            out[i] = self._htf_percentile_nearest_rank_at(src[i - period + 1 : i + 1], percentage)
         return out
 
     def _htf_percentile_linear_interpolation_full_series(
@@ -2301,9 +2317,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if n == 0 or period <= 0:
             return out
         for i in range(period - 1, n):
-            out[i] = self._htf_percentile_linear_interpolation_at(
-                src[i - period + 1 : i + 1], percentage
-            )
+            out[i] = self._htf_percentile_linear_interpolation_at(src[i - period + 1 : i + 1], percentage)
         return out
 
     def _htf_dpo_full_series(self, src: list[float | None], period: int) -> list[float | None]:
@@ -2373,28 +2387,20 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             hit = under_hit if under else over
         return 1.0 if hit else 0.0
 
-    def _htf_crossover_full_series(
-        self, src_a: list[float | None], src_b: list[float | None]
-    ) -> list[float | None]:
+    def _htf_crossover_full_series(self, src_a: list[float | None], src_b: list[float | None]) -> list[float | None]:
         """Prefix-walk last two unique HTF samples matching interpret ``_crossover``."""
         n = min(len(src_a), len(src_b))
         out: list[float | None] = [None] * n
         for i in range(1, n):
-            out[i] = self._htf_cross_at(
-                src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], under=False
-            )
+            out[i] = self._htf_cross_at(src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], under=False)
         return out
 
-    def _htf_cross_full_series(
-        self, src_a: list[float | None], src_b: list[float | None]
-    ) -> list[float | None]:
+    def _htf_cross_full_series(self, src_a: list[float | None], src_b: list[float | None]) -> list[float | None]:
         """Prefix-walk last two unique HTF samples matching interpret ``_cross``."""
         n = min(len(src_a), len(src_b))
         out: list[float | None] = [None] * n
         for i in range(1, n):
-            out[i] = self._htf_cross_at(
-                src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], either=True
-            )
+            out[i] = self._htf_cross_at(src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], either=True)
         return out
 
     def _htf_correlation_full_series(
@@ -2442,16 +2448,12 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if val != val else val
         return out
 
-    def _htf_crossunder_full_series(
-        self, src_a: list[float | None], src_b: list[float | None]
-    ) -> list[float | None]:
+    def _htf_crossunder_full_series(self, src_a: list[float | None], src_b: list[float | None]) -> list[float | None]:
         """Prefix-walk last two unique HTF samples matching interpret ``_crossunder``."""
         n = min(len(src_a), len(src_b))
         out: list[float | None] = [None] * n
         for i in range(1, n):
-            out[i] = self._htf_cross_at(
-                src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], under=True
-            )
+            out[i] = self._htf_cross_at(src_a[i - 1], src_b[i - 1], src_a[i], src_b[i], under=True)
         return out
 
     def _htf_change_full_series(self, src: list[float | None], period: int) -> list[float | None]:
@@ -2631,9 +2633,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = None if fv != fv else fv
         return out
 
-    def _htf_ao_from_hl2(
-        self, hl2: list[float | None], fast: int = 5, slow: int = 34
-    ) -> list[float | None]:
+    def _htf_ao_from_hl2(self, hl2: list[float | None], fast: int = 5, slow: int = 34) -> list[float | None]:
         """Awesome Oscillator: SMA(hl2, fast) - SMA(hl2, slow) on unique HTF bars."""
         n = len(hl2)
         out: list[float | None] = [None] * n
@@ -2675,9 +2675,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         """``ta.ao`` on unique HTF hl2 (defaults SMA 5 - 34)."""
         return self._htf_ao_from_hl2(self._htf_source_series(unique, "hl2"), fast, slow)
 
-    def _htf_apo_full_series(
-        self, src: list[float | None], fast: int, slow: int
-    ) -> list[float | None]:
+    def _htf_apo_full_series(self, src: list[float | None], fast: int, slow: int) -> list[float | None]:
         """Full-list APO: EMA(fast) - EMA(slow) on unique HTF source.
 
         Matches interpret ``_apo``. Does not call ``_ta_next_slot``. Nested
@@ -2845,9 +2843,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = statistics.stdev(vals) if ok else None
         return out
 
-    def _htf_bbw_full_series(
-        self, src: list[float | None], period: int, mult: int
-    ) -> list[float | None]:
+    def _htf_bbw_full_series(self, src: list[float | None], period: int, mult: int) -> list[float | None]:
         """BBW = 2*mult*stdev/sma on unique HTF source.
 
         ``na`` while SMA or stdev is ``na`` or SMA is 0. Uses
@@ -2917,9 +2913,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_linreg_full_series(
-        src: list[float | None], period: int, offset: int = 0
-    ) -> list[float | None]:
+    def _htf_linreg_full_series(src: list[float | None], period: int, offset: int = 0) -> list[float | None]:
         """Full-list linreg endpoint matching interpret ``ta.linreg``."""
         from pynescript.ast.evaluator.builtins.technical_submodules.core import TechnicalHelpers
 
@@ -3147,9 +3141,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_pivot_confirm(
-        window: list[float | None], left: int, right: int, *, is_high: bool
-    ) -> float | None:
+    def _htf_pivot_confirm(window: list[float | None], left: int, right: int, *, is_high: bool) -> float | None:
         """Match interpret ``_pivot_confirm_window`` on a chronological prefix.
 
         Center is ``right`` before the newest sample. A tie on the left still
@@ -3190,9 +3182,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 return None
         return fv
 
-    def _htf_pivothigh_full_series(
-        self, src: list[float | None], left: int, right: int
-    ) -> list[float | None]:
+    def _htf_pivothigh_full_series(self, src: list[float | None], left: int, right: int) -> list[float | None]:
         """Full-list pivothigh on unique HTF source via prefix walk.
 
         Matches interpret last-sample ``_pivothigh_inc_update`` /
@@ -3209,9 +3199,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             out[i] = self._htf_pivot_confirm(src[: i + 1], left, right, is_high=True)
         return out
 
-    def _htf_pivotlow_full_series(
-        self, src: list[float | None], left: int, right: int
-    ) -> list[float | None]:
+    def _htf_pivotlow_full_series(self, src: list[float | None], left: int, right: int) -> list[float | None]:
         """Full-list pivotlow on unique HTF source via prefix walk.
 
         Matches interpret last-sample ``_pivotlow_inc_update`` /
@@ -3248,20 +3236,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         adx_fn = getattr(self, "_adx", None)
         if not callable(adx_fn):
             return out
-
-        def _nums(seq: list[float | None]) -> list[float]:
-            acc: list[float] = []
-            for v in seq[:n]:
-                if v is None:
-                    acc.append(math.nan)
-                    continue
-                try:
-                    acc.append(float(v))
-                except (TypeError, ValueError):
-                    acc.append(math.nan)
-            return acc
-
-        hs, ls, cs = _nums(highs), _nums(lows), _nums(closes)
+        hs, ls, cs = _nums(highs, n), _nums(lows, n), _nums(closes, n)
         for i in range(n):
             try:
                 v = adx_fn(hs[: i + 1], ls[: i + 1], cs[: i + 1], period)
@@ -3292,20 +3267,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         mfi_fn = getattr(self, "_mfi", None)
         if not callable(mfi_fn):
             return out
-
-        def _nums(seq: list[float | None]) -> list[float]:
-            acc: list[float] = []
-            for v in seq[:n]:
-                if v is None:
-                    acc.append(math.nan)
-                    continue
-                try:
-                    acc.append(float(v))
-                except (TypeError, ValueError):
-                    acc.append(math.nan)
-            return acc
-
-        hs, ls, cs, vs = _nums(highs), _nums(lows), _nums(closes), _nums(volumes)
+        hs, ls, cs, vs = _nums(highs, n), _nums(lows, n), _nums(closes, n), _nums(volumes, n)
         for i in range(n):
             try:
                 v = mfi_fn(hs[: i + 1], ls[: i + 1], cs[: i + 1], vs[: i + 1], period)
@@ -3316,9 +3278,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_obv_full_series(
-        closes: list[float | None], volumes: list[float | None]
-    ) -> list[float | None]:
+    def _htf_obv_full_series(closes: list[float | None], volumes: list[float | None]) -> list[float | None]:
         """Full-list OBV matching interpret ``ta.obv()`` on unique HTF bars.
 
         ``_obv`` is last-sample: 0 until 3 samples, then accumulates signed
@@ -3355,9 +3315,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_nvi_full_series(
-        closes: list[float | None], volumes: list[float | None]
-    ) -> list[float | None]:
+    def _htf_nvi_full_series(closes: list[float | None], volumes: list[float | None]) -> list[float | None]:
         """Full-list NVI matching interpret ``ta.nvi()`` on unique HTF bars.
 
         Seed ``1000.0`` on the first unique bar. Later bars multiply by
@@ -3410,9 +3368,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_pvi_full_series(
-        closes: list[float | None], volumes: list[float | None]
-    ) -> list[float | None]:
+    def _htf_pvi_full_series(closes: list[float | None], volumes: list[float | None]) -> list[float | None]:
         """Full-list PVI matching interpret ``ta.pvi()`` on unique HTF bars.
 
         Seed ``1000.0`` on the first unique bar. Later bars multiply by
@@ -3465,9 +3421,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     @staticmethod
-    def _htf_vpt_full_series(
-        closes: list[float | None], volumes: list[float | None]
-    ) -> list[float | None]:
+    def _htf_vpt_full_series(closes: list[float | None], volumes: list[float | None]) -> list[float | None]:
         """Full-list VPT matching interpret ``ta.vpt()`` on unique HTF bars.
 
         First unique bar is ``0.0``. Later bars add ``vol * (close-prev)/prev``
@@ -3727,19 +3681,6 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         tsi_fn = getattr(self, "_tsi", None)
         if not callable(tsi_fn):
             return out
-
-        def _nums(seq: list[float | None]) -> list[float]:
-            acc: list[float] = []
-            for v in seq:
-                if v is None:
-                    acc.append(float("nan"))
-                    continue
-                try:
-                    acc.append(float(v))
-                except (TypeError, ValueError):
-                    acc.append(float("nan"))
-            return acc
-
         closes = _nums(src)
         for i in range(n):
             try:
@@ -3770,23 +3711,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         cmf_fn = getattr(self, "_cmf", None)
         if not callable(cmf_fn):
             return out
-
-        def _nums(seq: list[float | None]) -> list[float]:
-            acc: list[float] = []
-            for v in seq[:n]:
-                if v is None:
-                    acc.append(0.0)
-                    continue
-                try:
-                    fv = float(v)
-                except (TypeError, ValueError):
-                    acc.append(0.0)
-                    continue
-                acc.append(0.0 if fv != fv else fv)
-            return acc
-
         try:
-            raw = cmf_fn(_nums(closes), _nums(highs), _nums(lows), _nums(volumes), period)
+            raw = cmf_fn(
+                _nums(closes, n, nan_as=0.0),
+                _nums(highs, n, nan_as=0.0),
+                _nums(lows, n, nan_as=0.0),
+                _nums(volumes, n, nan_as=0.0),
+                period,
+            )
         except (TypeError, ValueError):
             return out
         if not raw:
@@ -3824,23 +3756,14 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return out
         wvad_fn = getattr(self, "_wvad", None)
         if callable(wvad_fn):
-
-            def _nums(seq: list[float | None]) -> list[float]:
-                acc: list[float] = []
-                for v in seq[:n]:
-                    if v is None:
-                        acc.append(0.0)
-                        continue
-                    try:
-                        fv = float(v)
-                    except (TypeError, ValueError):
-                        acc.append(0.0)
-                        continue
-                    acc.append(0.0 if fv != fv else fv)
-                return acc
-
             try:
-                raw = wvad_fn(_nums(highs), _nums(lows), _nums(closes), _nums(volumes), period)
+                raw = wvad_fn(
+                    _nums(highs, n, nan_as=0.0),
+                    _nums(lows, n, nan_as=0.0),
+                    _nums(closes, n, nan_as=0.0),
+                    _nums(volumes, n, nan_as=0.0),
+                    period,
+                )
             except (TypeError, ValueError):
                 raw = None
             if raw:
@@ -3902,24 +3825,9 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         emv_fn = getattr(self, "_emv", None)
         if not callable(emv_fn):
             return out
-
-        def _nums(seq: list[float | None]) -> list[float]:
-            acc: list[float] = []
-            for v in seq[:n]:
-                if v is None:
-                    acc.append(0.0)
-                    continue
-                try:
-                    fv = float(v)
-                except (TypeError, ValueError):
-                    acc.append(0.0)
-                    continue
-                acc.append(0.0 if fv != fv else fv)
-            return acc
-
-        hs = _nums(highs)
-        ls = _nums(lows)
-        vs = _nums(volumes)
+        hs = _nums(highs, n, nan_as=0.0)
+        ls = _nums(lows, n, nan_as=0.0)
+        vs = _nums(volumes, n, nan_as=0.0)
         for i in range(n):
             try:
                 v = emv_fn(hs[: i + 1], ls[: i + 1], vs[: i + 1], period)
@@ -4769,9 +4677,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         closes = payload.get("close") or []
         return list(closes) if closes else None
 
-    def _ohlcv_payload(
-        self, symbol: str, timeframe: str, *, limit: int | None = None
-    ) -> dict[str, list[Any]] | None:
+    def _ohlcv_payload(self, symbol: str, timeframe: str, *, limit: int | None = None) -> dict[str, list[Any]] | None:
         """OHLCV columns from data_feed / data_provider, including times when present.
 
         *limit* truncates to the most recent N bars (``None`` keeps the full
@@ -5087,9 +4993,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         if aligned is None:
             return None
         completed, forming = aligned
-        agg = self._select_htf_agg(
-            spec, completed, gaps_on=gaps_on, lookahead_on=lookahead_on, forming=forming
-        )
+        agg = self._select_htf_agg(spec, completed, gaps_on=gaps_on, lookahead_on=lookahead_on, forming=forming)
         if gaps_on or lookahead_on:
             self._mark_security_merge_applied(gaps_on=gaps_on, lookahead_on=lookahead_on)
         na = float("nan")
@@ -6239,9 +6143,7 @@ def compile_htf_security_value(
         except (TypeError, ValueError):
             return float("nan")
         extra: int | None = None
-        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch", "wvad", "emv") or (
-            name == "range" and field_s is None
-        ):
+        if name in ("atr", "wpr", "adx", "mfi", "cmf", "stoch", "wvad", "emv") or (name == "range" and field_s is None):
             src = None
             if name == "stoch" and offset > 0:
                 extra = int(offset)
@@ -6328,4 +6230,3 @@ def compile_htf_security_value(
     if val is not None:
         return _as_htf_float(val)
     return _as_htf_float(host._chart_field_at(field_s, host._chart_bar_index()))
-

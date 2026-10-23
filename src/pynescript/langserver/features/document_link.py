@@ -46,6 +46,8 @@ from pynescript.ast.helper import parse
 from pynescript.ast.helper import walk
 from pynescript.langserver.protocol.utils import position_from_offset
 
+from ._ranges import node_to_range as _node_to_range
+
 
 logger = logging.getLogger(__name__)
 
@@ -271,19 +273,3 @@ def _node_source(source: str, node: Any) -> str | None:
     if 0 <= end.line < len(lines):
         parts.append(lines[end.line][: end.character])
     return "\n".join(parts)
-
-
-def _node_to_range(node: Any) -> lsp.Range | None:
-    """Convert AST node locations to an LSP Range (see ``symbols._node_to_range``)."""
-    lineno = getattr(node, "lineno", None)
-    if not lineno:
-        return None
-    col_offset = getattr(node, "col_offset", 0) or 0
-    end_lineno = getattr(node, "end_lineno", lineno) or lineno
-    end_col_offset = getattr(node, "end_col_offset", None)
-    if end_col_offset is None:
-        end_col_offset = col_offset + 1 if end_lineno == lineno else 1 << 31
-    return lsp.Range(
-        start=lsp.Position(line=max(0, lineno - 1), character=max(0, col_offset)),
-        end=lsp.Position(line=max(0, end_lineno - 1), character=max(0, end_col_offset)),
-    )

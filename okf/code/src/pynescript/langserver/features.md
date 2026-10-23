@@ -7,7 +7,7 @@ tags: [code, features, langserver, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-20T21:06:49Z
+  at: 2026-10-23T12:25:38Z
 sources:
   - id: tree
     resource: "src/pynescript/langserver/features"
@@ -19,6 +19,7 @@ okf_lock: generated
 # Files
 
 * `__init__.py`
+* `_ranges.py` — node_to_range
 * `completion.py` — handle_completion, handle_completion_resolve
 * `convert.py` — convert_payload, handle_code_action, handle_convert_to_v6, whole_document_edit
 * `definitions.py` — DefinitionFinder, handle_definition

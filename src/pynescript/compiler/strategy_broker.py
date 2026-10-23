@@ -62,6 +62,8 @@ from dataclasses import replace
 from typing import Any
 
 from pynescript.ast.evaluator.builtins.timeframe import calendar_day_bucket
+from pynescript.strategy_risk_core import StrategyBracketCore
+from pynescript.strategy_risk_core import StrategyRiskCore
 
 
 def _is_na(value: Any) -> bool:
@@ -226,7 +228,7 @@ class ClosedTradeRecord:
     max_runup: float = 0.0
 
 
-class CompileStrategyBroker:
+class CompileStrategyBroker(StrategyRiskCore, StrategyBracketCore):
     """Per-run strategy state for compiled object-mode scripts.
 
     Public methods mirror Pine ``strategy.entry`` / ``close`` / ``order`` /
@@ -801,45 +803,6 @@ class CompileStrategyBroker:
         if t > 10_000_000:
             return t // 86_400
         return t
-
-    def _permanent_risk_halt(self) -> bool:
-        """True when max_drawdown or max_cons_loss_days still forbids entries."""
-        if self.max_drawdown_risk is not None and self._max_drawdown >= float(self.max_drawdown_risk):
-            return True
-        if self.max_drawdown_risk_percent is not None and self._max_drawdown_percent >= float(
-            self.max_drawdown_risk_percent
-        ):
-            return True
-        if self.max_cons_loss_days is not None and self.consecutive_loss_days >= int(self.max_cons_loss_days):
-            return True
-        return False
-
-    def _ensure_calendar_day(self, ts: int) -> None:
-        """Roll day-scoped risk when the tz calendar day changes.
-
-        Resets day PnL / fill counters and clears ``max_intraday_loss`` halt.
-        ``max_drawdown`` and ``max_cons_loss_days`` stay blocked.
-        """
-        day = self._day_bucket(ts)
-        if self._calendar_day is None:
-            self._calendar_day = day
-            self._fills_day = day
-            return
-        if day == self._calendar_day:
-            return
-        if self._last_trade_day is not None and self._last_trade_day != day:
-            if self._day_pnl < 0:
-                self.consecutive_loss_days += 1
-            elif self._day_pnl > 0:
-                self.consecutive_loss_days = 0
-            if self.max_cons_loss_days is not None and self.consecutive_loss_days >= int(self.max_cons_loss_days):
-                self.entries_blocked = True
-            self._last_trade_day = day
-        self._calendar_day = day
-        self._day_pnl = 0.0
-        self._day_filled_orders = 0
-        self._fills_day = day
-        self.entries_blocked = self._permanent_risk_halt()
 
     def _roll_fill_day(self) -> None:
         """Reset intraday fill counter when the bar-time day bucket changes."""
@@ -1540,29 +1503,6 @@ class CompileStrategyBroker:
         if is_long:
             return avg + offset if is_profit else avg - offset
         return avg - offset if is_profit else avg + offset
-
-    def _merge_exit_bracket_prices(
-        self,
-        *,
-        limit_p: float | None,
-        stop_p: float | None,
-        profit_ticks: float | None,
-        loss_ticks: float | None,
-        is_long: bool,
-        from_entry: str | None,
-    ) -> tuple[float | None, float | None]:
-        """``limit``/``stop`` stay absolute; ``profit``/``loss`` fill missing legs.
-
-        Tick offsets are ``ticks * mintick`` from the exit's entry average.
-        When both a tick param and its absolute twin are set, the absolute
-        price wins. First-touch of the resulting limit+stop pair is unchanged.
-        """
-        entry_avg = self._exit_entry_avg(from_entry)
-        if limit_p is None:
-            limit_p = self._tick_offset_price(profit_ticks, entry_avg, is_long=is_long, is_profit=True)
-        if stop_p is None:
-            stop_p = self._tick_offset_price(loss_ticks, entry_avg, is_long=is_long, is_profit=False)
-        return limit_p, stop_p
 
     def close(
         self,
