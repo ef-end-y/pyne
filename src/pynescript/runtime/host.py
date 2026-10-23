@@ -36,6 +36,7 @@ import logging
 import math
 import os
 import re
+import sys
 import time
 import uuid
 
@@ -69,6 +70,24 @@ _dbg = scoped_debug(__name__, _log)
 def _dbg_on() -> bool:
     """Fast gate for this module's debug logging (``PYNE_DEBUG``)."""
     return _debug_scope(__name__)
+
+
+def _swallow(exc: BaseException, *, what: str = "") -> None:
+    """Record an intentionally ignored exception (visible under ``PYNE_DEBUG``).
+
+    Host plumbing is best-effort in a lot of places: metrics, logger buffers,
+    optional evaluator attributes, or a data feed that may fall back to mock
+    bars. Those paths must never abort a run, but a bare ``pass`` also hides
+    real bugs (a broken trail ratchet, a plot column that failed to extend).
+
+    Keep the behaviour and make the drop observable. ``_dbg`` is a no-op
+    unless ``PYNE_DEBUG`` is set, so the disabled path stays free.
+    """
+    caller = sys._getframe(1).f_code.co_name
+    if what:
+        _dbg("ignored %s (%s) in %s(): %s", what, type(exc).__name__, caller, exc)
+    else:
+        _dbg("ignored %s in %s(): %s", type(exc).__name__, caller, exc)
 
 
 # Bare calendar series keys (Pine time components written into host context).
@@ -262,8 +281,8 @@ def _clear_pine_logger() -> None:
         from pynescript.ast.evaluator.builtins.logging import get_logger
 
         get_logger().clear()
-    except Exception:  # logging is optional host plumbing
-        pass
+    except Exception as _exc:  # logging is optional host plumbing
+        _swallow(_exc, what="clear Pine log buffer")
 
 
 def _export_pine_logs() -> list[dict[str, str]]:
@@ -285,8 +304,8 @@ def _export_line_profile(evaluator: Any) -> list[dict[str, Any]]:
     for v in raw.values():
         try:
             total += float(v[0])
-        except (TypeError, ValueError, IndexError):
-            pass
+        except (TypeError, ValueError, IndexError) as _exc:
+            _swallow(_exc)
     denom = total if total > 0 else 1.0
     lines: list[dict[str, Any]] = []
     for ln, bucket in sorted(raw.items(), key=lambda kv: int(kv[0])):
@@ -395,8 +414,8 @@ def _record_run_stats(
             _stats.count("run.object_mode")
         if result.get("nopython_fallback_reason"):
             _stats.count("run.nopython_fallback")
-    except Exception:  # stats must never break a run
-        pass
+    except Exception as _exc:  # stats must never break a run
+        _swallow(_exc, what="record run stats")
 
 
 def _attach_logs_profile(
@@ -444,8 +463,8 @@ def _json_safe_number(x: Any) -> float | None:
         # numpy scalar → python
         if hasattr(x, "item") and not isinstance(x, (bytes, str, dict, list)):
             x = x.item()
-    except Exception:
-        pass
+    except (AttributeError, TypeError, ValueError) as _exc:
+        _swallow(_exc, what="coerce numpy scalar to a Python number")
     if isinstance(x, bool):
         return float(x)
     if isinstance(x, (int, float)):
@@ -469,14 +488,14 @@ def _color_str(c: Any) -> str | None:
     if callable(to_rgba):
         try:
             return str(to_rgba())
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="render colour as rgba")
     to_hex = getattr(c, "to_hex", None)
     if callable(to_hex):
         try:
             return str(to_hex())
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="render colour as hex")
     s = str(c)
     return s if s else None
 
@@ -751,8 +770,8 @@ def _pack_interpret_plot_columns(
         if isinstance(wv, (int, float)) and not isinstance(wv, bool):
             try:
                 meta_entry["histbase"] = float(wv)
-            except (TypeError, ValueError):
-                pass
+            except (TypeError, ValueError) as _exc:
+                _swallow(_exc)
         if kind in ("plotcandle", "plotbar"):
             for cparam in ("wickcolor", "bordercolor"):
                 cv = m0.get(cparam)
@@ -816,8 +835,8 @@ def _series_values_jsonable(values: Any) -> list[Any]:
                 return [bool(x) for x in values.ravel()]
             # object / other: fall through via tolist
             values = values.tolist()
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc)
     if hasattr(values, "tolist") and not isinstance(values, (list, tuple)):
         try:
             values = values.tolist()
@@ -873,8 +892,8 @@ def _env_int(name: str, default: int) -> int:
             value = int(raw)
             if value >= 0:
                 return value
-        except ValueError:
-            pass
+        except ValueError as _exc:
+            _swallow(_exc)
     return default
 
 
@@ -1261,8 +1280,8 @@ def _discard_realtime_plot_tick(evaluator: Any) -> None:
     if int(getattr(evaluator, "_plot_n_bars", 0) or 0) > 0:
         try:
             evaluator._plot_capture_i = 0
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="discard realtime plot tick")
         return
     n = int(getattr(evaluator, "_plot_capture_i", 0) or 0)
     cols = getattr(evaluator, "_plot_value_cols", None)
@@ -1274,8 +1293,8 @@ def _discard_realtime_plot_tick(evaluator: Any) -> None:
                 col.pop()
     try:
         evaluator._plot_capture_i = 0
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc, what="discard realtime plot tick")
 
 
 def _copy_list_dict_level(value: Any) -> Any:
@@ -1317,7 +1336,8 @@ def _copy_container_contents(value: Any) -> Any | None:
         fields = getattr(value, "fields", None)
         if isinstance(fields, dict) and getattr(value, "udt", None) is not None:
             return ("udt", dict(fields))
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="copy container contents")
         return None
     return None
 
@@ -1348,7 +1368,8 @@ def _restore_container_contents(target: Any, snap: Any) -> None:
             if isinstance(fields, dict) and isinstance(payload, dict):
                 fields.clear()
                 fields.update(payload)
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="restore container contents")
         return
 
 
@@ -1372,7 +1393,8 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
         return None
     try:
         bindings = dict(ctx)
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="snapshot realtime scope bindings")
         return None
     varips = getattr(evaluator, "_varip_declarations", None)
     varip_names = set(varips) if varips else set()
@@ -1384,8 +1406,8 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
         try:
             if hasattr(value, "update") and hasattr(value, "current") and hasattr(value, "history"):
                 currents[name] = getattr(value, "current", None)
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
         copied = _copy_container_contents(value)
         if copied is not None:
             containers[name] = copied
@@ -1400,7 +1422,8 @@ def _snapshot_realtime_scope(evaluator: Any) -> dict[str, Any] | None:
             "var_declarations": set(declared) if declared else set(),
             "once_fired": dict(once_fired) if isinstance(once_fired, dict) else {},
         }
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="snapshot realtime scope")
         return None
 
 
@@ -1428,39 +1451,39 @@ def _restore_realtime_scope(evaluator: Any, snap: dict[str, Any] | None) -> None
                 continue
             try:
                 del ctx[name]
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="restore realtime scope")
         for name, value in before.items():
             if name in varip_names:
                 continue
             try:
                 if name not in ctx or ctx[name] is not value:
                     ctx[name] = value
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="restore realtime scope")
         for name, contents in (snap.get("containers") or {}).items():
             if name in varip_names:
                 continue
             try:
                 _restore_container_contents(ctx.get(name), contents)
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="restore realtime container contents")
         for name, current in (snap.get("currents") or {}).items():
             target = ctx.get(name)
             try:
                 if target is not None and hasattr(target, "update") and hasattr(target, "current"):
                     target.current = current
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as _exc:
+                _swallow(_exc, what="restore realtime series current")
+    except Exception as _exc:
+        _swallow(_exc)
     try:
         declared = getattr(evaluator, "_var_declarations", None)
         if isinstance(declared, set):
             declared.clear()
             declared.update(snap.get("var_declarations") or ())
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc, what="restore var declarations")
     try:
         fired = getattr(evaluator, "_once_fired", None)
         restored = snap.get("once_fired") or {}
@@ -1469,8 +1492,8 @@ def _restore_realtime_scope(evaluator: Any, snap: dict[str, Any] | None) -> None
             fired.update(restored)
         else:
             evaluator._once_fired = dict(restored)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc, what="restore once-fired flags")
 
 
 def _copy_ta_value(value: Any) -> Any:
@@ -1496,8 +1519,8 @@ def _copy_ta_value(value: Any) -> Any:
             return {k: _copy_ta_value(v) for k, v in value.items()}
         if isinstance(value, tuple):
             return tuple(_copy_ta_value(v) for v in value)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc)
     return value
 
 
@@ -1517,7 +1540,8 @@ def _snapshot_ta_state(evaluator: Any) -> tuple[Any, Any] | None:
         ta_copy = {k: _copy_ta_value(v) for k, v in ta.items()} if ta else {}
         cross_copy = dict(cross) if cross else {}
         return (ta_copy, cross_copy)
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="snapshot TA state")
         return None
 
 
@@ -1538,8 +1562,8 @@ def _restore_ta_state(evaluator: Any, snap: tuple[Any, Any] | None) -> None:
             evaluator._ta_inc_state = {k: _copy_ta_value(v) for k, v in ta_copy.items()}
         if cross_copy is not None:
             evaluator._cross_state = dict(cross_copy)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc, what="restore TA state")
 
 
 def _apply_feed_forming_bar(
@@ -1563,11 +1587,12 @@ def _apply_feed_forming_bar(
         period = ctx.get("timeframe.period") if ctx is not None else None
         if period:
             tf = str(period)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc)
     try:
         from pynescript.util.datafeed import poll_forming_ohlcv
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="import the forming-bar poller")
         return
     polled = poll_forming_ohlcv(data_feed, symbol or "", tf)
     if polled is None:
@@ -1593,7 +1618,8 @@ def _apply_feed_forming_bar(
                 "close": c,
                 "volume": vol if vol is not None else 0.0,
             }
-    except Exception:
+    except Exception as _exc:
+        _swallow(_exc, what="write the forming bar into OHLCV")
         return
     if ctx is None:
         return
@@ -1607,15 +1633,15 @@ def _apply_feed_forming_bar(
             try:
                 setter(value)
                 return
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc)
         try:
             series.current = value
             hist = getattr(series, "history", None)
             if hist:
                 hist[0] = value
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
 
     _set_current("open", o)
     _set_current("high", h)
@@ -1631,16 +1657,16 @@ def _apply_feed_forming_bar(
             _set_current("hlc3", (h + low + c) / 3.0)
         if ctx.get("ohlc4") is not None:
             _set_current("ohlc4", (o + h + low + c) * 0.25)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc)
     try:
         ctx.set_bar_time(ts)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc)
     try:
         ctx["last_bar_time"] = ts
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc)
     sl = getattr(evaluator, "current_series", None)
     if isinstance(sl, dict):
         pairs = [("open", o), ("high", h), ("low", low), ("close", c)]
@@ -1651,8 +1677,8 @@ def _apply_feed_forming_bar(
             try:
                 if col:
                     col[-1] = val
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="apply forming tick to plot columns")
     htf = getattr(evaluator, "_htf_full_ohlcv", None)
     if isinstance(htf, dict):
         packed = [("open", o), ("high", h), ("low", low), ("close", c), ("time", ts)]
@@ -1663,8 +1689,8 @@ def _apply_feed_forming_bar(
             try:
                 if col is not None:
                     col[bar_index] = val
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="apply forming tick to plot columns")
 
 
 def _ratchet_forming_trails(evaluator: Any, high: Any, low: Any) -> None:
@@ -1681,8 +1707,8 @@ def _ratchet_forming_trails(evaluator: Any, high: Any, low: Any) -> None:
         return
     try:
         ratchet(high, low)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc, what="ratchet forming-bar trails")
 
 
 def _update_forming_trade_extremes(evaluator: Any, high: Any, low: Any) -> None:
@@ -1699,8 +1725,8 @@ def _update_forming_trade_extremes(evaluator: Any, high: Any, low: Any) -> None:
         return
     try:
         update(high, low)
-    except Exception:
-        pass
+    except Exception as _exc:
+        _swallow(_exc, what="update forming-bar trade extremes")
 
 
 def _forming_hl(ohlcv_data: list, bar_index: int) -> tuple[Any, Any]:
@@ -1938,8 +1964,8 @@ class InterpretSession:
                 chart_bars=list(ohlcv_data),
                 symbol=getattr(runtime, "symbol", "CHART") or "CHART",
             )
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
         self._data_feed = data_feed
         self._data_provider = data_provider
         t_parse0 = time.perf_counter()
@@ -2031,22 +2057,22 @@ class InterpretSession:
             if ns and name and src:
                 try:
                     evaluator.register_library_source(ns, name, ver, src)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    _swallow(_exc, what="register library source")
         if inputs and isinstance(inputs, dict):
             try:
                 evaluator._input_overrides = dict(inputs)  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            except (AttributeError, TypeError, ValueError) as _exc:
+                _swallow(_exc, what="apply input overrides")
         try:
             evaluator._input_declarations = []  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as _exc:
+            _swallow(_exc, what="reset input declarations")
         if profiler:
             try:
                 evaluator._pine_line_profile = {}  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            except (AttributeError, TypeError) as _exc:
+                _swallow(_exc, what="reset line profile")
         light_plots = _env_truthy("PYNE_LIGHT_PLOTS")
         evaluator._pine_light_plots = light_plots  # type: ignore[attr-defined]
         if light_plots:
@@ -2071,14 +2097,14 @@ class InterpretSession:
             from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
 
             DrawingRegistry.reset()
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="reset drawing registry")
         clear_alerts = getattr(evaluator, "clear_alerts", None)
         if callable(clear_alerts):
             try:
                 clear_alerts()
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="clear alert buffers")
 
         self._all_events: list[dict] = []
         self.script_id = hashlib.sha256(source_code.encode("utf-8")).hexdigest()[:16]
@@ -2101,15 +2127,15 @@ class InterpretSession:
                 "volume": col_vol,
                 "time": col_time,
             }
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
         # Keep the chart provider on the live bar list so append/tick are visible.
         try:
             prov = self._data_provider
             if prov is not None and hasattr(prov, "_bars"):
                 prov._bars = self._ohlcv_data
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="bind provider bars")
         if col_time:
             context["last_bar_time"] = col_time[-1]
             try:
@@ -2117,8 +2143,8 @@ class InterpretSession:
                 if chart is not None:
                     chart.left_visible_bar_time = int(col_time[0])
                     chart.right_visible_bar_time = int(col_time[-1])
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="stamp chart right-visible bar time")
 
         need_src_input = bool(_INPUT_SOURCE_RE.search(source_code))
         self._need_hl2 = need_src_input or bool(_HL2_RE.search(source_code)) or bool(_AO_RE.search(source_code))
@@ -2142,8 +2168,8 @@ class InterpretSession:
         try:
             evaluator._pine_series_cap = series_cap  # type: ignore[attr-defined]
             evaluator._pine_series_cap_enabled = self._do_series_cap  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
 
         evaluator._plot_n_bars = len(ohlcv_data)  # type: ignore[attr-defined]
         barstate.isnew = True
@@ -2376,8 +2402,8 @@ class InterpretSession:
                 try:
                     self._last_open_alert_len = len(getattr(ev, "_triggered_alerts", None) or [])
                     self._last_open_cond_len = len(getattr(ev, "_alert_conditions", None) or [])
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    _swallow(_exc, what="record alert buffer lengths")
             for tick_i in range(n_ticks):
                 if bar_rt:
                     _apply_feed_forming_bar(self._ohlcv_data, bar_index, ev, self._data_feed, self._runtime.symbol)
@@ -2470,8 +2496,8 @@ class InterpretSession:
             if chart is not None and self._col_time:
                 chart.left_visible_bar_time = int(self._col_time[0])
                 chart.right_visible_bar_time = int(self._col_time[-1])
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="stamp chart right-visible bar time")
 
     def append_bars(
         self,
@@ -2514,8 +2540,8 @@ class InterpretSession:
                 if len(col) < new_n:
                     col.extend([None] * (new_n - len(col)))
             self.evaluator._plot_n_bars = new_n  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="extend plot columns for appended bars")
         self._series_list_refs = self._build_series_refs()
         rt_first, rt_ticks = _resolve_realtime_first(
             new_n,
@@ -2584,8 +2610,8 @@ class InterpretSession:
         # Drop this bar's events/alerts/conditions; the re-visit re-emits.
         try:
             del self._all_events[self._last_open_event_len :]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="trim strategy events to bar-open")
         try:
             trig = getattr(ev, "_triggered_alerts", None)
             if isinstance(trig, list):
@@ -2593,8 +2619,8 @@ class InterpretSession:
             conds = getattr(ev, "_alert_conditions", None)
             if isinstance(conds, list):
                 del conds[self._last_open_cond_len :]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="trim alert conditions to bar-open")
 
         # Overwrite packed columns + raw bar (no push; count unchanged).
         self._col_open[idx] = o
@@ -2607,15 +2633,15 @@ class InterpretSession:
         try:
             ev._htf_ohlcv_cache = {}  # type: ignore[attr-defined]
             ev._htf_simple_ta_cache = {}  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="drop HTF TA cache for the re-ticked bar")
         ctx["last_bar_time"] = bar_time
         try:
             chart = ctx.get("chart")
             if chart is not None:
                 chart.right_visible_bar_time = int(bar_time)
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="stamp chart right-visible bar time")
 
         # Overwrite host series heads (history[0] is the current bar).
         self.open_series.current = o
@@ -2682,8 +2708,8 @@ class InterpretSession:
         # Re-visit at the last-bar plot slot (no _plot_bars_done advance).
         try:
             ev._plot_bars_done = idx  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="pin plot write index at the last bar")
         ev.reset_plots()
         if self._need_strategy and strategy_events:
             strategy_events.clear()
@@ -2754,8 +2780,8 @@ class InterpretSession:
                     strategy_state._avg_price_hist[-1] = float(strategy_state.entry_price)
             if strategy_state._closed_trades_hist:
                 strategy_state._closed_trades_hist[-1] = float(len(strategy_state.closed_trades))
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="commit last-bar strategy history")
 
     def _confirm_forming_last_bar(self, *, more_bars: bool = False) -> None:
         """Re-visit the last bar as confirmed after unconfirmed forming ticks."""
@@ -2773,8 +2799,8 @@ class InterpretSession:
             _update_forming_trade_extremes(ev, self._col_high[idx], self._col_low[idx])
         try:
             del self._all_events[self._last_open_event_len :]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="trim strategy events to bar-open")
         try:
             trig = getattr(ev, "_triggered_alerts", None)
             if isinstance(trig, list):
@@ -2782,8 +2808,8 @@ class InterpretSession:
             conds = getattr(ev, "_alert_conditions", None)
             if isinstance(conds, list):
                 del conds[self._last_open_cond_len :]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="trim alert conditions to bar-open")
         barstate.isfirst = idx == 0
         # Empty append confirms in place (still last); a follow-on batch is not.
         barstate.islast = not more_bars
@@ -2816,8 +2842,8 @@ class InterpretSession:
         ctx.set_bar_time(bar_time)
         try:
             ev._plot_bars_done = idx  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="pin plot write index at the last bar")
         ev.reset_plots()
         strategy_state = ev._strategy_state
         strategy_events = strategy_state._events
@@ -3278,8 +3304,8 @@ class Runtime:
                 chart_bars=ohlcv_data,
                 symbol=getattr(self, "symbol", "CHART") or "CHART",
             )
-        except Exception:  # intentional soft-fail → mock data
-            pass
+        except Exception as _exc:  # intentional soft-fail → mock data
+            _swallow(_exc, what="resolve request data sources")
 
         # Parse once (cached by source hash for multi-run hosts)
         t_parse0 = time.perf_counter()
@@ -3380,24 +3406,24 @@ class Runtime:
             if ns and name and src:
                 try:
                     evaluator.register_library_source(ns, name, ver, src)
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    _swallow(_exc, what="register library source")
         # Host UI overrides for input.* (keyed by title)
         if inputs and isinstance(inputs, dict):
             try:
                 evaluator._input_overrides = dict(inputs)  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            except (AttributeError, TypeError, ValueError) as _exc:
+                _swallow(_exc, what="apply input overrides")
         try:
             evaluator._input_declarations = []  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except (AttributeError, TypeError) as _exc:
+            _swallow(_exc, what="reset input declarations")
         # Per-line timing map (line → [ms_sum, execs]); visit_Script aggregates.
         if profiler:
             try:
                 evaluator._pine_line_profile = {}  # type: ignore[attr-defined]
-            except Exception:
-                pass
+            except (AttributeError, TypeError) as _exc:
+                _swallow(_exc, what="reset line profile")
 
         # Phase 2.5: corpus / success-only — skip plot columns + input meta (default off).
         light_plots = _env_truthy("PYNE_LIGHT_PLOTS")
@@ -3432,16 +3458,16 @@ class Runtime:
             from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
 
             DrawingRegistry.reset()
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="reset drawing registry")
 
         # Alert engine: clear per-run so prior jobs do not leak firings
         clear_alerts = getattr(evaluator, "clear_alerts", None)
         if callable(clear_alerts):
             try:
                 clear_alerts()
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="clear alert buffers")
 
         all_events: list[dict] = []
         all_events_append = all_events.append
@@ -3466,8 +3492,8 @@ class Runtime:
                 "volume": col_vol,
                 "time": col_time,
             }
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
         if col_time:
             context["last_bar_time"] = col_time[-1]
             # Chart viewport times track packed bar-open ms (incl. synthetic).
@@ -3476,8 +3502,8 @@ class Runtime:
                 if chart is not None:
                     chart.left_visible_bar_time = int(col_time[0])
                     chart.right_visible_bar_time = int(col_time[-1])
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="stamp chart right-visible bar time")
         has_bid_ask = False
         for b in ohlcv_data:
             if isinstance(b, dict) and (("bid" in b) or ("ask" in b)):
@@ -3537,8 +3563,8 @@ class Runtime:
         try:
             evaluator._pine_series_cap = series_cap if _do_series_cap else None  # type: ignore[attr-defined]
             evaluator._pine_series_cap_enabled = _do_series_cap  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="seed series cap for the evaluator")
 
         if _use_ring:
             from pynescript.ast.evaluator.series_buffer import ChronoTailView
@@ -4054,8 +4080,8 @@ class Runtime:
                                 safe_entry[k] = str(v)
                         safe_pol["policies"][str(tag)] = safe_entry
                 meta_out["request_security"] = safe_pol
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc, what="serialise request.security policy")
         interpret_out: dict[str, Any] = {
             "plots": final_series,
             "series": series_map,
@@ -4148,8 +4174,8 @@ class Runtime:
         if len(_HOST_COMPILE_FAIL_CACHE) >= _HOST_COMPILE_FAIL_CACHE_MAX and cache_key not in _HOST_COMPILE_FAIL_CACHE:
             try:
                 _HOST_COMPILE_FAIL_CACHE.pop(next(iter(_HOST_COMPILE_FAIL_CACHE)))
-            except StopIteration:
-                pass
+            except StopIteration as _exc:
+                _swallow(_exc)
         _HOST_COMPILE_FAIL_CACHE[cache_key] = reason
 
     def _run_auto(
@@ -4348,8 +4374,8 @@ class Runtime:
             if len(_HOST_COMPILE_CACHE) >= _HOST_COMPILE_CACHE_MAX:
                 try:
                     _HOST_COMPILE_CACHE.pop(next(iter(_HOST_COMPILE_CACHE)))
-                except StopIteration:
-                    pass
+                except StopIteration as _exc:
+                    _swallow(_exc)
             _HOST_COMPILE_CACHE[cache_key] = compiled
             _HOST_COMPILE_FAIL_CACHE.pop(cache_key, None)
         compile_ms = (time.perf_counter() - t_compile0) * 1000.0
@@ -4393,8 +4419,8 @@ class Runtime:
                     prefix=getattr(self._syminfo, "prefix", "") or "",
                     timezone=getattr(self._syminfo, "timezone", None) or "UTC",
                 )
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="set chart identity for the compiled script")
             n_bars_run = len(closes) if closes is not None else 0
             rt_first, rt_ticks = _resolve_realtime_first(
                 n_bars_run,
@@ -4512,14 +4538,14 @@ class Runtime:
                     try:
                         _n = int(_m.group(1))
                         drawing_limits[_key] = max(1, min(_cap, _n))
-                    except (TypeError, ValueError):
-                        pass
+                    except (TypeError, ValueError) as _exc:
+                        _swallow(_exc)
             if isinstance(drawings, list) and drawings:
                 # Fold line.set_* / label.set_* onto handles before GC + JSON
                 drawings = DrawingRegistry.fold_compile_drawing_mutations(drawings)
                 drawings = DrawingRegistry.gc_exported_drawings(drawings, drawing_limits)
-        except Exception:
-            pass
+        except Exception as _exc:
+            _swallow(_exc)
 
         # Lift compile __drawings visual events (bgcolor/plotshape/plotchar/plotarrow)
         # into titled series keys so interpret↔compile key sets align (Agent 07 helper).
@@ -4540,8 +4566,8 @@ class Runtime:
                     _n_visual,
                     plot_meta=plot_meta,
                 )
-            except Exception:
-                pass
+            except Exception as _exc:
+                _swallow(_exc, what="merge drawing series into compiled plots")
             # Geometry-only AXIS payload — same shape as interpret export_for_api.
             try:
                 bar_times = [int(t or 0) for t in (times if times is not None else [])]
