@@ -388,8 +388,8 @@ def test_cum_inc_matches_batch():
 
 def test_safe_float():
     assert np.isnan(nb.safe_float(None))
-    assert nb.safe_float(True) == pytest.approx(1.0)  # noqa: FBT003
-    assert nb.safe_float(False) == pytest.approx(0.0)  # noqa: FBT003
+    assert nb.safe_float(True) == pytest.approx(1.0)
+    assert nb.safe_float(False) == pytest.approx(0.0)
     assert nb.safe_float(3) == pytest.approx(3.0)
     assert nb.safe_float("3.5") == pytest.approx(3.5)
     assert np.isnan(nb.safe_float(""))
@@ -405,7 +405,7 @@ def test_na_num():
     assert np.isnan(nb.na_num(None))
     assert nb.na_num(3.5) == pytest.approx(3.5)
     assert nb.na_num(3) == 3
-    assert nb.na_num(True) == pytest.approx(1.0)  # noqa: FBT003
+    assert nb.na_num(True) == pytest.approx(1.0)
 
 
 def test_safe_int():
@@ -435,8 +435,8 @@ def test_pine_bool():
 def test_pine_string():
     assert nb.pine_string(None) == "na"
     assert nb.pine_string(float("nan")) == "na"
-    assert nb.pine_string(True) == "true"  # noqa: FBT003
-    assert nb.pine_string(False) == "false"  # noqa: FBT003
+    assert nb.pine_string(True) == "true"
+    assert nb.pine_string(False) == "false"
     assert nb.pine_string(5) == "5"
 
 
@@ -847,7 +847,7 @@ def test_safe_sum_max_min_nested_and_descending():
     assert nb.safe_sum([[1, 2], [3]]) == pytest.approx(6.0)
     assert nb.safe_max([[1, 5], [3]]) == pytest.approx(5.0)
     assert nb.safe_min([[4, 1], [3]]) == pytest.approx(1.0)
-    assert nb._pine_is_descending(True) is True  # noqa: FBT003
+    assert nb._pine_is_descending(True) is True
     assert nb._pine_is_descending(-1) is True
     assert nb._pine_is_descending("desc") is True
     assert nb._pine_is_descending(None) is False

@@ -261,7 +261,7 @@ class TestMatrixCore:
 
     def test_is_descending_variants(self) -> None:
         assert Matrix._is_descending(None) is False
-        assert Matrix._is_descending(True) is True  # noqa: FBT003
+        assert Matrix._is_descending(True) is True
         assert Matrix._is_descending(-1) is True
         assert Matrix._is_descending(1) is False
         assert Matrix._is_descending("descending") is True
@@ -314,7 +314,7 @@ class TestMatrixBuiltins:
         assert ev._coerce_optional_matrix([]).rows() == 0
         assert ev._optional_int(None) is None
         assert ev._optional_int(float("nan")) is None
-        assert ev._optional_int(True) == 1  # noqa: FBT003
+        assert ev._optional_int(True) == 1
         assert ev._optional_int(2.7) == 2
         assert ev._optional_int(SimpleNamespace(current=4)) == 4
         assert ev._optional_int("bad") is None
@@ -843,7 +843,7 @@ class TestColorFunctions:
         assert color_t(Color(0, 0, 0, 0)) == 100
         assert color_t(Color(0, 0, 0, 255)) == 0
         assert color_r(None) == 0
-        assert color_g(True) == 0  # noqa: FBT003
+        assert color_g(True) == 0
 
     def test_rgb_and_gradient(self) -> None:
         assert color_rgb(1, 2, 3) == Color(1, 2, 3, 255)
@@ -1028,7 +1028,7 @@ class _DropAssign(NodeTransformer):
     def __init__(self) -> None:
         super().__init__()
 
-    def visit_Assign(self, node: ast.AST) -> ast.AST | None:  # noqa: N802
+    def visit_Assign(self, node: ast.AST) -> ast.AST | None:
         return None
 
 
@@ -1036,7 +1036,7 @@ class _DupExpr(NodeTransformer):
     def __init__(self) -> None:
         super().__init__()
 
-    def visit_Expr(self, node: ast.AST) -> list[ast.AST]:  # noqa: N802
+    def visit_Expr(self, node: ast.AST) -> list[ast.AST]:
         return [node, node]
 
 
@@ -1044,7 +1044,7 @@ class _ZeroConst(NodeTransformer):
     def __init__(self) -> None:
         super().__init__()
 
-    def visit_Constant(self, node: ast.Constant) -> ast.AST:  # noqa: N802
+    def visit_Constant(self, node: ast.Constant) -> ast.AST:
         return ast.Constant(value=0)
 
 
@@ -1052,7 +1052,7 @@ class _DropConst(NodeTransformer):
     def __init__(self) -> None:
         super().__init__()
 
-    def visit_Constant(self, node: ast.Constant) -> None:  # noqa: N802
+    def visit_Constant(self, node: ast.Constant) -> None:
         return None
 
 

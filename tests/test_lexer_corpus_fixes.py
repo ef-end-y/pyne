@@ -17,7 +17,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Lexer fixes found while sweeping set01–set05 corpus failures."""
+"""Lexer fixes found while sweeping set01-set05 corpus failures."""
 
 from __future__ import annotations
 

@@ -76,7 +76,7 @@ def _hist_bars() -> list[dict[str, float | int]]:
 
 
 def _rising_highs() -> list[list[float | int]]:
-    # Offset is $1 (100 ticks × mintick 0.01). Keep low above high-offset so
+    # Offset is $1 (100 ticks x mintick 0.01). Keep low above high-offset so
     # forming OHLC ratchets the stop without filling it.
     ts = _TS0 + 2 * _DAY
     return [

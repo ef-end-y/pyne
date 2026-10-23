@@ -243,7 +243,7 @@ class HtfSimpleTaExpr:
 
     name: str  # sma | ema | rsi | atr | wma | rma | cmo | stdev | linreg | cci | roc | mom | hma | vwma | dema | tema | wpr | highest | lowest | range | median | dev | variance | mode | percentrank | change | cog | highestbars | lowestbars | kama | rising | falling | swma | ao | vwap | cum | adx | mfi | obv | cmf | nvi | pvi | accdist | wad | tr | tsi | bbw | stoch | pivothigh | pivotlow | percentile_nearest_rank | percentile_linear_interpolation | dpo | crossover | crossunder | cross | correlation | vpt | wvad | uo | apo | emv
     source: str | None  # OHLCV field; None for atr/wpr/adx/stoch (h/l/c), mfi/cmf/wvad (h/l/c/v), 0-arg obv/nvi/pvi/vpt (close+volume), 0-arg accdist/wad (h/l/c/v), 0-arg tr (h/l/c), 3-arg uo (h/l/c), and 1-arg emv (h/l/v); 1-arg cci is hlc3; 1-arg highest/lowest/highestbars/lowestbars/range is high/low; 2-arg pivothigh is high; 2-arg pivotlow is low; ao is hl2; 0-arg vwap is hlc3; 2-arg tsi/bbw is close; 3-arg percentile_* is the source Name; 1-arg dpo is close; 2-arg dpo is source Name; 2-arg crossover/crossunder/cross is src_a; 3-arg correlation is src_a; 3-arg apo is source Name
-    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5−34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20); 3-arg uo stores n1; 3-arg apo stores slow; 1-arg emv stores n
+    length: int  # swma stores 4; 1-arg change stores 1; 0-arg ao stores 0 (SMA 5-34 defaults); 1-arg/2-arg ao stores slow; vwap/cum/obv/nvi/pvi/accdist/wad/tr/vpt store 0 (cumulative / true range); 2-arg tsi stores long; 2-arg/3-arg bbw stores length; 1-arg/2-arg stoch stores kPeriod; 2-arg/3-arg pivothigh/pivotlow stores left; 3-arg percentile_* stores n; 1-arg/2-arg dpo stores n; 2-arg crossover/crossunder/cross stores 0; 3-arg correlation stores n (≥2); 1-arg/0-arg wvad stores n (default 20); 3-arg uo stores n1; 3-arg apo stores slow; 1-arg emv stores n
     extra: int | None = None  # 1-arg/2-arg ao: fast; 2-arg tsi: short; 3-arg linreg: offset; 2-arg/3-arg bbw: mult; 2-arg stoch: dPeriod (unused for %K); 2-arg/3-arg pivothigh/pivotlow: right; 3-arg percentile_*: percentage (0 ok); 2-arg crossover/crossunder/cross / 3-arg correlation: src_b field index (close=0, open=1, high=2, low=3, volume=4, hl2=5, hlc3=6, ohlc4=7, hlcc4=8); 3-arg uo: n2*1000+n3 (1 <= n2,n3 <= 999); 3-arg apo: fast; else None
 
 
@@ -274,7 +274,7 @@ def _const_nonneg_int(node: Any) -> int | None:
     return _const_int_ge(node, 0)
 
 
-def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: PLR0911
+def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:
     """Match allowlisted simple ``ta.*`` AST for HTF resample, else None.
 
     Allowed shapes (positional args only, no kwargs):
@@ -366,8 +366,8 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
     - ``ta.lowest(14)`` — length-only form (HTF low).
     - ``ta.highestbars(14)`` — length-only form (HTF high).
     - ``ta.lowestbars(14)`` — length-only form (HTF low).
-    - ``ta.range(14)`` — length-only form (HTF high − HTF low over n unique bars).
-    - ``ta.ao()`` — 0-arg (HTF hl2, SMA 5 − SMA 34). ``length`` is stored as 0.
+    - ``ta.range(14)`` — length-only form (HTF high - HTF low over n unique bars).
+    - ``ta.ao()`` — 0-arg (HTF hl2, SMA 5 - SMA 34). ``length`` is stored as 0.
     - ``ta.ao(5)`` — one positive int literal = fast; slow defaults to 34.
       ``source="hl2"``, ``length`` is 34, ``extra`` is fast.
     - ``ta.ao(5, 34)`` — two positive int literals; ``source="hl2"``,
@@ -464,19 +464,19 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("vpt", None, 0)
 
     if fname == "uo":
-        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (n1, n2, n3)
+        if len(arg_nodes) != 3:  # 3-arg (n1, n2, n3)
             return None
         n1 = _const_positive_int(arg_nodes[0].value)
         n2 = _const_positive_int(arg_nodes[1].value)
         n3 = _const_positive_int(arg_nodes[2].value)
         if n1 is None or n2 is None or n3 is None:
             return None
-        if n2 > 999 or n3 > 999:  # noqa: PLR2004 - extra packs n2*1000+n3
+        if n2 > 999 or n3 > 999:  # extra packs n2*1000+n3
             return None
         return HtfSimpleTaExpr("uo", None, n1, extra=n2 * 1000 + n3)
 
     if fname == "apo":
-        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, fast, slow)
+        if len(arg_nodes) != 3:  # 3-arg (source, fast, slow)
             return None
         src_node = arg_nodes[0].value
         if type(src_node) is not ast_mod.Name:
@@ -524,7 +524,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("tr", None, 0)
 
     if fname == "tsi":
-        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (short, long)
+        if len(arg_nodes) != 2:  # 2-arg (short, long)
             return None
         short = _const_positive_int(arg_nodes[0].value)
         long = _const_positive_int(arg_nodes[1].value)
@@ -533,13 +533,13 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("tsi", "close", long, extra=short)
 
     if fname == "bbw":
-        if len(arg_nodes) == 2:  # noqa: PLR2004 - 2-arg (length, mult)
+        if len(arg_nodes) == 2:  # 2-arg (length, mult)
             length = _const_positive_int(arg_nodes[0].value)
             mult = _const_positive_int(arg_nodes[1].value)
             if length is None or mult is None:
                 return None
             return HtfSimpleTaExpr("bbw", "close", length, extra=mult)
-        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, length, mult)
+        if len(arg_nodes) != 3:  # 3-arg (source, length, mult)
             return None
         src_node = arg_nodes[0].value
         if type(src_node) is not ast_mod.Name:
@@ -555,7 +555,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if len(arg_nodes) == 1:
             length = _const_positive_int(arg_nodes[0].value)
             return HtfSimpleTaExpr("stoch", None, length) if length else None
-        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (k, d)
+        if len(arg_nodes) != 2:  # 2-arg (k, d)
             return None
         k = _const_positive_int(arg_nodes[0].value)
         d = _const_positive_int(arg_nodes[1].value)
@@ -565,13 +565,13 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
 
     if fname in ("pivothigh", "pivotlow"):
         default_src = "high" if fname == "pivothigh" else "low"
-        if len(arg_nodes) == 2:  # noqa: PLR2004 - 2-arg (left, right)
+        if len(arg_nodes) == 2:  # 2-arg (left, right)
             left = _const_nonneg_int(arg_nodes[0].value)
             right = _const_nonneg_int(arg_nodes[1].value)
             if left is None or right is None:
                 return None
             return HtfSimpleTaExpr(fname, default_src, left, extra=right)
-        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, left, right)
+        if len(arg_nodes) != 3:  # 3-arg (source, left, right)
             return None
         src_node = arg_nodes[0].value
         if type(src_node) is not ast_mod.Name:
@@ -584,7 +584,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr(fname, src, left, extra=right)
 
     if fname in ("percentile_nearest_rank", "percentile_linear_interpolation"):
-        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (source, n, percentage)
+        if len(arg_nodes) != 3:  # 3-arg (source, n, percentage)
             return None
         src_node = arg_nodes[0].value
         if type(src_node) is not ast_mod.Name:
@@ -604,7 +604,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if len(arg_nodes) == 1:
             length = _const_positive_int(arg_nodes[0].value)
             return HtfSimpleTaExpr("dpo", "close", length) if length else None
-        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (source, n)
+        if len(arg_nodes) != 2:  # 2-arg (source, n)
             return None
         src_node = arg_nodes[0].value
         if type(src_node) is not ast_mod.Name:
@@ -616,7 +616,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("dpo", src, length)
 
     if fname in ("crossover", "crossunder", "cross"):
-        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (src_a, src_b)
+        if len(arg_nodes) != 2:  # 2-arg (src_a, src_b)
             return None
         a_node = arg_nodes[0].value
         b_node = arg_nodes[1].value
@@ -630,7 +630,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr(fname, src_a, 0, extra=extra)
 
     if fname == "correlation":
-        if len(arg_nodes) != 3:  # noqa: PLR2004 - 3-arg (src_a, src_b, n)
+        if len(arg_nodes) != 3:  # 3-arg (src_a, src_b, n)
             return None
         a_node = arg_nodes[0].value
         b_node = arg_nodes[1].value
@@ -694,7 +694,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         if len(arg_nodes) == 1:
             fast = _const_positive_int(arg_nodes[0].value)
             return HtfSimpleTaExpr("ao", "hl2", 34, extra=fast) if fast else None
-        if len(arg_nodes) != 2:  # noqa: PLR2004 - 2-arg (fast, slow)
+        if len(arg_nodes) != 2:  # 2-arg (fast, slow)
             return None
         fast = _const_positive_int(arg_nodes[0].value)
         slow = _const_positive_int(arg_nodes[1].value)
@@ -726,7 +726,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
             return None
         return HtfSimpleTaExpr("vwap", src, 0)
 
-    if fname == "linreg" and len(arg_nodes) == 3:  # noqa: PLR2004 - (source, n, offset)
+    if fname == "linreg" and len(arg_nodes) == 3:  # (source, n, offset)
         src_node = arg_nodes[0].value
         if type(src_node) is not ast_mod.Name:
             return None
@@ -738,7 +738,7 @@ def match_htf_simple_ta_ast(expr_ast: Any) -> HtfSimpleTaExpr | None:  # noqa: P
         return HtfSimpleTaExpr("linreg", src, length, extra=offset)
 
     # sma / ema / rsi / wma / rma / cmo / stdev / linreg / cci / roc / mom / hma / vwma / dema / tema / highest / lowest / range / median / dev / variance / mode / percentrank / change / cog / highestbars / lowestbars / kama / rising / falling: (source, length)
-    if len(arg_nodes) != 2:  # noqa: PLR2004 - fixed allowlist arity
+    if len(arg_nodes) != 2:  # fixed allowlist arity
         return None
     src_node = arg_nodes[0].value
     if type(src_node) is not ast_mod.Name:
@@ -1318,7 +1318,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return ("ms", int(bucket_ms))
 
     @staticmethod
-    def _htf_cache_fingerprint(  # noqa: PLR0913
+    def _htf_cache_fingerprint(
         n: int,
         times: list[Any],
         opens: list[Any],
@@ -1401,7 +1401,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return None
         return sec * 1000
 
-    def _request_is_higher_tf(self, timeframe: Any) -> bool:  # noqa: C901, PLR0911
+    def _request_is_higher_tf(self, timeframe: Any) -> bool:
         """True when *timeframe* is coarser than chart bars (inferred or declared)."""
         tf_s = "" if timeframe is None else str(timeframe).strip()
         if isinstance(timeframe, list):
@@ -1507,7 +1507,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return (h + l + c + c) * 0.25
         return float("nan")
 
-    def _build_htf_completed_series(  # noqa: C901, PLR0912, PLR0913, PLR0915
+    def _build_htf_completed_series(
         self,
         bucket_ms: int,
         n: int,
@@ -2084,7 +2084,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         return out
 
     def _htf_range_full_series(self, src: list[float | None], period: int) -> list[float | None]:
-        """Full-list range as highest − lowest on unique HTF source windows."""
+        """Full-list range as highest - lowest on unique HTF source windows."""
         hi = self._htf_highest_full_series(src, period)
         lo = self._htf_lowest_full_series(src, period)
         n = len(src)
@@ -2104,7 +2104,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
     def _htf_hl_range_full_series(
         self, highs: list[float | None], lows: list[float | None], period: int
     ) -> list[float | None]:
-        """1-arg ``ta.range(n)``: highest high − lowest low over *period* unique HTF bars."""
+        """1-arg ``ta.range(n)``: highest high - lowest low over *period* unique HTF bars."""
         hi = self._htf_highest_full_series(highs, period)
         lo = self._htf_lowest_full_series(lows, period)
         n = min(len(hi), len(lo))
@@ -2426,7 +2426,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 if fx != fx or fy != fy:
                     continue
                 pairs.append((fx, fy))
-            if len(pairs) < 2:  # noqa: PLR2004 - Pearson needs ≥2 pairs
+            if len(pairs) < 2:  # Pearson needs ≥2 pairs
                 continue
             xs = [p[0] for p in pairs]
             ys = [p[1] for p in pairs]
@@ -2634,7 +2634,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
     def _htf_ao_from_hl2(
         self, hl2: list[float | None], fast: int = 5, slow: int = 34
     ) -> list[float | None]:
-        """Awesome Oscillator: SMA(hl2, fast) − SMA(hl2, slow) on unique HTF bars."""
+        """Awesome Oscillator: SMA(hl2, fast) - SMA(hl2, slow) on unique HTF bars."""
         n = len(hl2)
         out: list[float | None] = [None] * n
         sma_fn = getattr(self, "_sma", None)
@@ -2672,13 +2672,13 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
     def _htf_ao_full_series(
         self, unique: list[dict[str, float]], *, fast: int = 5, slow: int = 34
     ) -> list[float | None]:
-        """``ta.ao`` on unique HTF hl2 (defaults SMA 5 − 34)."""
+        """``ta.ao`` on unique HTF hl2 (defaults SMA 5 - 34)."""
         return self._htf_ao_from_hl2(self._htf_source_series(unique, "hl2"), fast, slow)
 
     def _htf_apo_full_series(
         self, src: list[float | None], fast: int, slow: int
     ) -> list[float | None]:
-        """Full-list APO: EMA(fast) − EMA(slow) on unique HTF source.
+        """Full-list APO: EMA(fast) - EMA(slow) on unique HTF source.
 
         Matches interpret ``_apo``. Does not call ``_ta_next_slot``. Nested
         unmatched.
@@ -2755,7 +2755,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
     def _htf_vwap_full_series(src: list[float | None], vol: list[float | None]) -> list[float | None]:
         """Cumulative VWAP on unique HTF source + HTF volume (no LTF invent).
 
-        ``sum(price×volume)/sum(volume)`` from the first unique bar, matching
+        ``sum(pricexvolume)/sum(volume)`` from the first unique bar, matching
         interpret ``ta.vwap`` (None prices skipped / carry last; zero volume
         falls back to price). 2-arg anchor / 3-arg bands stay off this path.
         """
@@ -2925,7 +2925,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
 
         n = len(src)
         out: list[float | None] = [None] * n
-        if n == 0 or period < 2:  # noqa: PLR2004 - OLS needs ≥2 points
+        if n == 0 or period < 2:  # OLS needs ≥2 points
             return out
         lin = TechnicalHelpers._linreg_from_valid
         off = int(offset)
@@ -2990,7 +2990,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 continue
             sma = sum(vals) / period
             mean_dev = sum(abs(v - sma) for v in vals) / period
-            if mean_dev not in {0, 0.0}:
+            if mean_dev not in {0}:
                 last_mean_dev = mean_dev
             if last_mean_dev is None or last_mean_dev == 0:
                 out[i] = 0.0
@@ -4759,7 +4759,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             t = data_feed.fetch_latest_ticker(symbol)
             last = t.get("last") or t.get("close")
             return float(last) if last is not None else None
-        except Exception:  # noqa: S110
+        except Exception:
             return None
 
     def _ohlcv_closes(self, symbol: str, timeframe: str = "D", limit: int = REQUEST_OHLCV_LIMIT) -> list[float] | None:
@@ -4769,7 +4769,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         closes = payload.get("close") or []
         return list(closes) if closes else None
 
-    def _ohlcv_payload(  # noqa: C901
+    def _ohlcv_payload(
         self, symbol: str, timeframe: str, *, limit: int | None = None
     ) -> dict[str, list[Any]] | None:
         """OHLCV columns from data_feed / data_provider, including times when present.
@@ -4786,7 +4786,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return cache[key]
 
         def _store(payload: dict[str, list[Any]] | None) -> dict[str, list[Any]] | None:
-            if len(cache) >= 8:  # noqa: PLR2004 - tiny per-eval cache
+            if len(cache) >= 8:  # tiny per-eval cache
                 cache.clear()
             cache[key] = payload
             return payload
@@ -4799,7 +4799,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 rows = self._ohlcv_rows_to_payload(ohlcv, limit=limit)
                 if rows is not None:
                     return _store(rows)
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
         if data_provider is not None and hasattr(data_provider, "fetch"):
             try:
@@ -4807,7 +4807,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 rows = self._provider_dict_to_payload(data, limit=limit)
                 if rows is not None:
                     return _store(rows)
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
         return _store(None)
 
@@ -5081,7 +5081,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         aligned = cache.get(fp)
         if aligned is None:
             aligned = self._align_provider_htf_to_chart(payload, spec, n_chart, chart_times)
-            if len(cache) >= 8:  # noqa: PLR2004 - tiny per-eval cache
+            if len(cache) >= 8:  # tiny per-eval cache
                 cache.clear()
             cache[fp] = aligned
         if aligned is None:
@@ -5220,7 +5220,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
             return tuple(_map_one(x) for x in expression)
         return _map_one(expression)
 
-    def _handle_request_security(self, args: list[Any]) -> Any:  # noqa: C901
+    def _handle_request_security(self, args: list[Any]) -> Any:
         # complexity acceptable: handles multiple data source fallbacks + exprs
         """
         request.security(symbol, timeframe, expression, gaps, lookahead)
@@ -5257,8 +5257,8 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
           high/low/volume;
           1-arg ``ta.highest(n)`` /
           ``ta.lowest(n)`` / ``ta.highestbars(n)`` / ``ta.lowestbars(n)`` use HTF
-          high / low; 1-arg ``ta.range(n)`` is HTF high−low; 1-arg ``ta.swma``
-          is fixed 4-period; 0-arg ``ta.ao()`` is SMA(hl2,5)−SMA(hl2,34);
+          high / low; 1-arg ``ta.range(n)`` is HTF high-low; 1-arg ``ta.swma``
+          is fixed 4-period; 0-arg ``ta.ao()`` is SMA(hl2,5)-SMA(hl2,34);
           1-arg ``ta.ao(fast)`` uses HTF hl2 with slow=34; 2-arg
           ``ta.ao(fast, slow)`` uses HTF hl2 at those periods;
           1-arg ``ta.stoch(n)`` / 2-arg ``ta.stoch(k, d)`` is %K on HTF
@@ -5588,7 +5588,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         ticker_arg = args[0] if len(args) > 0 else "AAPL"
         symbol = self._resolve_symbol(ticker_arg)
         timeframe = args[1] if len(args) > 1 else "5m"
-        expression = args[2] if len(args) > 2 else "close"  # noqa: PLR2004 - arg count check
+        expression = args[2] if len(args) > 2 else "close"  # arg count check
 
         # Foreign under a host chart: honest na (no mock intrabar invent).
         if not self._is_chart_symbol(str(symbol)) and self._host_has_chart_identity():
@@ -5609,7 +5609,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                     closes = [c[OHLCV_CLOSE_IDX] for c in ohlcv if len(c) > OHLCV_CLOSE_IDX]
                     if closes:
                         return closes * LOWER_TF_SIMULATE_MULTIPLIER  # simulate more lower-tf bars from latest
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
 
         if data_provider is not None and hasattr(data_provider, "fetch"):
@@ -5618,7 +5618,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 closes = data.get("close", [])
                 if closes:
                     return closes[-REQUEST_RECENT_LIMIT:] or closes
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
 
         # Fallback mock intrabar data (simulated lower timeframe)
@@ -5667,7 +5667,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 t = data_feed.fetch_latest_ticker(symbol)
                 last = t.get("last") or t.get("close") or 100.0
                 val = round(val * (last / 100.0), 2)  # naive dynamic scale
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
         return val
 
@@ -5695,7 +5695,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 t = data_feed.fetch_latest_ticker(symbol)
                 last = t.get("last") or t.get("close") or 100.0
                 val = round(val * (last / 150.0), 2)
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
         return val
 
@@ -5890,7 +5890,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         num_ticks = args[0] if len(args) > 0 else 100
         va_percentage = args[1] if len(args) > 1 else 70
         # symbol optional for dynamic
-        _ = self._resolve_symbol(args[2] if len(args) > 2 else "ES", default="ES")  # noqa: PLR2004 - optional arg
+        _ = self._resolve_symbol(args[2] if len(args) > 2 else "ES", default="ES")  # optional arg
         data_feed, _ = self._get_request_data()
 
         rows: list[VolumeRow] = []
@@ -5902,7 +5902,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 t = data_feed.fetch_latest_ticker("ES")  # or symbol
                 last = t.get("last") or t.get("close") or 4000.0
                 vol_scale = max(0.1, last / 4000.0)
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
 
         for i in range(num_ticks):
@@ -5913,7 +5913,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
                 buy_volume=(1000.0 + (random.random() * 500)) * vol_scale,
                 sell_volume=(900.0 + (random.random() * 500)) * vol_scale,
                 delta=100.0 + (random.random() * 200 - 100),
-                is_imbalance=random.random() < 0.1,  # noqa: PLR2004 - mock data gen
+                is_imbalance=random.random() < 0.1,  # mock data gen
                 is_poc=(i == num_ticks // 2),
                 is_vah=(i == int(num_ticks * 0.7)),
                 is_val=(i == int(num_ticks * 0.3)),
@@ -6162,7 +6162,7 @@ def _compile_htf_host(
             _ohlcv_col_list(time_arr),
             timezone=str(timezone or "UTC"),
         )
-        if len(_COMPILE_HTF_HOSTS) >= 4:  # noqa: PLR2004 - tiny run-local cache
+        if len(_COMPILE_HTF_HOSTS) >= 4:  # tiny run-local cache
             _COMPILE_HTF_HOSTS.clear()
         _COMPILE_HTF_HOSTS[fp] = host
     ctx = host.context
@@ -6180,7 +6180,7 @@ def _compile_htf_host(
     return host
 
 
-def compile_htf_security_value(  # noqa: PLR0913
+def compile_htf_security_value(
     kind: str,
     field: str | None,
     offset: int,

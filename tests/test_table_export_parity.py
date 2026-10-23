@@ -6,11 +6,9 @@
 
 from __future__ import annotations
 
-from pynescript.ast.evaluator.builtins.drawing import (
-    DrawingRegistry,
-    Table,
-    TableCell,
-)
+from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
+from pynescript.ast.evaluator.builtins.drawing import Table
+from pynescript.ast.evaluator.builtins.drawing import TableCell
 
 
 class TestTableCellStorage:
@@ -172,12 +170,10 @@ class TestCompileTableExport:
 
 class TestStyledTableDualHost:
     def test_styled_table_identical_both_hosts(self) -> None:
-        from tests.test_plot_drawing_dual_host import (
-            _assert_drawings_equal,
-            _bars,
-            _geom_kind,
-            _run_dual,
-        )
+        from tests.test_plot_drawing_dual_host import _assert_drawings_equal
+        from tests.test_plot_drawing_dual_host import _bars
+        from tests.test_plot_drawing_dual_host import _geom_kind
+        from tests.test_plot_drawing_dual_host import _run_dual
 
         src = """
 //@version=6

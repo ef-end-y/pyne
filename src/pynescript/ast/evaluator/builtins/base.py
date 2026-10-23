@@ -28,7 +28,7 @@ Mixin composition
 Each category module (``numeric``, ``arrays``, ``technical``, …) subclasses
 :class:`BuiltinDispatchMixin` and exposes a ``_*_builtin_map()`` method. Those
 maps are merged by :class:`~pynescript.ast.evaluator.builtins.BuiltinEvaluator`
-into a single name→handler table used by the expression evaluator’s
+into a single name→handler table used by the expression evaluator's
 ``_call_builtin`` path. Keyword-argument merging and list-style vs plain
 ``*args`` handlers are resolved here so individual mixins stay thin.
 """

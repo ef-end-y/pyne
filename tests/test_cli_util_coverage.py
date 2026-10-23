@@ -471,7 +471,7 @@ def test_mock_provider_fetch_shape() -> None:
     from pynescript.util.data import MockDataProvider
 
     out = MockDataProvider(seed=7).fetch("AAPL", "1d", "1d")
-    assert set(("open", "high", "low", "close", "volume")) <= set(out)
+    assert {"open", "high", "low", "close", "volume"} <= set(out)
     assert len(out["close"]) == 1
     out2 = MockDataProvider(seed=7).fetch("AAPL", "1mo", "1d")
     assert len(out2["close"]) == 30
@@ -511,7 +511,9 @@ def test_get_provider_variants() -> None:
     assert isinstance(get_provider("yahoo"), YahooFinanceProvider)
     assert isinstance(get_provider("ccxt", exchange="kraken"), CCXTProvider)
     assert isinstance(get_provider("chart", bars=[], symbol="X"), ChartOHLCVProvider)
-    with pytest.raises(Exception):
+    from pynescript.util.data import DataProviderError
+
+    with pytest.raises(DataProviderError):
         get_provider("nope")
 
 
@@ -1056,9 +1058,9 @@ def test_library_module_access() -> None:
     assert mod.f == 123
     assert "f" in mod and "zzz" not in mod
     with pytest.raises(AttributeError):
-        mod.zzz
+        _ = mod.zzz
     with pytest.raises(AttributeError):
-        mod._private
+        _ = mod._private
 
 
 def test_library_registry() -> None:
@@ -1093,7 +1095,7 @@ class _FakeProExchange:
 
     last_params: dict | None = None
 
-    def __init__(self, params) -> None:  # noqa: ANN001
+    def __init__(self, params) -> None:
         self.params = dict(params or {})
         type(self).last_params = self.params
         self.closed = False
@@ -1101,13 +1103,13 @@ class _FakeProExchange:
         self.ohlcv_script: list = []
         self.failures: dict[str, list[Exception]] = {}
 
-    def _next(self, name: str, default):  # noqa: ANN001, ANN002
+    def _next(self, name: str, default):
         errs = self.failures.get(name, [])
         if errs:
             raise errs.pop(0)
         return default
 
-    async def watch_ohlcv(self, symbol, timeframe="1m", limit=None):  # noqa: ANN001, ANN002, ANN003
+    async def watch_ohlcv(self, symbol, timeframe="1m", limit=None):
         if self.ohlcv_script:
             kind, payload = self.ohlcv_script.pop(0)
             if kind == "raise":
@@ -1118,19 +1120,19 @@ class _FakeProExchange:
             raise errs.pop(0)
         return [list(_CANDLE)]
 
-    async def watch_trades(self, symbol, limit=None):  # noqa: ANN001, ANN002, ANN003
+    async def watch_trades(self, symbol, limit=None):
         return self._next("watch_trades", [{"price": 1.5, "amount": 0.1}])
 
-    async def watch_ticker(self, symbol):  # noqa: ANN001, ANN002
+    async def watch_ticker(self, symbol):
         return self._next("watch_ticker", {"last": 1.5, "bid": 1.0, "ask": 2.0})
 
-    async def watch_order_book(self, symbol, limit=20):  # noqa: ANN001, ANN002, ANN003
+    async def watch_order_book(self, symbol, limit=20):
         return self._next("watch_order_book", {"bids": [[1.0, 1.0]], "asks": [[2.0, 1.0]]})
 
-    async def fetch_ohlcv(self, symbol, timeframe="1m", limit=None):  # noqa: ANN001, ANN002, ANN003
+    async def fetch_ohlcv(self, symbol, timeframe="1m", limit=None):
         return [list(_CANDLE)]
 
-    async def fetch_ticker(self, symbol):  # noqa: ANN001, ANN002
+    async def fetch_ticker(self, symbol):
         return {"last": 9.5}
 
     async def close(self) -> None:
@@ -1146,7 +1148,7 @@ def _install_fake_ccxt_pro(monkeypatch: pytest.MonkeyPatch, exchange_cls: type =
     monkeypatch.setitem(sys.modules, "ccxt.pro", sub)
 
 
-async def _collect_one(agen):  # noqa: ANN001, ANN002
+async def _collect_one(agen):
     async for item in agen:
         return item
     raise AssertionError("stream ended without items")
@@ -1214,7 +1216,7 @@ def test_ccxtpro_connection_retry_then_data(monkeypatch: pytest.MonkeyPatch) -> 
 
     _install_fake_ccxt_pro(monkeypatch)
 
-    async def _no_sleep(_delay) -> None:  # noqa: ANN001
+    async def _no_sleep(_delay) -> None:
         return None
 
     monkeypatch.setattr(asyncio, "sleep", _no_sleep)
@@ -1257,7 +1259,7 @@ def test_ccxtpro_fetch_latest_and_fallbacks(monkeypatch: pytest.MonkeyPatch) -> 
     asyncio.run(_go())
 
     class _NullTicker(_FakeProExchange):
-        async def fetch_ticker(self, symbol):  # noqa: ANN001, ANN002
+        async def fetch_ticker(self, symbol):
             return None
 
     _install_fake_ccxt_pro(monkeypatch, _NullTicker)
@@ -1278,7 +1280,7 @@ def test_ccxtpro_binance_params_and_close(monkeypatch: pytest.MonkeyPatch) -> No
     _FakeProExchange.last_params = None
 
     async def _go() -> None:
-        feed = CCXTProDataFeed(exchange="binance", api_key="k", secret="s", password="p", sandbox=True)
+        feed = CCXTProDataFeed(exchange="binance", api_key="k", secret="s", password="p", sandbox=True)  # noqa: S106 - dummy test creds
         async with feed:
             assert feed._exchange is not None
         params = _FakeProExchange.last_params or {}
@@ -1305,23 +1307,23 @@ def test_broker_run_with_finite_feed() -> None:
     from pynescript.util.datafeed import DataFeedBroker
 
     class _FiniteFeed(DataFeed):
-        def __init__(self, tickers) -> None:  # noqa: ANN001
+        def __init__(self, tickers) -> None:
             self._tickers = list(tickers)
             self.closed = False
 
-        async def watch_ohlcv(self, symbol, timeframe="1m", limit=None):  # noqa: ANN001, ANN002, ANN003
+        async def watch_ohlcv(self, symbol, timeframe="1m", limit=None):
             if False:
                 yield
 
-        async def watch_trades(self, symbol, limit=None):  # noqa: ANN001, ANN002, ANN003
+        async def watch_trades(self, symbol, limit=None):
             if False:
                 yield
 
-        async def watch_ticker(self, symbol):  # noqa: ANN001, ANN002
+        async def watch_ticker(self, symbol):
             for tick in self._tickers:
                 yield tick
 
-        async def watch_order_book(self, symbol, limit=20):  # noqa: ANN001, ANN002, ANN003
+        async def watch_order_book(self, symbol, limit=20):
             if False:
                 yield
 
@@ -1331,7 +1333,7 @@ def test_broker_run_with_finite_feed() -> None:
         async def __aenter__(self) -> _FiniteFeed:
             return self
 
-        async def __aexit__(self, *args) -> None:  # noqa: ANN001, ANN002
+        async def __aexit__(self, *args) -> None:
             await self.close()
 
     broker = DataFeedBroker(_FiniteFeed([{"last": 100.0}, {"last": 110.0}]), initial_balance=1000.0)

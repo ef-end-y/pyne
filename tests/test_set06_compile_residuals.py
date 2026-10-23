@@ -21,10 +21,10 @@
 
 from __future__ import annotations
 
+import re
 import signal
 
 from pathlib import Path
-import re
 
 import numpy as np
 
@@ -327,7 +327,7 @@ plot(sig.value)
 
 
 def test_udt_keyword_fields_var_switch() -> None:
-    src = '''//@version=5
+    src = """//@version=5
 indicator("Keyword Field Var")
 type Settings
     float var = 1.0
@@ -336,7 +336,7 @@ Settings s = Settings.new()
 var float result = 0.0
 result := s.var + s.switch
 plot(result)
-'''
+"""
     out = _compile_run(src, n=20)
     assert abs(_last(out) - 3.0) < 1e-9
 
@@ -563,7 +563,7 @@ plot(close)
 
 
 def test_switch_augassign_mutates_udf_locals() -> None:
-    src = '''//@version=5
+    src = """//@version=5
 indicator("cvd")
 upDn() =>
     float upVol = 0.0
@@ -574,7 +574,7 @@ upDn() =>
     [upVol, dnVol]
 [u, d] = upDn()
 plot(u)
-'''
+"""
     out = _compile_run(src, n=20)
     arr = __import__("numpy").asarray(out["plot_0"], dtype="float64")
     assert arr.size == 20
@@ -661,13 +661,13 @@ plot(a.total)
 
 
 def test_generic_map_string_key_get() -> None:
-    src = '''//@version=5
+    src = """//@version=5
 indicator("Generic Map")
 map<string, float> data = map.new<string, float>()
 data.put("close", close)
 result = data.get("close", 0.0)
 plot(result)
-'''
+"""
     out = _compile_run(src, n=20)
     # last close of arange 100..119 is 119
     assert abs(_last(out) - 119.0) < 1e-6

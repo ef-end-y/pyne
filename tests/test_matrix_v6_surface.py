@@ -168,7 +168,7 @@ idx = matrix.sort_indices(m, 0, order.descending, "v")
 
 
 def test_matrix_new_empty_and_add_row_at_index():
-    """TV matrix.new<T>() 0×0 + add_row/col at index 0 with array payload."""
+    """TV matrix.new<T>() 0x0 + add_row/col at index 0 with array payload."""
     e = NodeLiteralEvaluator()
     e.evaluate_script(
         """

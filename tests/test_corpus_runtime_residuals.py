@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import importlib.util
 import math
+
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,7 @@ from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
 from pynescript.ast.evaluator.builtins.drawing import Line
 from pynescript.util.corpus_sanitize import sanitize_corpus_source
 from tests.fixtures.parity.ohlcv import OHLCV
+
 
 DATA = Path(__file__).resolve().parent / "data"
 
@@ -381,7 +383,7 @@ plot(ta.change(close, 1))
 
 
 # ---------------------------------------------------------------------------
-# 4–5. request.security lower-TF EXPECTED + runtime.error hard-fail
+# 4-5. request.security lower-TF EXPECTED + runtime.error hard-fail
 # ---------------------------------------------------------------------------
 
 

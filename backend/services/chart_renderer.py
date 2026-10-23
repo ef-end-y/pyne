@@ -21,19 +21,21 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
-
 import base64
 import io
 
-import matplotlib
+from typing import Any
+from typing import cast
+
+import matplotlib as mpl
 
 
-matplotlib.use("Agg")
+mpl.use("Agg")
 # OO API (matplotlib.figure.Figure) instead of pyplot: pyplot's global figure
 # manager is not thread-safe and this runs under gunicorn --threads 4.
 import matplotlib.patches as mpatches
 import numpy as np
+
 from matplotlib.figure import Figure
 
 
@@ -85,7 +87,7 @@ def render_line_chart(
     ax.spines["left"].set_color("#444444")
     ax.spines["bottom"].set_color("#444444")
     ax.grid(True, alpha=0.2, color="#444444")
-    ax.yaxis.set_major_formatter(matplotlib.ticker.StrMethodFormatter("{x:.2f}"))
+    ax.yaxis.set_major_formatter(mpl.ticker.StrMethodFormatter("{x:.2f}"))
 
     if dates and len(dates) > 0:
         step = max(1, len(dates) // 6)
@@ -208,7 +210,7 @@ def render_ohlcv_chart(
     axes = fig.subplots(
         2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True
     )
-    assert axes is not None
+    assert axes is not None  # noqa: S101 - subplots always returns two axes
     ax1, ax2 = axes
     fig.patch.set_facecolor("#1E1E1E")
 

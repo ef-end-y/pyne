@@ -111,7 +111,7 @@ def test_disable_via_env(monkeypatch):
 def test_lru_eviction_bounded(monkeypatch):
     monkeypatch.setenv("PYNE_PARSE_CACHE_MAX", "3")
     clear_parse_cache()
-    scripts = [f"//@version=5\nindicator(\"s{i}\")\nplot(close + {i})\n" for i in range(5)]
+    scripts = [f'//@version=5\nindicator("s{i}")\nplot(close + {i})\n' for i in range(5)]
     trees = [parse(s) for s in scripts]
     info = parse_cache_info()
     assert info["size"] <= 3
@@ -168,7 +168,7 @@ def test_tls_parse_concurrent_distinct_sources(monkeypatch):
     """Each thread has its own ANTLR engine; distinct sources must not collide."""
     monkeypatch.setenv("PYNE_PARSE_CACHE", "0")
     sources = [
-        f"//@version=5\nindicator(\"t{i}\")\nplot(close + {i})\n" for i in range(12)
+        f'//@version=5\nindicator("t{i}")\nplot(close + {i})\n' for i in range(12)
     ]
     errors: list[BaseException] = []
     dumps: dict[int, str] = {}
@@ -180,7 +180,7 @@ def test_tls_parse_concurrent_distinct_sources(monkeypatch):
             text = dump(tree)
             with lock:
                 dumps[i] = text
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker, args=(i, s)) for i, s in enumerate(sources)]
@@ -202,7 +202,7 @@ def test_concurrent_parse_same_source():
     def worker() -> None:
         try:
             results.append(parse(SRC_MIN))
-        except BaseException as exc:  # noqa: BLE001 — collect for assertion
+        except BaseException as exc:  # collect for assertion
             errors.append(exc)
 
     threads = [threading.Thread(target=worker) for _ in range(8)]
@@ -243,7 +243,7 @@ def test_cached_tree_two_evaluators_independent_call_sites():
 
     # First evaluator still computes from its own state after rebind.
     assert ev1.visit(tree.body) == r1
-    assert getattr(calls[0], "_pine_call_site")[-1] == ev1._eval_generation
+    assert calls[0]._pine_call_site[-1] == ev1._eval_generation
 
 
 def test_parse_cache_two_runtimes_call_expr_history_independent() -> None:
@@ -263,7 +263,7 @@ plot(ta.sma(close, 3)[1], "s1")
     assert calls
     sid = pine_call_site_id(calls[0])
     assert sid > 0
-    assert getattr(calls[0], "_pine_site_id") == sid
+    assert calls[0]._pine_site_id == sid
 
     def _bars(n: int, start: float) -> list[dict[str, float | int]]:
         return [
@@ -284,4 +284,4 @@ plot(ta.sma(close, 3)[1], "s1")
     assert "error" not in b, b.get("error")
     # Second run must not inherit first run's sma history.
     assert a["series"]["s1"][-1] != b["series"]["s1"][-1]
-    assert getattr(calls[0], "_pine_site_id") == sid
+    assert calls[0]._pine_site_id == sid

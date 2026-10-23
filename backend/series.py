@@ -28,4 +28,5 @@ import sys
 
 from pynescript.runtime import series as _series
 
+
 sys.modules[__name__] = _series

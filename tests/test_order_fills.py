@@ -770,7 +770,8 @@ def test_compile_pyramiding0_pending_fill_vwap():
 
 
 def test_compile_pyramiding0_partial_pending_vwap():
-    from pynescript.compiler.strategy_broker import CompileStrategyBroker, PendingOrder
+    from pynescript.compiler.strategy_broker import CompileStrategyBroker
+    from pynescript.compiler.strategy_broker import PendingOrder
 
     b = CompileStrategyBroker(pyramiding=0)
     b.begin_bar(0, 100.0, 100.0, 90.0, 95.0)

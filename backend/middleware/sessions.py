@@ -117,7 +117,7 @@ class SessionStore:
             logger.warning("session store: journal write failed (%s); memory-only", exc)
             return None
 
-    def track(  # noqa: PLR0913 — one explicit kwarg per journaled field
+    def track(  # one explicit kwarg per journaled field
         self,
         session_id: str,
         *,

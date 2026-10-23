@@ -13,9 +13,9 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import pytest  # noqa: E402
+import pytest
 
-from backend.middleware.sessions import SessionStore  # noqa: E402
+from backend.middleware.sessions import SessionStore
 
 
 def _fp(**kw):

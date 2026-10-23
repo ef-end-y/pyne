@@ -34,12 +34,14 @@ from __future__ import annotations
 
 import math
 import random
+
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from backend.runtime import Runtime
+
 
 _ROOT = Path(__file__).resolve().parents[1]
 _FIRST_PARTY = _ROOT / "tests" / "fixtures" / "first_party"
@@ -310,7 +312,7 @@ def _assert_simplified_supertrend_contract(
     assert n_up >= 1 and n_down >= 1, f"{host}: expected both directions, up={n_up} down={n_down}"
 
 
-def _assert_formula_after_atr_warmup(  # noqa: PLR0913
+def _assert_formula_after_atr_warmup(
     st: list[Any],
     direction: list[Any],
     atr: list[Any],
@@ -616,7 +618,7 @@ def test_supertrend_interpret_compile_inc_numba(
 
 
 def test_keltner_dual_host(bars: list[dict[str, Any]]) -> None:
-    """Keltner channels (EMA ± mult×ATR): dual-host mid/up/lo parity."""
+    """Keltner channels (EMA ± multxATR): dual-host mid/up/lo parity."""
     path = _FIRST_PARTY / "keltner.pine"
     src = path.read_text(encoding="utf-8")
     interp, compiled = _run_dual(src, bars)

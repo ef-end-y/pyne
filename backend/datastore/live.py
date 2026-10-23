@@ -79,7 +79,7 @@ def _ohlcv(bar: dict[str, Any]) -> tuple[Any, ...]:
     return (bar["open"], bar["high"], bar["low"], bar["close"], bar["volume"])
 
 
-def sync_session(  # noqa: PLR0913 — session, binding, candles, clock + two options
+def sync_session(  # session, binding, candles, clock + two options
     session: Any,
     binding: SeriesBinding,
     candles: list[dict[str, Any]],

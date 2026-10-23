@@ -26,6 +26,7 @@ reuse the same handlers as ``pynescript-lsp``.
 from __future__ import annotations
 
 import logging
+
 from typing import Any
 
 from flask import Blueprint
@@ -34,6 +35,7 @@ from flask import request
 
 from pynescript.util.pine_convert import convert_to_v6
 from pynescript.util.pine_convert import detect_version
+
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +85,9 @@ def lsp_completion():
 
     try:
         from lsprotocol import types as lsp
+
         from pynescript.langserver.features.completion import handle_completion
-    except ImportError as e:
+    except ImportError:
         return (
             jsonify(
                 {
@@ -101,7 +104,7 @@ def lsp_completion():
     )
     try:
         result = handle_completion(params, source)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("lsp completion: %s", e)
         return jsonify({"status": "error", "message": "Completion request failed"}), 500
 
@@ -136,8 +139,9 @@ def lsp_hover():
 
     try:
         from lsprotocol import types as lsp
+
         from pynescript.langserver.features.hover import handle_hover
-    except ImportError as e:
+    except ImportError:
         return (
             jsonify(
                 {
@@ -154,7 +158,7 @@ def lsp_hover():
     )
     try:
         result = handle_hover(params, source)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("lsp hover: %s", e)
         return jsonify({"status": "error", "message": "Hover request failed"}), 500
 
@@ -233,7 +237,7 @@ def lsp_diagnostics():
 
     try:
         from pynescript.ast.linter import lint_script
-    except ImportError as e:
+    except ImportError:
         return (
             jsonify(
                 {
@@ -246,7 +250,7 @@ def lsp_diagnostics():
 
     try:
         warnings = lint_script(source, filename="inmemory://axis.pine")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("lsp lint: %s", e)
         return jsonify({"status": "error", "message": "Lint request failed"}), 500
 

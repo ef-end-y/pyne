@@ -51,10 +51,11 @@ import ssl
 import threading
 import time
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
-from typing import Callable
 from urllib.parse import urlparse
+
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def _forward_logged(
     """Off-thread wrapper so webhook failures never surface as task errors."""
     try:
         forward_alerts(alerts, url, batch=batch, symbol=symbol)
-    except Exception:  # noqa: BLE001 — background task; log only
+    except Exception:  # background task; log only
         logger.exception("async alert forward failed: %s", url)
 
 

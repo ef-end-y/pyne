@@ -132,7 +132,7 @@ def _encode(value: Any) -> str:
         raise ValueError(f"session log value is not JSON-serializable: {exc}") from exc
 
 
-def record_create(  # noqa: PLR0913 — one explicit kwarg per journaled field
+def record_create(  # one explicit kwarg per journaled field
     path: str,
     session_id: str,
     *,

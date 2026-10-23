@@ -203,7 +203,7 @@ class TestCaptureLayer:
             ev._plot_n_bars = len(bars)
             try:
                 ev.visit(tree)
-            except Exception:  # noqa: S110 — capture still ran for statements that evaluated
+            except Exception:  # capture still ran for statements that evaluated
                 pass
             ev.finish_bar_plots()
         return ev

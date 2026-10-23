@@ -107,12 +107,10 @@ class TestCompilePolylineExtras:
 
 class TestExtrasDualHost:
     def test_box_label_polyline_key_sets_match(self) -> None:
-        from tests.test_plot_drawing_dual_host import (
-            _assert_drawings_equal,
-            _bars,
-            _geom_kind,
-            _run_dual,
-        )
+        from tests.test_plot_drawing_dual_host import _assert_drawings_equal
+        from tests.test_plot_drawing_dual_host import _bars
+        from tests.test_plot_drawing_dual_host import _geom_kind
+        from tests.test_plot_drawing_dual_host import _run_dual
 
         src = """
 //@version=6

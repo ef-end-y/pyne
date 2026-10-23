@@ -123,7 +123,7 @@ def test_ccxtpro_poll_ohlcv_returns_cached_watch_sample():
         dfmod.CCXTProDataFeed._get_exchange = original_get
         try:
             asyncio.run(feed.close())
-        except Exception:  # noqa: S110 - test cleanup
+        except Exception:  # test cleanup
             pass
 
 
@@ -145,7 +145,7 @@ def test_ccxtpro_fetch_latest_fills_poll_cache(monkeypatch):
         dfmod.CCXTProDataFeed._get_exchange = original_get
         try:
             asyncio.run(feed.close())
-        except Exception:  # noqa: S110 - test cleanup
+        except Exception:  # test cleanup
             pass
 
 
@@ -195,7 +195,7 @@ def test_ccxtpro_sync_wrappers(monkeypatch):
         # but to be complete:
         try:
             asyncio.run(feed.close())
-        except Exception:  # noqa: S110 - test cleanup
+        except Exception:  # test cleanup
             pass
 
 

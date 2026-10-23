@@ -35,6 +35,7 @@ from CCXT ``candle[0]`` (ms). AXIS DSM walk-back sends ``since`` in milliseconds
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import math
@@ -185,7 +186,7 @@ def _make_provider(
 ):
     """Create a CCXTProvider for *exchange* (public if credentials are empty)."""
     try:
-        from pynescript.util.data import CCXTProvider  # noqa: PLC0415
+        from pynescript.util.data import CCXTProvider
     except ImportError:
         return None
     creds = credentials or {}
@@ -449,12 +450,7 @@ def unbind_session():  # type: ignore[no-untyped-def]
 @datafeed_bp.route("/health", methods=["GET"])
 def gateway_health():  # type: ignore[no-untyped-def]
     """Gateway health check + available exchanges."""
-    try:
-        import ccxt  # noqa: F401,PLC0415
-
-        has_ccxt = True
-    except ImportError:
-        has_ccxt = False
+    has_ccxt = importlib.util.find_spec("ccxt") is not None
 
     exchanges = list(_ENV_KEYS.keys())
     payload: dict[str, Any] = {
@@ -465,10 +461,10 @@ def gateway_health():  # type: ignore[no-untyped-def]
     }
     if has_ccxt:
         try:
-            import ccxt as _ccxt  # noqa: PLC0415
+            import ccxt as _ccxt
 
             payload["ccxt_exchanges"] = sorted(_ccxt.exchanges)
-        except Exception:  # pragma: no cover  # noqa: S110
+        except Exception:  # pragma: no cover
             pass
     return jsonify(payload)
 
@@ -513,7 +509,7 @@ def watch_rest_poll(
         stop.wait(_WATCH_POLL_SEC)
 
 
-def run_watch_producer(  # noqa: PLR0913
+def run_watch_producer(
     exchange: str,
     creds: dict[str, str],
     symbol: str,
@@ -525,7 +521,7 @@ def run_watch_producer(  # noqa: PLR0913
     _dbg("watch producer start exchange=%s symbol=%s timeframe=%s auth=%s", exchange, symbol, timeframe, bool(creds))
     _stats.count("datafeed.watch_producers", dim=exchange)
     try:
-        from pynescript.util.datafeed import CCXTProDataFeed  # noqa: PLC0415
+        from pynescript.util.datafeed import CCXTProDataFeed
 
         opts: dict[str, Any] = {}
         if creds.get("uid"):
@@ -574,7 +570,7 @@ def register_watch_route(sock: Any) -> None:
         if not exchange or not symbol:
             try:
                 ws.close()
-            except Exception:  # noqa: S110
+            except Exception:
                 pass
             return
 

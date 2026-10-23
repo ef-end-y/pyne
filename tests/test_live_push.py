@@ -18,15 +18,17 @@ import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import pytest  # noqa: E402
+import pytest
 
-from backend.api.live_push import HUB, PushHub  # noqa: E402
+from backend.api.live_push import HUB
+from backend.api.live_push import PushHub
 
 
 @pytest.fixture(autouse=True)
 def _disable_forming_conflate(monkeypatch):
     monkeypatch.setattr("backend.api.live_push.CONFLATE_MS", 0)
-from backend.api.live_ws import LiveConnection, LiveRegistry  # noqa: E402
+from backend.api.live_ws import LiveConnection
+from backend.api.live_ws import LiveRegistry
 
 
 META = {"exchange": "binance", "market": "spot", "symbol": "btc/usdt", "interval": "1m"}
@@ -49,12 +51,10 @@ class _FakeSession:
     def update_last_bar(self, bar):
         self.ticks.append(dict(bar))
         self._ohlcv_data[-1] = dict(bar)
-        return None
 
     def append_bars(self, bars):
         self.appends.extend([dict(b) for b in bars])
         self._ohlcv_data.extend([dict(b) for b in bars])
-        return None
 
     def result(self):
         n = len(self._ohlcv_data)
@@ -92,10 +92,10 @@ class FakeWs:
 
 
 def _serve_loop(ws, registry, **conn_kw):
+    import backend.api.live_ws as ws_mod
+
     from backend.api.live_ws import serve_live_ws
     from backend.app import app
-
-    import backend.api.live_ws as ws_mod
 
     real_conn_cls = ws_mod.LiveConnection
 

@@ -213,7 +213,7 @@ class CCXTProDataFeed(DataFeed):
         api_key: str = "",
         secret: str = "",
         password: str = "",
-        sandbox: bool = False,  # noqa: FBT001,FBT002 - CLI/ factory friendly
+        sandbox: bool = False,  # CLI/ factory friendly
         **options: Any,
     ) -> None:
         """Initialize the CCXT Pro feed.
@@ -249,7 +249,7 @@ class CCXTProDataFeed(DataFeed):
             _t_ex0 = time.perf_counter()
             _dbg("connecting ccxt.pro exchange=%s", self._exchange_name)
             try:
-                import ccxt.pro as ccxtpro  # type: ignore[import-not-found]  # noqa: PLC0415 - lazy to avoid hard dep
+                import ccxt.pro as ccxtpro  # type: ignore[import-not-found]  # lazy to avoid hard dep
             except ImportError as e:
                 msg = "ccxt is required for CCXTProDataFeed. Install with: pip install ccxt"
                 _dbg("ccxt.pro unavailable: %s", e)
@@ -282,7 +282,7 @@ class CCXTProDataFeed(DataFeed):
                 params["options"] = opts
 
             self._exchange = exchange_class(params)
-            from pynescript.util.data import tune_ccxt_public_urls  # noqa: PLC0415
+            from pynescript.util.data import tune_ccxt_public_urls
 
             tune_ccxt_public_urls(self._exchange, self._exchange_name)
             _dbg(
@@ -337,7 +337,7 @@ class CCXTProDataFeed(DataFeed):
         """True when the venue implements ``watchOHLCVForSymbols`` (fan-in)."""
         try:
             exchange = await self._get_exchange()
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
         has = getattr(exchange, "has", None)
         if isinstance(has, dict):
@@ -376,7 +376,7 @@ class CCXTProDataFeed(DataFeed):
                     for sym, tf in symbols:
                         self._cache_ohlcv_bars(str(sym), str(tf), grouped)
                         yield (sym, tf, grouped)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 if "closed" in str(e).lower() or "connection" in str(e).lower():
                     await asyncio.sleep(1)
                     continue
@@ -503,7 +503,7 @@ class CCXTProDataFeed(DataFeed):
             _dbg("closing ccxt.pro exchange=%s", self._exchange_name)
             try:
                 await self._exchange.close()
-            except Exception:  # noqa: S110 - best effort shutdown
+            except Exception:  # best effort shutdown
                 pass
             self._exchange = None
 
@@ -764,7 +764,7 @@ class CompositeDataFeed(DataFeed):
             if src is not None and hasattr(src, "fetch_latest_ticker"):
                 try:
                     return src.fetch_latest_ticker(symbol)  # type: ignore[attr-defined]
-                except Exception:  # noqa: S110
+                except Exception:  # noqa: S112 - fall through to next source
                     continue
         return {}
 
@@ -773,7 +773,7 @@ class CompositeDataFeed(DataFeed):
             if src is not None and hasattr(src, "fetch_latest_ohlcv"):
                 try:
                     return src.fetch_latest_ohlcv(symbol, timeframe, limit)  # type: ignore[attr-defined]
-                except Exception:  # noqa: S110
+                except Exception:  # noqa: S112 - fall through to next source
                     continue
         return []
 
@@ -786,7 +786,7 @@ class CompositeDataFeed(DataFeed):
                 continue
             try:
                 candle = poll(symbol, timeframe)
-            except Exception:  # noqa: S110
+            except Exception:  # noqa: S112 - fall through to next source
                 continue
             if candle:
                 return candle

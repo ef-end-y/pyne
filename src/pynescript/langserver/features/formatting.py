@@ -114,9 +114,7 @@ def handle_range_formatting(
         range_start = params.range.start
         range_end = params.range.end
 
-        before_range = "\n".join(source_lines[: range_start.line])
         in_range = "\n".join(source_lines[range_start.line : range_end.line + 1])
-        after_range = "\n".join(source_lines[range_end.line + 1 :])
 
         formatted_in_range = "\n".join(formatted_lines[range_start.line : range_end.line + 1])
 

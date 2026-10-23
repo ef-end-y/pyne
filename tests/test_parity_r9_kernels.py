@@ -96,9 +96,8 @@ plot(halow, "l")
         if not path.is_file():
             pytest.skip(f"optional corpus missing: {path}")
         import importlib.util
-        from pathlib import Path as P
 
-        root = P(".").resolve()
+        root = Path(".").resolve()
         spec = importlib.util.spec_from_file_location("h", root / "scripts" / "compare_interp_compile.py")
         assert spec and spec.loader
         h = importlib.util.module_from_spec(spec)
@@ -109,8 +108,9 @@ plot(halow, "l")
 
 class TestStochRsiSupertrendCorpus:
     def test_strategy_073_parity(self) -> None:
-        from pathlib import Path
         import importlib.util
+
+        from pathlib import Path
 
         path = Path("tests/data/set01/strategies/073_str_stochrsi_plus_supertrend_strategy.pine")
         if not path.is_file():
@@ -254,8 +254,9 @@ plot(show_viz ? strategy.position_avg_price : na, "pe")
         assert abs(float(ri["series"]["pe"][1]) - float(rc["series"]["pe"][1])) < 1e-9
 
     def test_multi_vwap_071_parity(self) -> None:
-        from pathlib import Path
         import importlib.util
+
+        from pathlib import Path
 
         path = Path("tests/data/set02/strategies/071_str_multi_vwap_crossover.pine")
         if not path.is_file():
@@ -271,8 +272,9 @@ plot(show_viz ? strategy.position_avg_price : na, "pe")
 
 class TestCorpusResidualsParity:
     def test_hma_kahlman_245(self) -> None:
-        from pathlib import Path
         import importlib.util
+
+        from pathlib import Path
 
         path = Path("tests/data/set01/indicators/245_ind_hma_kahlman_trend_clipping_and_trendlines.pine")
         if not path.is_file():
@@ -286,8 +288,9 @@ class TestCorpusResidualsParity:
         assert r["status"] in ("OK", "fill_background_only"), r
 
     def test_bbi_178(self) -> None:
-        from pathlib import Path
         import importlib.util
+
+        from pathlib import Path
 
         path = Path("tests/data/set02/indicators/178_ind_bulls_bears_index_bbi_2.pine")
         if not path.is_file():

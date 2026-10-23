@@ -92,7 +92,7 @@ class InputBuiltinsMixin(BuiltinDispatchMixin):
         """Append input metadata for hosts (UI, LSP, settings panels).
 
         After the first bar (``_pine_defs_locked``), skip re-recording so
-        multi-thousand-bar runs do not grow an O(bars × inputs) list.
+        multi-thousand-bar runs do not grow an O(bars x inputs) list.
 
         ``_pine_light_plots`` (``PYNE_LIGHT_PLOTS=1``) skips meta entirely —
         corpus / success-only hosts do not need AXIS input panels.

@@ -22,7 +22,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any, Callable
+
+from collections.abc import Callable
+from typing import Any
 
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ class PushHub:
             return False
         try:
             send(frame)
-        except Exception:  # noqa: BLE001 — a dead socket must not kill the feed
+        except Exception:  # a dead socket must not kill the feed
             return False
         return True
 
@@ -112,7 +114,7 @@ def persist_feed_bars(key_text: str, candles: list[dict[str, Any]], now_ms: int 
         _persisted[key_text] = (at, max(newest, seen_newest))
     try:
         series_store.get_store().provide(key, batch, source=SOURCE_TICK)
-    except Exception:  # noqa: BLE001 — a store write must not kill the feed
+    except Exception:  # a store write must not kill the feed
         logger.warning("feed persist failed for %s", key_text, exc_info=True)
         return False
     return True
@@ -135,13 +137,15 @@ def emit_push_frames(
     now_s: int,
 ) -> list[dict[str, Any]]:
     """Advance frames for one script-session feed batch. Returns emitted frames."""
-    from backend.api.live_ws import closed_upto, make_close, make_delta
+    from backend.api.live_ws import closed_upto
+    from backend.api.live_ws import make_close
+    from backend.api.live_ws import make_delta
 
     if getattr(outcome, "unchanged", True):
         return []
     try:
         result = session.result()
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
     if not isinstance(result, dict) or "error" in result:
         return []
@@ -203,7 +207,9 @@ def emit_series_push(
 ) -> list[dict[str, Any]]:
     """Series-kind push: candle bars with positional cursor, no session needed."""
     from backend.api.live_ensure import parse_live_key
-    from backend.api.live_ws import closed_upto, make_close, make_delta
+    from backend.api.live_ws import closed_upto
+    from backend.api.live_ws import make_close
+    from backend.api.live_ws import make_delta
 
     batch = [c for c in candles if isinstance(c, dict) and "time" in c]
     if not batch:
@@ -289,7 +295,9 @@ def attach_feed(
     hub: PushHub | None = None,
 ) -> bool:
     """Bind an engine session to its series feed with WS emission."""
-    from backend.api.feed_manager import apply_feed_candles, get_feed_manager, now_seconds
+    from backend.api.feed_manager import apply_feed_candles
+    from backend.api.feed_manager import get_feed_manager
+    from backend.api.feed_manager import now_seconds
     from backend.datastore import live as data_live
     from backend.middleware.sessions import SESSIONS
 
@@ -316,7 +324,7 @@ def attach_feed(
             outcome = apply_feed_candles(
                 session, binding, candles, now_s, on_apply=_journal_recorder(engine_session_id)
             )
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning("feed apply failed for %s", key_text, exc_info=True)
             return
         for frame in emit_push_frames(

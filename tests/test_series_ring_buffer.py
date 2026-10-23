@@ -32,8 +32,8 @@ from collections import deque
 
 import pytest
 
-from pynescript.ast.evaluator.series_buffer import ChronoTailView
 from pynescript.ast.evaluator.series_buffer import ChronologicalSeriesBuffer
+from pynescript.ast.evaluator.series_buffer import ChronoTailView
 from pynescript.ast.evaluator.series_buffer import NewestFirstHistoryView
 from pynescript.ast.evaluator.series_buffer import RingPineSeries
 from pynescript.ast.evaluator.series_buffer import make_series
@@ -514,7 +514,7 @@ def test_runtime_ring_and_cap_sma_matches_legacy(monkeypatch: pytest.MonkeyPatch
         from pynescript.ast.helper import clear_parse_cache
 
         clear_parse_cache()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
     bars = [

@@ -30,6 +30,7 @@ from pynescript.compiler.engine import compile_script
 from pynescript.compiler.engine import has_numba
 from pynescript.compiler.engine import transpile
 
+
 pytestmark = pytest.mark.skipif(not has_numba(), reason="numba not installed")
 
 
@@ -273,7 +274,7 @@ plot(ta.sma(close, len), title="sma")
 
         calls = {"n": 0}
 
-        def boom(source: str, **kwargs):  # noqa: ARG001
+        def boom(source: str, **kwargs):
             calls["n"] += 1
             raise RuntimeError("forced compile fail for test")
 
@@ -1918,8 +1919,10 @@ class TestSprint6PlotFillExpr:
     """plot()/fill() must emit expression-safe stores."""
 
     def test_fill_plot_transpiles_valid_python(self) -> None:
-        from pynescript.compiler.engine import transpile, compile_script
         import numpy as np
+
+        from pynescript.compiler.engine import compile_script
+        from pynescript.compiler.engine import transpile
 
         src = """//@version=5
 indicator("t")
@@ -1936,8 +1939,10 @@ fill(p1, p2)
         cs.run(o, o + 1, o - 1, o, np.ones(n))
 
     def test_nested_abs_ema_materializes(self) -> None:
-        from pynescript.compiler.engine import transpile, compile_script
         import numpy as np
+
+        from pynescript.compiler.engine import compile_script
+        from pynescript.compiler.engine import transpile
 
         src = """//@version=5
 indicator("t")
@@ -2105,7 +2110,7 @@ f(src) =>
 plot(f(close), title="p")
 """
         code = transpile(src)
-        def_line = [ln for ln in code.splitlines() if ln.startswith("def f(")][0]
+        def_line = next(ln for ln in code.splitlines() if ln.startswith("def f("))
         assert "mult" in def_line
         # st buffers before free series / chart context
         if "__ema" in def_line and "mult_arr" in def_line:
@@ -2113,7 +2118,7 @@ plot(f(close), title="p")
         elif "__ema" in def_line and "mult" in def_line:
             # bare free-scalar mult must still precede st only if ordered that way
             pass
-        call_snip = [ln for ln in code.splitlines() if "f(" in ln and "def " not in ln][0]
+        call_snip = next(ln for ln in code.splitlines() if "f(" in ln and "def " not in ln)
         assert "mult" in call_snip
         # Must not crash with getitem(float64)
         compiled = compile_script(src)
@@ -2377,7 +2382,9 @@ plot(qty(0.0, array.from(1.0, -1.0, 2.0)), title="q")
         assert abs(out["q"][-1] - 2.0) < 1e-9
 
     def test_safe_iter_and_sum_on_scalar(self) -> None:
-        from pynescript.compiler.numba_builtins import safe_iter, safe_sum, safe_max
+        from pynescript.compiler.numba_builtins import safe_iter
+        from pynescript.compiler.numba_builtins import safe_max
+        from pynescript.compiler.numba_builtins import safe_sum
 
         assert list(safe_iter(3.14)) == []
         assert list(safe_iter(None)) == []
@@ -2744,7 +2751,8 @@ class TestNaSafeArithmetic:
     """Object-mode None/na must not TypeError on arithmetic or comparisons."""
 
     def test_na_num_helper(self) -> None:
-        from pynescript.compiler.numba_builtins import na_num, safe_float
+        from pynescript.compiler.numba_builtins import na_num
+        from pynescript.compiler.numba_builtins import safe_float
 
         assert np.isnan(na_num(None))
         assert na_num(3.5) == 3.5
@@ -2825,7 +2833,7 @@ plot(ta.sma(close, 14), title="s")
 
 
 class TestSet05OobListArithmetic:
-    """Compile-path soft OOB list set, series clamp, array.range max−min.
+    """Compile-path soft OOB list set, series clamp, array.range max-min.
 
     Corpus: 7020/7965 out-of-bounds demos, 8242 LeMan future index, 7303 KDE.
     """
@@ -3240,8 +3248,8 @@ plot(ta.alma(close, 9, 0.85, 6), title="alma")
         assert max_err <= 1e-10, max_err
 
     def test_percentrank_matches_interpret_oracle(self) -> None:
-        from pynescript.compiler import numba_builtins as nb
         from backend.runtime import Runtime
+        from pynescript.compiler import numba_builtins as nb
 
         src = """//@version=6
 indicator("x")
@@ -3381,6 +3389,7 @@ plot(ta.sma(close, 5), title="s")
         on warm/run, clears ``.nbi``/``.nbc``, and retries.
         """
         import pickle
+
         from pathlib import Path
 
         from pynescript.compiler import numba_builtins as nb
@@ -4443,8 +4452,8 @@ plot(ta.pvt(), title="pvt")
         assert not np.isnan(out["pvt"][-1])
 
     def test_kama_cmf_kernel_inc_and_interpret(self) -> None:
-        from pynescript.compiler import numba_builtins as nb
         from backend.runtime import Runtime
+        from pynescript.compiler import numba_builtins as nb
 
         src = """//@version=6
 indicator("x")
@@ -4498,8 +4507,8 @@ plot(ta.cmf(20), title="cmf")
             assert abs(float(a) - float(b)) <= 1e-10
 
     def test_stochrsi_emit_inc_kernel_and_interpret(self) -> None:
-        from pynescript.compiler import numba_builtins as nb
         from backend.runtime import Runtime
+        from pynescript.compiler import numba_builtins as nb
 
         src_c = """//@version=6
 indicator("x")

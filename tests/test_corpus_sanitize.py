@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import re
 
-from pynescript.ast.helper import parse, unparse
+from pynescript.ast.helper import parse
+from pynescript.ast.helper import unparse
 from pynescript.util.corpus_sanitize import sanitize_corpus_source
 
 

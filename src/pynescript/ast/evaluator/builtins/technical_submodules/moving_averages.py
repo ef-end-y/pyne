@@ -115,7 +115,7 @@ class MovingAverageIndicators(TechnicalHelpers):
         """Kaufman's Adaptive Moving Average.
 
         reference / community form: ``ta.kama(source, length, fastLength=2, slowLength=30)``.
-        Accepts 2–4 positional args (fast/slow default to Kaufman's 2/30).
+        Accepts 2-4 positional args (fast/slow default to Kaufman's 2/30).
         """
         n = len(args)
         if n < BINARY:

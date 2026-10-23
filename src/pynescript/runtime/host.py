@@ -38,6 +38,7 @@ import os
 import re
 import time
 import uuid
+
 from sys import intern
 from typing import Any
 
@@ -48,16 +49,15 @@ from pynescript.debug import scope_enabled as _debug_scope
 from pynescript.util.time_parts import utc_parts_from_ms
 
 from .evaluator import CustomEvaluator
-from .series import (
-    make_pine_series,
-    parse_max_bars_back_from_source,
-    pineseries_history_length,
-    resolve_series_cap,
-    series_cap_enabled,
-    series_cap_limit,
-    series_ring_enabled,
-    trim_series_lists,
-)
+from .series import make_pine_series
+from .series import parse_max_bars_back_from_source
+from .series import pineseries_history_length
+from .series import resolve_series_cap
+from .series import series_cap_enabled
+from .series import series_cap_limit
+from .series import series_ring_enabled
+from .series import trim_series_lists
+
 
 _log = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ class LazyCalendarContext(dict):
     ``datetime``).
     """
 
-    __slots__ = ("_cal_ms", "_cal_filled")
+    __slots__ = ("_cal_filled", "_cal_ms")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -268,7 +268,7 @@ def _clear_pine_logger() -> None:
         from pynescript.ast.evaluator.builtins.logging import get_logger
 
         get_logger().clear()
-    except Exception:  # noqa: BLE001 — logging is optional host plumbing
+    except Exception:  # logging is optional host plumbing
         pass
 
 
@@ -278,7 +278,7 @@ def _export_pine_logs() -> list[dict[str, str]]:
         from pynescript.ast.evaluator.builtins.logging import get_logger
 
         return [{"level": str(level).lower(), "message": str(message)} for level, message in get_logger().get_logs()]
-    except Exception:  # noqa: BLE001
+    except Exception:
         return []
 
 
@@ -401,7 +401,7 @@ def _record_run_stats(
             _stats.count("run.object_mode")
         if result.get("nopython_fallback_reason"):
             _stats.count("run.nopython_fallback")
-    except Exception:  # noqa: BLE001 — stats must never break a run
+    except Exception:  # stats must never break a run
         pass
 
 
@@ -450,7 +450,7 @@ def _json_safe_number(x: Any) -> float | None:
         # numpy scalar → python
         if hasattr(x, "item") and not isinstance(x, (bytes, str, dict, list)):
             x = x.item()
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     if isinstance(x, bool):
         return float(x)
@@ -796,7 +796,7 @@ def _series_values_jsonable(values: Any) -> list[Any]:
     if values is None:
         return []
     try:
-        import numpy as np  # noqa: PLC0415
+        import numpy as np
 
         if isinstance(values, np.ndarray):
             kind = values.dtype.kind
@@ -1071,7 +1071,7 @@ def _ohlcv_pack_cached(
     ohlcv_data: list[dict],
 ) -> tuple[Any, Any, Any, Any, Any, Any]:
     """Identity-cached ``(o, h, l, c, v, t)`` float64 arrays."""
-    import numpy as np  # noqa: PLC0415
+    import numpy as np
 
     oid = id(ohlcv_data)
     fp = _ohlcv_pack_fingerprint(ohlcv_data)
@@ -1738,21 +1738,18 @@ def _resolve_realtime_first(
         rt_ticks = int(realtime_ticks)
     except (TypeError, ValueError):
         rt_ticks = 1
-    if rt_ticks < 1:
-        rt_ticks = 1
+    rt_ticks = max(rt_ticks, 1)
     try:
         rt_bars = int(realtime_bars)
     except (TypeError, ValueError):
         rt_bars = 0
-    if rt_bars < 0:
-        rt_bars = 0
+    rt_bars = max(rt_bars, 0)
     if realtime_from_bar is not None:
         try:
             first = int(realtime_from_bar)
         except (TypeError, ValueError):
             first = 0
-        if first < 0:
-            first = 0
+        first = max(first, 0)
         if first >= n_bars:
             return None, rt_ticks
         return first, rt_ticks
@@ -2766,7 +2763,7 @@ class InterpretSession:
         except Exception:
             pass
 
-    def _confirm_forming_last_bar(self, *, more_bars: bool = False) -> None:  # noqa: C901, PLR0915
+    def _confirm_forming_last_bar(self, *, more_bars: bool = False) -> None:
         """Re-visit the last bar as confirmed after unconfirmed forming ticks."""
         if not self._last_bar_unconfirmed or self._n_bars <= 0 or self._error_result is not None:
             return
@@ -3287,7 +3284,7 @@ class Runtime:
                 chart_bars=ohlcv_data,
                 symbol=getattr(self, "symbol", "CHART") or "CHART",
             )
-        except Exception:  # noqa: BLE001 — intentional soft-fail → mock data
+        except Exception:  # intentional soft-fail → mock data
             pass
 
         # Parse once (cached by source hash for multi-run hosts)
@@ -3598,14 +3595,12 @@ class Runtime:
             _rt_ticks = int(realtime_ticks)
         except (TypeError, ValueError):
             _rt_ticks = 1
-        if _rt_ticks < 1:
-            _rt_ticks = 1
+        _rt_ticks = max(_rt_ticks, 1)
         try:
             _rt_bars = int(realtime_bars)
         except (TypeError, ValueError):
             _rt_bars = 0
-        if _rt_bars < 0:
-            _rt_bars = 0
+        _rt_bars = max(_rt_bars, 0)
         # Resolve realtime window start index (inclusive), or None = historical only.
         # Precedence: realtime_from_bar > realtime_bars > last-bar-only flags.
         _rt_first: int | None = None
@@ -3614,8 +3609,7 @@ class Runtime:
                 _rt_first = int(realtime_from_bar)
             except (TypeError, ValueError):
                 _rt_first = 0
-            if _rt_first < 0:
-                _rt_first = 0
+            _rt_first = max(_rt_first, 0)
             if _rt_first >= n_bars:
                 # Window empty → no realtime bars (historical path).
                 _rt_first = None
@@ -3937,9 +3931,7 @@ class Runtime:
         if need_alerts:
             try:
                 try:
-                    from pynescript.ast.evaluator.builtins.alerts import (
-                        export_alerts_from_evaluator,
-                    )
+                    from pynescript.ast.evaluator.builtins.alerts import export_alerts_from_evaluator
 
                     alerts = list(export_alerts_from_evaluator(evaluator) or [])
                 except ImportError:
@@ -4409,7 +4401,7 @@ class Runtime:
                 )
             except Exception:
                 pass
-            n_bars_run = int(len(closes)) if closes is not None else 0
+            n_bars_run = len(closes) if closes is not None else 0
             rt_first, rt_ticks = _resolve_realtime_first(
                 n_bars_run,
                 realtime_ticks=realtime_ticks,
@@ -4546,9 +4538,7 @@ class Runtime:
         _n_visual = int(n_bars_hint or 0) or len(ohlcv_data or ())
         if isinstance(drawings, list) and drawings and _n_visual > 0:
             try:
-                from pynescript.ast.evaluator.builtins.plotting import (
-                    merge_visual_series_from_drawings,
-                )
+                from pynescript.ast.evaluator.builtins.plotting import merge_visual_series_from_drawings
 
                 merge_visual_series_from_drawings(
                     json_series,

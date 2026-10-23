@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from datetime import timezone
 from types import SimpleNamespace
 
 
@@ -249,7 +250,7 @@ def test_missing_prev_after_bar_0_is_false() -> None:
 
 
 def _utc_ms(year: int, month: int, day: int, hour: int = 12) -> int:
-    return int(datetime(year, month, day, hour).timestamp() * 1000)
+    return int(datetime(year, month, day, hour, tzinfo=timezone.utc).timestamp() * 1000)
 
 
 def test_calendar_tf_routing() -> None:

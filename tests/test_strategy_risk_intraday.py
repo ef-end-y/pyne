@@ -53,7 +53,7 @@ class TestIntradayLossTypeParsing:
         assert e._strategy_state.max_intraday_loss_cash is None
 
     def test_percent_of_equity_keyword(self) -> None:
-        e, m = _evaluator()
+        e, _m = _evaluator()
         e._handle_strategy_risk_max_intraday_loss([10.0], {"type": "strategy.percent_of_equity"})
         assert e._strategy_state.max_intraday_loss == 10.0
         assert e._strategy_state.max_intraday_loss_cash is None

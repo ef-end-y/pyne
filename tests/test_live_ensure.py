@@ -13,12 +13,10 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-import pytest  # noqa: E402
+import pytest
 
-from backend.api.live_ensure import (  # noqa: E402
-    ensure_live_session,
-    resume_live_session,
-)
+from backend.api.live_ensure import ensure_live_session
+from backend.api.live_ensure import resume_live_session
 
 
 KEY = "binance|spot|BTC/USDT|1m"

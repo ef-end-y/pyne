@@ -183,8 +183,8 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
     def _numeric_values(self, sequence: list[Any]) -> list[float]:
         """Filter out na/None and non-numeric entries (reference skips na in avg/stdev)."""
         out: list[float] = []
-        for item in sequence:
-            item = self._array_snapshot_value(item)
+        for raw_item in sequence:
+            item = self._array_snapshot_value(raw_item)
             if item is None:
                 continue
             if isinstance(item, bool):
@@ -394,8 +394,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
         if start is None or end is None:
             return []
         # Clamp like Python slice semantics (reference returns empty if out of range)
-        if start < 0:
-            start = 0
+        start = max(start, 0)
         if end < start:
             return []
         return sequence[start:end]
@@ -600,10 +599,8 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
                     )
                 if end is None:
                     end = n
-            if start < 0:
-                start = 0
-            if end > n:
-                end = n
+            start = max(start, 0)
+            end = min(end, n)
             if end < start:
                 return sequence
         for i in range(start, end):

@@ -354,9 +354,8 @@ class NumericBuiltinsMixin(BuiltinDispatchMixin):
         # Multiple values (scalars or series current).
         # Reference Pine: if any argument is ``na``, the result is ``na`` (do not skip).
         values: list[float] = []
-        for a in args:
-            if hasattr(a, "current"):
-                a = a.current
+        for arg in args:
+            a = arg.current if hasattr(arg, "current") else arg
             if a is None:
                 return None
             if isinstance(a, list):

@@ -56,7 +56,7 @@ class RedisKeyStore:
     def __init__(self, url: str = "redis://localhost:6379/0", client: Any = None) -> None:
         if client is None:
             try:
-                import redis  # noqa: PLC0415
+                import redis
             except ImportError as exc:
                 msg = (
                     "The 'redis' package is required for the Redis backend. "

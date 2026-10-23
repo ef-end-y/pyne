@@ -25,9 +25,9 @@ See ``docs/pine_v6_full_surface_inventory.md``.
 from __future__ import annotations
 
 from pynescript.ast.evaluator import NodeLiteralEvaluator
+from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
 from pynescript.ast.evaluator.builtins.logging import get_logger
 from pynescript.ast.helper import parse
-from pynescript.ast.evaluator.builtins.drawing import DrawingRegistry
 
 
 def _seed(ev: NodeLiteralEvaluator) -> None:

@@ -420,7 +420,7 @@ class AlphaVantageProvider(DataProvider):
         client = self._get_client()
 
         try:
-            data, meta = client["ti"].get_daily(symbol=symbol, outputsize="full" if period == "full" else "compact")
+            data, _meta = client["ti"].get_daily(symbol=symbol, outputsize="full" if period == "full" else "compact")
         except Exception as e:
             msg = f"Failed to fetch data: {e}"
             raise DataProviderError(msg)

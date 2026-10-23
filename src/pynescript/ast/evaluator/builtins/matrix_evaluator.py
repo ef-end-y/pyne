@@ -208,8 +208,8 @@ class MatrixBuiltinsMixin(BuiltinDispatchMixin):
     def _builtin_matrix_new(self, args: list[Any]) -> Matrix[Any]:
         """matrix.new() | matrix.new(rows, cols, default_value?) -> Matrix.
 
-        Zero-arg form creates an empty 0×0 matrix (reference ``matrix.new<T>()``).
-        Soft: ``na`` rows/cols → empty 0×0 (unresolved size inputs).
+        Zero-arg form creates an empty 0x0 matrix (reference ``matrix.new<T>()``).
+        Soft: ``na`` rows/cols → empty 0x0 (unresolved size inputs).
         """
         if not args:
             return Matrix(0, 0, None)
@@ -593,7 +593,7 @@ class MatrixBuiltinsMixin(BuiltinDispatchMixin):
     def _builtin_matrix_fill(self, args: list[Any]) -> None:
         """matrix.fill(id, value[, from_row, to_row, from_column, to_column]) -> void.
 
-        reference region form uses half-open ``[from_row, to_row)`` × ``[from_col, to_col)``.
+        reference region form uses half-open ``[from_row, to_row)`` x ``[from_col, to_col)``.
         ``na`` matrix → no-op; ``na`` region bound → full extent for that edge.
         """
         n = len(args)

@@ -227,7 +227,7 @@ class TestLegacyArityAndCache:
     def test_call_execute_retries_without_time(self) -> None:
         seen: list[int] = []
 
-        def five_arg(o, h, l, c, v):  # noqa: ANN001
+        def five_arg(o, h, l, c, v):
             seen.append(len((o, h, l, c, v)))
             return (c,)
 
@@ -238,7 +238,7 @@ class TestLegacyArityAndCache:
         assert isinstance(raw, tuple)
 
     def test_compiled_run_legacy_five_arg_execute(self) -> None:
-        def five_arg(o, h, l, c, v):  # noqa: ANN001
+        def five_arg(o, h, l, c, v):
             return (c, o)
 
         cs = CompiledScript(

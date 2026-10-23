@@ -164,7 +164,7 @@ def test_corpus_strategy_script_parses(script_name: str) -> None:
 def test_corpus_strategy_script_runtime_succeeds(script_name: str) -> None:
     """Corpus strategy scripts complete Runtime.run without error.
 
-    Closed 2026-07-25: series arithmetic (list−list), input.* values, strategy
+    Closed 2026-07-25: series arithmetic (list-list), input.* values, strategy
     metrics. Failures here are regressions on OG Pine strategy surface.
     """
     path = _BUILTIN_SCRIPTS_DIR / f"{script_name}.pine"

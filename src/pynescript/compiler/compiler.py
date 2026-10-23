@@ -75,6 +75,7 @@ from pynescript.ast.evaluator.builtins.plot_params import WIRE_INT_PARAMS
 from pynescript.ast.evaluator.builtins.plot_params import param_index
 from pynescript.ast.visitor import NodeVisitor
 
+
 _NS = frozenset(
     {
         "ta",
@@ -303,7 +304,7 @@ _STYLE_NS = frozenset(
     }
 )
 
-# Bare linestyle / plot style tokens used as identifiers (v3–v4 style)
+# Bare linestyle / plot style tokens used as identifiers (v3-v4 style)
 _LINESTYLE_NAMES = frozenset(
     {
         "solid",
@@ -1101,8 +1102,8 @@ class CompilerVisitor(NodeVisitor):
                 lines.append(f"        {hl}")
         if not body_lines:
             lines.append("        pass")
-        for line in body_lines:
-            line = line.replace("\n", "\n        ")
+        for raw_line in body_lines:
+            line = raw_line.replace("\n", "\n        ")
             lines.append(f"        {line}")
 
         # Tuple return avoids Numba typed.Dict construction/iteration overhead.
@@ -1478,8 +1479,8 @@ class CompilerVisitor(NodeVisitor):
         self._emit_rt_tick_snapshot(lines, indent="                ")
         if not body_lines and not self.uses_strategy:
             lines.append("            pass")
-        for line in body_lines:
-            line = line.replace("\n", "\n            ")
+        for raw_line in body_lines:
+            line = raw_line.replace("\n", "\n            ")
             lines.append(f"            {line}")
         if not body_lines and self.uses_strategy:
             lines.append("            pass")
@@ -3783,7 +3784,7 @@ class CompilerVisitor(NodeVisitor):
             return "((high_arr[__bar_idx] + low_arr[__bar_idx] + close_arr[__bar_idx] + close_arr[__bar_idx]) / 4.0)"
         if node.id == "bar_index":
             return "__bar_idx"
-        # v1–v3: bare `n` is bar_index unless the script defines its own `n`
+        # v1-v3: bare `n` is bar_index unless the script defines its own `n`
         if node.id == "n" and (
             "n_arr" not in self.arrays
             and "n" not in self.local_vars
@@ -3942,7 +3943,7 @@ class CompilerVisitor(NodeVisitor):
             if node.attr == "vwap":
                 st = self._alloc_fixed_state("vwap", 3)
                 return f"numba_vwap_inc(close_arr, vol_arr, __bar_idx, {st})"
-            if node.attr == "accdist" or node.attr == "ad":
+            if node.attr in {"accdist", "ad"}:
                 # Cumulative A/D line (not single-bar CLV*vol).
                 st = self._alloc_fixed_state("ad", 2)
                 return f"numba_accdist_inc(high_arr, low_arr, close_arr, vol_arr, __bar_idx, {st})"
@@ -5108,7 +5109,7 @@ class CompilerVisitor(NodeVisitor):
                 args.append(self.visit(arg))
                 arg_nodes.append(arg)
         if method_src is not None:
-            args = [method_src] + args
+            args = [method_src, *args]
             recv_node = getattr(func, "value", None)
             arg_nodes = [recv_node, *arg_nodes]
 
@@ -5522,8 +5523,8 @@ class CompilerVisitor(NodeVisitor):
         # Drawing surface → event list (object mode)
         if (
             func_name in _DRAWING_FUNCS
-            or func_name.endswith("_new")
-            and any(func_name.startswith(p) for p in ("label", "line", "box", "table", "polyline"))
+            or (func_name.endswith("_new")
+            and any(func_name.startswith(p) for p in ("label", "line", "box", "table", "polyline")))
         ):
             self.object_mode = True
             return self._emit_drawing(func_name, args, kwargs)
@@ -5568,7 +5569,7 @@ class CompilerVisitor(NodeVisitor):
                 return args[3]
             return repr("#000000")
         if func_name in ("color_new", "color"):
-            # color.new(base, transp) / v3–v4 color(base, transp)
+            # color.new(base, transp) / v3-v4 color(base, transp)
             self.object_mode = True
             if not args:
                 return repr("#000000")
@@ -6744,7 +6745,7 @@ class CompilerVisitor(NodeVisitor):
             self.object_mode = True
             real = args[0] if args else "0.0"
             imag = args[1] if len(args) > 1 else "0.0"
-            return "{'real': float(%s), 'imag': float(%s)}" % (real, imag)
+            return f"{{'real': float({real}), 'imag': float({imag})}}"
         if func_name in ("math_abs", "abs"):
             return f"numba_abs({args[0]})" if args else "np.nan"
         if func_name in ("math_max", "max"):
@@ -7352,18 +7353,16 @@ class CompilerVisitor(NodeVisitor):
                 call_args.append("np.nan")
             elif sc in self.scalar_vars or sc in self.map_vars:
                 call_args.append(self._py_ident(sc) if sc in self.ident_map else sc)
+            # Outer series written every bar as *_arr, or scalar not yet known
+            elif any(a == arr or a.startswith(sc) for a in self.arrays):
+                call_args.append(f"{arr}[__bar_idx]")
+            # May be input.color scalar assigned later — pass bare name
+            # only when it is a known outer; else None to avoid NameError
+            elif sc in self.scalar_vars or sc in self.map_vars or sc in self.arrays:
+                call_args.append(sc)
             else:
-                # Outer series written every bar as *_arr, or scalar not yet known
-                if any(a == arr or a.startswith(sc) for a in self.arrays):
-                    call_args.append(f"{arr}[__bar_idx]")
-                else:
-                    # May be input.color scalar assigned later — pass bare name
-                    # only when it is a known outer; else None to avoid NameError
-                    if sc in self.scalar_vars or sc in self.map_vars or sc in self.arrays:
-                        call_args.append(sc)
-                    else:
-                        # Unknown free (import alias missed / undeclared) — Pine na
-                        call_args.append("np.nan")
+                # Unknown free (import alias missed / undeclared) — Pine na
+                call_args.append("np.nan")
         free_series = _meta(getattr(self, "func_free_series", {}), [])
         for fs in free_series:
             if self._is_ta_state_buf(fs) or self._is_series_local_state(fs):
@@ -8165,7 +8164,7 @@ class CompilerVisitor(NodeVisitor):
         ops = []
         wrap_all_numeric = True
         raw_rights: list[str] = []
-        for op, comp in zip(node.ops, node.comparators):
+        for op, comp in zip(node.ops, node.comparators, strict=False):
             op_str = {
                 ast.Gt: ">",
                 ast.Lt: "<",
@@ -9397,7 +9396,7 @@ class CompilerVisitor(NodeVisitor):
             elif n in self._CHART_ARR_BASES and n not in arg_set:
                 # ``var vol`` must not emit as ``vol_arr`` (chart volume formal)
                 self.ident_map[n] = f"__user_{n}"
-            elif n in self.user_funcs or n == pine_name or n == func_name:
+            elif n in self.user_funcs or n in {pine_name, func_name}:
                 self.ident_map[n] = f"{self._safe_ident(n)}__loc"
             else:
                 self.ident_map[n] = self._safe_ident(n)
@@ -9676,7 +9675,7 @@ class CompilerVisitor(NodeVisitor):
             self.object_mode = True
             self.uses_strategy = True
             if "__strategy" not in param_list:
-                param_list = list(param_list) + ["__strategy"]
+                param_list = [*list(param_list), "__strategy"]
         _bind_func_meta(self.func_needs_strategy, needs_strategy)
 
         deco = "@numba.njit(cache=False)" if not self.object_mode else ""
@@ -9719,9 +9718,9 @@ class CompilerVisitor(NodeVisitor):
                     if m_tail:
                         for_ret_name = m_tail.group(1)
                     break
-            for i, line in enumerate(body_lines):
+            for i, raw_line in enumerate(body_lines):
                 is_last = i == len(body_lines) - 1
-                line = line.replace("\n", "\n    ")
+                line = raw_line.replace("\n", "\n    ")
                 stripped = line.lstrip()
                 # Detect real assignment statements only — never treat kwargs in a
                 # call (``__strategy.close(id=..., qty=...)``) as assignment. A
@@ -10139,20 +10138,18 @@ class CompilerVisitor(NodeVisitor):
             if target not in self.local_vars:
                 self.local_vars.add(target)
                 added_local = True
-        else:
-            if target not in self.scalar_vars:
-                self.scalar_vars.add(target)
-                added_scalar = True
+        elif target not in self.scalar_vars:
+            self.scalar_vars.add(target)
+            added_scalar = True
         end_tmp = f"__end_{target}"
         if has_explicit_step:
             step_expr = step if step is not None else "1"
+        # Evaluate end once; auto-step from start vs end at loop entry.
+        # Numeric path: bare compare (na_num is Python-only — breaks njit).
+        elif self.object_mode:
+            step_expr = f"(1 if (na_num({target}) <= na_num({end_tmp})) else -1)"
         else:
-            # Evaluate end once; auto-step from start vs end at loop entry.
-            # Numeric path: bare compare (na_num is Python-only — breaks njit).
-            if self.object_mode:
-                step_expr = f"(1 if (na_num({target}) <= na_num({end_tmp})) else -1)"
-            else:
-                step_expr = f"(1 if ({target}) <= ({end_tmp}) else -1)"
+            step_expr = f"(1 if ({target}) <= ({end_tmp}) else -1)"
         lines: list[str] = []
         if self._loop_result_target:
             lines.append(f"{self._loop_result_target} = np.nan")
@@ -10244,9 +10241,8 @@ class CompilerVisitor(NodeVisitor):
             if self.in_function:
                 if target not in self.local_vars:
                     self.local_vars.add(target)
-            else:
-                if target not in self.scalar_vars:
-                    self.scalar_vars.add(target)
+            elif target not in self.scalar_vars:
+                self.scalar_vars.add(target)
             # Guard non-iterables (float/NaN from mis-typed series) so the bar loop
             # does not raise ``float is not iterable``.
             lines = [f"for {target} in safe_iter({iterable}):"]

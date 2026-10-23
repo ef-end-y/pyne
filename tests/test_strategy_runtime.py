@@ -619,7 +619,7 @@ class TestLeverageFuturesUI:
     def test_margin_long_derives_leverage(self) -> None:
         ev = NodeLiteralEvaluator()
         m = ev._build_builtin_map()
-        m["strategy"](["T"], {"margin_long": 20})  # 20% margin → 5×
+        m["strategy"](["T"], {"margin_long": 20})  # 20% margin → 5x
         assert abs(ev._strategy_state.leverage - 5.0) < 1e-9
 
     def test_cash_default_qty_scales_by_leverage(self) -> None:

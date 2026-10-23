@@ -682,9 +682,8 @@ class TechnicalHelpers:
         s = float(st["sum"])
         ss = float(st["sumsq"])
         var = (ss - (s * s) / n) / (n - 1)
-        if var < 0.0:
-            # floating-point cancellation guard
-            var = 0.0
+        # floating-point cancellation guard
+        var = max(var, 0.0)
         st["value"] = math.sqrt(var)
         return st.get("value")
 
@@ -692,7 +691,7 @@ class TechnicalHelpers:
         """Incremental highest matching full ``_highest`` (last value).
 
         Monotonic-deque sliding maximum: amortized O(1) per bar instead of
-        the former O(period) scan (``ta.highest(high, 200)`` × 50k bars was
+        the former O(period) scan (``ta.highest(high, 200)`` x 50k bars was
         10M comparisons per call site). na / non-numeric samples are skipped
         (they poison nothing), matching the previous scan semantics.
         """
@@ -2027,7 +2026,7 @@ class TechnicalHelpers:
         when some samples are non-numeric: ``vol_score = min(100, vol_avg/100)``,
         ``volatility_score = max(0, 100 - vol_avg_volatility*50)``,
         ``spread_score = max(0, 100 - spread_avg*100)``; 0.4/0.3/0.3 mix, clamp
-        0–100. One call-site slot every bar, including warmup / na.
+        0-100. One call-site slot every bar, including warmup / na.
         """
         n = int(period) if period is not None else 0
         slot = self._ta_next_slot()
@@ -2477,7 +2476,7 @@ class TechnicalHelpers:
             st["value"] = 0.0
             return 0.0
         mean_dev = acc / n_valid
-        if mean_dev not in {None, 0, 0.0}:
+        if mean_dev not in {None, 0}:
             st["last_mean_dev"] = mean_dev
         last_mean_dev = st["last_mean_dev"]
         if last_mean_dev is None or last_mean_dev == 0:
@@ -2850,8 +2849,7 @@ class TechnicalHelpers:
         s = float(st["sum"])
         ss = float(st["sumsq"])
         var = (ss - (s * s) / n) / (n - 1)
-        if var < 0.0:
-            var = 0.0
+        var = max(var, 0.0)
         st["value"] = var
         return st.get("value")
 
@@ -3296,8 +3294,7 @@ class TechnicalHelpers:
             m = 0.0
         if st["cum_v"]:
             var = st["cum_p2v"] / st["cum_v"] - vwap * vwap
-            if var < 0.0:
-                var = 0.0
+            var = max(var, 0.0)
             sd = math.sqrt(var)
         else:
             sd = 0.0
@@ -3694,13 +3691,12 @@ class TechnicalHelpers:
                 md_f = 0.0 if self._is_nan_num(md) else float(md)
                 plus_di = 100.0 * pd_f / float(atr_v)
                 minus_di = 100.0 * md_f / float(atr_v)
+        elif not atr_v:
+            plus_di = 0.0
+            minus_di = 0.0
         else:
-            if not atr_v:
-                plus_di = 0.0
-                minus_di = 0.0
-            else:
-                plus_di = 100.0 * float(pd) / float(atr_v)
-                minus_di = 100.0 * float(md) / float(atr_v)
+            plus_di = 100.0 * float(pd) / float(atr_v)
+            minus_di = 100.0 * float(md) / float(atr_v)
 
         st["plus_di"] = plus_di
         st["minus_di"] = minus_di
@@ -4414,8 +4410,7 @@ class TechnicalHelpers:
         s = float(st["sum"])
         ss = float(st["sumsq"])
         var = (ss - (s * s) / n) / (n - 1)
-        if var < 0.0:
-            var = 0.0
+        var = max(var, 0.0)
         try:
             mid_f = s / period
             dev_f = math.sqrt(var)
@@ -5553,7 +5548,7 @@ class TechnicalHelpers:
         (defaults to high) or ``ta.atr(14)`` (uses high/low/close).
         """
         series_map = getattr(self, "current_series", None) or {}
-        if name in series_map and series_map[name]:
+        if series_map.get(name):
             src = series_map[name]
             if isinstance(src, list):
                 return self._cap_series_list(src)

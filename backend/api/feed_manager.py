@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+
 from collections.abc import Callable
 from typing import Any
 
@@ -126,7 +127,7 @@ class ExchangeFeed:
         for cb in callbacks:
             try:
                 cb(candles)
-            except Exception:  # noqa: BLE001 — one bad session must not starve the rest
+            except Exception:  # noqa: S112 - one bad session must not starve the rest
                 continue
             delivered += 1
         return delivered
@@ -147,7 +148,7 @@ class ExchangeFeed:
     def _serve(self) -> None:
         try:
             asyncio.run(self._watch())
-        except Exception:  # noqa: BLE001 — feed death must not kill the worker
+        except Exception:  # feed death must not kill the worker
             return
 
     def _snapshot_series(self) -> list[tuple[str, str]]:
@@ -177,7 +178,7 @@ class ExchangeFeed:
         finally:
             try:
                 await feed.close()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         if not streaming and not self._stop.is_set():
             await self._poll_loop()
@@ -227,7 +228,7 @@ class ExchangeFeed:
                     return
                 except (NotImplementedError, AttributeError):
                     return
-                except Exception:  # noqa: BLE001 — reconnect inside the venue loop
+                except Exception:  # reconnect inside the venue loop
                     await asyncio.sleep(1.0)
 
         try:
@@ -255,7 +256,7 @@ class ExchangeFeed:
                     for symbol, timeframe in self._snapshot_series():
                         try:
                             rows = await feed.fetch_ohlcv(symbol, timeframe, limit=2)
-                        except Exception:  # noqa: BLE001
+                        except Exception:
                             rows = []
                         key = (symbol, timeframe)
                         batch = [b for b in normalize_candles(rows) if b["time"] > last.get(key, 0)]
@@ -266,7 +267,7 @@ class ExchangeFeed:
         finally:
             try:
                 await feed.close()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     def _make_feed(self) -> Any:

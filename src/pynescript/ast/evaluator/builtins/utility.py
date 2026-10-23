@@ -96,7 +96,7 @@ def _normalize_year_month(year: int | float, month: int | float) -> tuple[int, i
 
 
 @lru_cache(maxsize=4096)
-def _timestamp_ms_from_components(  # noqa: PLR0913 — year..second + optional UTC offset
+def _timestamp_ms_from_components(  # year..second + optional UTC offset
     year: int,
     month: int,
     day: int,
@@ -136,7 +136,7 @@ def _fixed_offset_tz(sign: str, hours: int, mins: int) -> timezone:
     return timezone(mult * timedelta(hours=hours, minutes=mins))
 
 
-def _parse_pine_timezone(tz_spec: Any) -> Any:  # noqa: PLR0911 — early-exit coerce ladder
+def _parse_pine_timezone(tz_spec: Any) -> Any:  # early-exit coerce ladder
     """Parse a Pine timezone string into a ``tzinfo`` (UTC on failure / empty).
 
     Accepts:
@@ -242,8 +242,7 @@ class UtilityFunctionsMixin(BuiltinDispatchMixin):
             length = int(float(length_raw)) if length_raw is not None else 0
         except (TypeError, ValueError):
             length = 0
-        if length < 0:
-            length = 0
+        length = max(length, 0)
 
         # PineSeries / history wrappers (most-recent-first)
         hist = getattr(source, "history", None)
@@ -790,7 +789,7 @@ class UtilityFunctionsMixin(BuiltinDispatchMixin):
             for fmt in formats:
                 try:
                     # Interpret naive datetime in the stated offset, then convert to UTC ms
-                    dt_local = datetime.strptime(s, fmt)
+                    dt_local = datetime.strptime(s, fmt)  # noqa: DTZ007 - naive value is interpreted in tz_offset below
                     dt_utc = (dt_local - tz_offset).replace(tzinfo=timezone.utc)
                     return int(dt_utc.timestamp() * 1000)
                 except ValueError:
@@ -951,7 +950,7 @@ class UtilityFunctionsMixin(BuiltinDispatchMixin):
                     tzinfo = _parse_pine_timezone(first)
                     comp = comp[1:]
                 elif len(comp) < 4 or not is_numeric_str:
-                    # Date-string form (1–3 args) or non-numeric short form
+                    # Date-string form (1-3 args) or non-numeric short form
                     if len(comp) < 4:
                         parsed = self._parse_timestamp_string(str(first))
                         if parsed is not None:

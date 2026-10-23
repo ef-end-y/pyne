@@ -392,7 +392,7 @@ plot(ta.pivotlow(low, 2, 2), "pl")
     highs = [5.0, 5.0, 7.0, 7.0, 6.0, 5.0]
     lows = [5.0, 5.0, 3.0, 3.0, 4.0, 5.0]
     bars = []
-    for i, (h, lo) in enumerate(zip(highs, lows)):
+    for i, (h, lo) in enumerate(zip(highs, lows, strict=False)):
         bars.append(
             {
                 "open": lo,

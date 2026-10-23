@@ -177,7 +177,7 @@ class DocumentSymbolCollector(NodeVisitor):
                 if parent.children is None:
                     parent.children = [field]
                 else:
-                    parent.children = list(parent.children) + [field]
+                    parent.children = [*list(parent.children), field]
             elif isinstance(node.target, ast.Tuple):
                 for elt in node.target.elts:
                     if isinstance(elt, ast.Name):
@@ -192,7 +192,7 @@ class DocumentSymbolCollector(NodeVisitor):
                         if parent.children is None:
                             parent.children = [field]
                         else:
-                            parent.children = list(parent.children) + [field]
+                            parent.children = [*list(parent.children), field]
 
     def visit_Assign(self, node: ast.Assign) -> Any:
         """Handle variable assignments."""
