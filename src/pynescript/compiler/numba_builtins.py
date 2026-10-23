@@ -616,11 +616,7 @@ def numba_history_store(arr, i, value, off):
     ``ta.sma(close, 5)[1]`` and ``ta.lowest(src, len)[off]`` have no named
     series. The subscript writes the current result, then reads the offset.
     """
-    v = value + 0.0
-    if v != v:
-        arr[i] = np.nan
-    else:
-        arr[i] = v
+    arr[i] = value + 0.0
     j = i - off
     if j < 0 or j >= arr.shape[0]:
         return np.nan
