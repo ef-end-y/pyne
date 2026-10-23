@@ -71,11 +71,20 @@ def _load_env_file() -> bool:
     backend/requirements.txt`` installs it).
     """
     try:
+        from dotenv import find_dotenv
         from dotenv import load_dotenv
     except ImportError:
         logger.debug("python-dotenv not installed; .env is ignored")
         return False
-    return bool(load_dotenv())
+    # Prefer the process working directory (how ``flask run`` and
+    # ``python -m backend.app`` are launched), then fall back to the
+    # module-relative search so a launch from a subdirectory still finds the
+    # repository ``.env``. Existing environment variables always win.
+    dotenv_path = find_dotenv(usecwd=True) or find_dotenv()
+    if not dotenv_path:
+        logger.debug("no .env file found; skipping environment load")
+        return False
+    return bool(load_dotenv(dotenv_path))
 
 
 # Read .env before any env-dependent module-level configuration below
