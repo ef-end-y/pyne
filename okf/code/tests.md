@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-22T13:37:31Z
+  at: 2026-10-23T12:25:31Z
 sources:
   - id: tree
     resource: "tests"
@@ -29,6 +29,7 @@ okf_lock: generated
 * `test_backend_window.py` — TestApplyWindow, TestNormalizeWindow, TestSizeReduction
 * `test_backend_ws.py` — TestWsEnvelopePayload, TestWsRun, ws_server
 * `test_bgcolor_plotshape_export.py` — test_bgcolor_export_kind_and_color_series, test_drawing_registry_merge_visual_series_wrapper, test_materialize_bgcolor_default_titles_from_drawings, test_materialize_plotshape_from_compile_drawings, test_plot_meta_kind_plot_compat, test_plotchar_export, test_plotshape_export_bool_series_and_style, test_titled_bgcolor_compile_matches_interpret, test_uniquify_series_title_matches_runtime
+* `test_builtin_shadowing.py` — test_known_duplicates_still_duplicated, test_no_unknown_shadowing, test_winner_is_reachable_from_composed_class, test_winning_definition_is_pinned
 * `test_builtins.py` — TestChartPointFunctions, TestIntegratedPhase5Features, TestLoggingFunctions, TestPhase5EdgeCases, TestPolylineFunctions, TestTickerFunctions
 * `test_builtins_coverage.py` — TestColorFunctions, TestMatrixBuiltins, TestMatrixCore, TestNameResolution, TestNumericBuiltins, TestStringBuiltins, TestStudyHelpers, TestTechnicalAlias, TestTickerFunctions, TestTransformer
 * `test_changelog_release_notes.py` — test_build_release_notes_puts_changelog_before_install, test_cli_writes_out, test_extract_em_dash_dated_heading, test_extract_hyphen_dated_heading, test_missing_version_explains_unreleased_move, test_normalize_version_strips_v_prefix, test_unreleased_is_not_a_release_section
