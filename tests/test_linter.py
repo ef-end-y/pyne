@@ -158,3 +158,83 @@ if barstate.islast
         assert "C003" not in codes
         assert "W102" not in codes
         assert "W103" not in codes
+
+
+class TestV6RemovedKwargs:
+    """W104 flags v6-removed kwargs the evaluator silently ignores."""
+
+    def test_when_on_strategy_entry(self) -> None:
+        code = """//@version=6
+strategy("Test")
+strategy.entry("L", strategy.long, when=close > open)
+"""
+        warnings = lint_script(code)
+        w104 = [w for w in warnings if w.code == "W104"]
+        assert len(w104) == 1
+        assert "when=" in w104[0].message
+        assert w104[0].line == 3
+
+    def test_transp_on_plot(self) -> None:
+        code = """//@version=6
+indicator("Test")
+plot(close, transp=50)
+"""
+        warnings = lint_script(code)
+        assert any(w.code == "W104" and "transp=" in w.message for w in warnings)
+
+    def test_transp_on_line_new(self) -> None:
+        code = """//@version=6
+indicator("Test")
+line.new(bar_index, high, bar_index + 1, low, transp=50)
+"""
+        warnings = lint_script(code)
+        assert any(w.code == "W104" for w in warnings)
+
+    def test_color_new_transp_not_flagged(self) -> None:
+        code = """//@version=6
+indicator("Test")
+plot(close, color=color.new(color.red, 50))
+"""
+        assert "W104" not in [w.code for w in lint_script(code)]
+
+    def test_strategy_without_when_clean(self) -> None:
+        code = """//@version=6
+strategy("Test")
+if close > open
+    strategy.entry("L", strategy.long)
+"""
+        assert "W104" not in [w.code for w in lint_script(code)]
+
+
+class TestBoolConditions:
+    """W105 nudges numeric literals in boolean positions toward bool()."""
+
+    def test_if_numeric_literal(self) -> None:
+        code = """//@version=6
+indicator("Test")
+if 1
+    x = 2
+"""
+        warnings = lint_script(code)
+        w105 = [w for w in warnings if w.code == "W105"]
+        assert len(w105) == 1
+        assert w105[0].line == 3
+
+    def test_while_and_ternary_literals(self) -> None:
+        code = """//@version=6
+indicator("Test")
+while 0
+    x = 1
+y = 1 ? 2 : 3
+"""
+        assert sum(1 for w in lint_script(code) if w.code == "W105") == 2
+
+    def test_bool_literal_and_comparison_clean(self) -> None:
+        code = """//@version=6
+indicator("Test")
+if true
+    x = 1
+if close > open
+    y = 2
+"""
+        assert "W105" not in [w.code for w in lint_script(code)]

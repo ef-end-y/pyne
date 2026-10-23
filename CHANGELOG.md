@@ -2,6 +2,11 @@
 
 ### Added
 
+- **Linter W104 (v6-removed kwargs).** AST-based rule flags `when=` on `strategy.*` order calls and `transp=` on drawing/plot calls (`color.new` / `color()` exempt) — both are ignored at runtime since v6 removed them. Surfaces in CLI, `lint_script`, and LSP diagnostics.
+- **Linter W105 (numeric literal in boolean condition).** AST-based rule nudges `if 1` / `while 0` / `1 ? a : b` toward an explicit comparison or `bool()` cast. The evaluator stays permissively compatible; strictness lives in lint, not runtime.
+- **`export method` import coverage.** `tests/test_library_export_method.py` pins the full cross-script path (UDT + exported method via `register_library_source` and direct evaluation, alias construction, receiver-form call).
+- **String-interpolation scope + `bool` edge pins.** `tests/test_string_bool_edges.py` locks bare `"{0}"` staying literal, `str.format` substitution, `bool(na)`/`not na`/`na and/or` edges, and permissive numeric conditions at runtime.
+
 - **AXB1 binary encoder + negotiated `encoding: "axb1"` on `WS /ws/live`.** New `pynescript.runtime.axb1` — a pure-stdlib byte-for-byte mirror of the AXIS AXB1 v1 wire codec (`axis/src/hp/axb1/encode.ts`), pinned by the cross-repo golden vectors (`tests/data/axb1-vectors.json`, shared with `axis/tests/hp/axb1-vectors.json`; 12 envelope vectors + FNV-1a hash checks asserted by `tests/test_axb1.py`). `WS /ws/live` accepts `encoding: "axb1"` on `subscribe`: mappable frames (status, series `full` snapshots, forming re-tip deltas, closes, errors) leave as `AXB1` bytes; JSON remains the default, and unmapped frames (script frames, multi-bar deltas, `idle` status, control frames, anything without a subscription id) fall back to JSON untouched. A single-bar delta is classified re-tick vs append by the per-subscription cursor (bar time vs newest seen) because pyne's delta envelope is byte-identical for both — an append is never guessed as a tip.
 
 ### Fixed

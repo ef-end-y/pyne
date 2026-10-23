@@ -130,8 +130,8 @@ flowchart TB
 
 ```mermaid
 pie title Inventory rows by status
-  "implemented" : 695
-  "partial" : 8
+  "implemented" : 701
+  "partial" : 2
   "missing" : 0
 ```
 
@@ -174,7 +174,7 @@ Beyond named builtins, Pine v6 compatibility depends on grammar and semantic rul
 | `export const T name =` | export | ✅ implemented | June 2025; parse+runtime |
 | `export type` | export | ✅ implemented | UDT via import alias + .new |
 | `export enum` | export | ✅ implemented | Enum dict via import alias |
-| `export method` | export | 🔄 partial | Methods on types; full library method export less exercised |
+| `export method` | export | ✅ implemented | Methods on types; e2e import coverage in `test_library_export_method.py` |
 | `var / varip` | declaration mode | ✅ implemented | First-bar only assign |
 | `const (type qualifier)` | declaration mode | ✅ implemented | const float x = ... |
 | `:= reassignment` | operator | ✅ implemented | ReAssign |
@@ -190,15 +190,15 @@ Beyond named builtins, Pine v6 compatibility depends on grammar and semantic rul
 | `enum` | type system | ✅ implemented |  |
 | `method` | type system | ✅ implemented |  |
 | `""" / ''' multiline string` | literal | ✅ implemented | April 2026 |
-| `string interpolation` | literal | 🔄 partial | Depends on str.format patterns |
-| `bool never na` | semantics | 🔄 partial | Core paths; edge cases may remain |
-| `explicit bool() cast` | semantics | 🔄 partial | bool() exists; implicit cast not fully banned |
+| `string interpolation` | literal | ✅ implemented | Explicit `str.format` substitution; bare `{0}` stays literal (pinned) |
+| `bool never na` | semantics | ✅ implemented | `bool(na)` is `False`, `na` conditions falsy; edges pinned dual-path |
+| `explicit bool() cast` | semantics | ✅ implemented | `bool()` exists; implicit numeric casts nudge via linter W105 |
 | `int/int division float` | semantics | ✅ implemented | truediv 5/2=2.5 |
 | `negative array index` | semantics | ✅ implemented |  |
 | `matrix/array sort_field UDT` | semantics | ✅ implemented | April 2026 |
 | `array.binary_search* UDT sort_field` | semantics | ✅ implemented | August 2026 |
-| `when= on strategy.*` | semantics | 🔄 partial | v6 removed; may still accept kwargs silently |
-| `transp= on drawings` | semantics | 🔄 partial | v6 removed; prefer color.new |
+| `when= on strategy.*` | semantics | ✅ implemented | v6 removed; runtime ignores, linter W104 flags |
+| `transp= on drawings` | semantics | ✅ implemented | v6 removed; runtime ignores, linter W104 flags (color.new exempt) |
 
 ## Known gaps & platform limits
 

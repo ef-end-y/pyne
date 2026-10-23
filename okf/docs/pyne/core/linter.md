@@ -7,7 +7,7 @@ tags: [core, doc, docs, pyne]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-09-24T03:38:48Z
+  at: 2026-10-23T16:54:36Z
 sources:
   - id: tree
     resource: "docs/pyne/core/linter.mdx"
@@ -32,6 +32,7 @@ Repo path `docs/pyne/core/linter.mdx`.
   * Syntax
   * Version
   * Deprecated patterns (checkdeprecated)
+  * v6 migration (checkv6kwargs, checkboolconditions)
   * Naming (checknaming)
   * Style (checkstyle)
 * Internals

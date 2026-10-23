@@ -34,7 +34,7 @@ The core linter is a lightweight static checker that sits on the parse pipeline 
 - `PineLinter` — stateful runner accumulating warnings
 - `lint_script(source, filename)` / `lint_file(filepath)` — convenience entry points
 
-Rules run in fixed order: **syntax → version → deprecated patterns → naming → style**. Syntax failures become severity `"error"` with code `E001`; other rules are mostly `"warning"`.
+Rules run in fixed order: **syntax → version → deprecated patterns → naming → style → v6 migration (AST-based)**. Syntax failures become severity `"error"` with code `E001`; other rules are mostly `"warning"`.
 
 ## Conceptual model
 
@@ -120,6 +120,15 @@ Pattern: `//\s*@version\s*=\s*(\d+)`.
 
 Matches set `line` from prefix newline count. Case-insensitive search. Live deprecated rule is `W101` only.
 
+### v6 migration (`_check_v6_kwargs`, `_check_bool_conditions`)
+
+AST-based rules over the parsed tree (skipped when parsing fails). They also surface in LSP diagnostics via `lint_script(..., tree=...)`.
+
+| Code | Condition | Advice |
+| --- | --- | --- |
+| `W104` | `when=` on a `strategy.*` call, or `transp=` on a drawing/plot call (never `color.new`/`color()`) | Removed in v6 and ignored at runtime; gate with `if` / use `color.new(color, transp)` |
+| `W105` | `int`/`float` literal as an `if`/`while`/ternary test | Use an explicit comparison or `bool()` cast (`if 1` still runs at runtime) |
+
 ### Naming (`_check_naming`)
 
 | Code | Condition |
@@ -149,7 +158,7 @@ Dependencies:
 
 ### Design stance
 
-The linter intentionally uses **regex over AST** for several rules so it still partially works when parse fails (version/deprecations/style still run after a failed syntax check — note: `_check_syntax` records `E001` but does not abort the pipeline). That means:
+The linter intentionally uses **regex over AST** for version/deprecation/naming/style rules so it still partially works when parse fails (those rules still run after a failed syntax check — note: `_check_syntax` records `E001` but does not abort the pipeline). The v6-migration rules (`W104`/`W105`) are AST-based instead and are skipped when parsing fails. That means:
 
 - False positives/negatives on fancy formatting are possible.
 - Deep semantic issues (wrong series type, undefined names) belong to evaluator/LSP diagnostics, not these codes.

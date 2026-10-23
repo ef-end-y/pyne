@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-23T16:45:12Z
+  at: 2026-10-23T16:54:36Z
 sources:
   - id: tree
     resource: "tests"
@@ -72,7 +72,8 @@ okf_lock: generated
 * `test_lazy_calendar_plots.py` — TestLazyCalendarContext, TestLightPlots, TestRuntimeLazyCalendar
 * `test_lexer_corpus_fixes.py` — test_bare_name_equal_is_assign_not_reassign, test_bitwise_ops_shift_and_or, test_blank_lines_between_arrow_and_indented_method_body, test_bracket_wrap_any_indent_parity_with_parens, test_c_style_block_comment, test_color_literal_still_parses_after_hash_comment_rule, test_hash_line_comment_not_color, test_inline_block_comment, test_markdown_backticks_ignored, test_multiline_ternary_after_question_with_trailing_spaces, test_multiline_triple_quoted_string_roundtrip, test_multiline_type_new_nested_map_new
 * `test_library_export_import.py` — TestExportConstParse, TestLibraryExportConstRuntime, TestLibraryExportTypeAndEnum, TestLibraryImportRuntime, TestRuntimeGitPublishLibraries
-* `test_linter.py` — TestPineLinter, TestRetiredRules
+* `test_library_export_method.py` — test_export_method_register_library_source, test_export_method_usable_via_import
+* `test_linter.py` — TestBoolConditions, TestPineLinter, TestRetiredRules, TestV6RemovedKwargs
 * `test_live_ensure.py` — test_bad_key_rejected, test_identical_script_subs_share_one_session, test_resume_unknown_is_gone, test_script_kind_creates_bound_session, test_script_without_script_rejected, test_series_kind_ready_without_session
 * `test_live_push.py` — FakeWs, test_feed_batch_emits_delta_to_socket, test_forming_batches_conflate_on_the_feed_thread, test_persist_feed_bars_advances_stored_bounds, test_persist_feed_bars_fails_soft, test_persist_feed_bars_updates_the_forming_row_and_throttles_reticks, test_push_hub_routes_and_drops_dead_sockets, test_series_push_emits_bars_delta_and_close, test_series_push_forming_retick_does_not_grow_count, test_series_subscription_attaches_feed_and_persists, test_serve_loop_answers_ping_while_ensure_blocks, test_serve_loop_close_during_ensure_does_not_attach
 * `test_live_ws.py` — test_bad_auth_token_rejected, test_canonical_key_normalizes_casing, test_frame_builders_carry_seq_and_watermark, test_handshake_key_prefers_bearer_then_query, test_history_bars_clamped, test_next_seq_is_monotonic_per_subscription, test_quiet_socket_does_not_tear_down_the_live_plane, test_repair_of_a_live_sub_resumes, test_repair_unknown_is_gone, test_resubscribe_same_id_is_idempotent, test_resume_replies_snapshot_and_live, test_resume_unknown_is_gone
@@ -136,6 +137,7 @@ okf_lock: generated
 * `test_strategy_risk_enforcement.py` — test_allow_entry_in_blocks_opposite_side, test_bar_mode_sma_returns_scalar, test_list_mode_sma_returns_series, test_max_drawdown_blocks_further_entries, test_max_position_size_caps_qty
 * `test_strategy_risk_intraday.py` — TestCompileBrokerParity, TestInterpretEnforcement, TestIntradayLossTypeParsing, test_fills_cap_rolls_next_day_dual_host, test_losing_strategy_blocked_dual_host, test_pending_limit_blocked_after_intraday_loss_dual_host, test_strategy_cash_identifier_dual_host
 * `test_strategy_runtime.py` — TestAvgPriceModel, TestLeverageFuturesUI, TestStrategyCashAndPyramiding, TestStrategyExtendedStats, TestStrategyGoldenMultiBar, TestStrategyInitialCapitalReassign, TestStrategySeriesVariables, TestStrategyWinLossStats
+* `test_string_bool_edges.py` — test_bare_braces_stay_literal, test_bool_edges, test_runtime_numeric_condition_stays_permissive, test_str_format_substitutes
 * `test_ta_duplicate_parity.py` — test_atr_parity_with_volatility_copy, test_bb_parity_with_volatility_copy, test_kc_parity_with_volatility_copy, test_stdev_parity_with_basic_copy, test_supertrend_parity_with_basic_copy, test_tr_parity_with_volatility_copy
 * `test_ta_indicators_1.py` — TestALMA, TestAPO, TestCMF, TestDEMA, TestKAMA, TestKlinger, TestMACDSignal, TestPhase8Integration, TestPhase8RoundTrip, TestRSIDivergence, TestStochSmooth, TestTEMA
 * `test_ta_indicators_2.py` — TestTier2Indicators
