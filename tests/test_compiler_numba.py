@@ -1406,20 +1406,15 @@ plot((close + open)[1], title="expr")
         # No raw getitem on a float call / paren expr (must not end with )[offset])
         assert "numba_sma(close_arr, int(5), __bar_idx)[1]" not in code
         assert re.search(r"\)\s*\[\s*1\s*\]", code) is None
-        # Scalar/call history lowers to na (or literal bar-guard), never crashes
-        assert (
-            "plot_1[__bar_idx] = np.nan" in code
-            or "numba_store(plot_1, __bar_idx, np.nan)" in code
-            or "sma1" in code
-        )
+        assert "numba_history_store(" in code
         compiled = compile_script(src)
         o, h, l, c, v = _ohlcv(20)
         out = compiled.run(o, h, l, c, v)
         # literal series is bar-invariant when offset in range
         assert abs(out["lit"][-1] - 1.0) < 1e-9
-        # call / expr history without temp series → na (safe stub)
-        assert np.isnan(out["sma1"][-1]) or out["sma1"][-1] != out["sma1"][-1]
-        assert np.isnan(out["expr"][-1]) or out["expr"][-1] != out["expr"][-1]
+        # previous bar's SMA(5) and previous close+open
+        assert abs(out["sma1"][-1] - float(np.mean(c[-6:-1]))) < 1e-9
+        assert abs(out["expr"][-1] - float(o[-2] + c[-2])) < 1e-9
 
     def test_strategy_position_size_history_not_subscriptable(self) -> None:
         src = """//@version=5

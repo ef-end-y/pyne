@@ -243,6 +243,59 @@ plot(close)
     assert arr.size == 20
 
 
+def test_mfi_expression_source_uses_length() -> None:
+    """``ta.mfi(hlc3, length)`` must not treat the hlc3 expression as the period."""
+    src = """//@version=6
+indicator("mfi hlc3")
+plot(ta.mfi(hlc3, 14), title="mfi")
+"""
+    code = transpile(src)
+    assert "numba_mfi_inc(high_arr, low_arr, close_arr, vol_arr, safe_period(((high_arr" not in code
+    n = 40
+    o, h, l, c, _v = _ohlcv(n)
+    bars = [
+        {
+            "open": float(o[i]),
+            "high": float(h[i]),
+            "low": float(l[i]),
+            "close": float(c[i]),
+            "volume": float(100 + (i % 5) * 20),
+            "time": i * 60_000,
+        }
+        for i in range(n)
+    ]
+    ri = Runtime().run(src, bars, mode="interpret")
+    rc = Runtime().run(src, bars, mode="compile")
+    assert "error" not in ri and "error" not in rc
+    ai = np.array([np.nan if x is None else float(x) for x in ri["series"]["mfi"]])
+    ac = np.array([np.nan if x is None else float(x) for x in rc["series"]["mfi"]])
+    assert int(np.sum(np.isnan(ai) ^ np.isnan(ac))) == 0
+    both = np.isfinite(ai) & np.isfinite(ac)
+    assert int(both.sum()) > 10
+    assert float(np.max(np.abs(ai[both] - ac[both]))) < 1e-6
+
+
+def test_tuple_unpack_keeps_udt_and_string_elements() -> None:
+    """A tuple of UDT handles and a string must not be stored through safe_float."""
+    src = """//@version=6
+indicator("t")
+type Box
+    float v = 0.0
+make() =>
+    Box a = Box.new(close)
+    Box b = Box.new(close + 1)
+    string why = "ok"
+    [a, b, why]
+[x, y, msg] = make()
+plot(x.v + y.v + (msg == "ok" ? 1.0 : 0.0))
+"""
+    code = transpile(src)
+    assert "safe_float(__tup[0])" not in code
+    assert "safe_float(__tup[2])" not in code
+    out = _compile_run(src, n=20)
+    assert _last(out) == 240.0
+
+
 def test_tuple_udf_to_scalar_does_not_raise() -> None:
     src = """//@version=6
 indicator("t")
