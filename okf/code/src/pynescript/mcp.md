@@ -7,7 +7,7 @@ tags: [code, mcp, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T19:06:56Z
+  at: 2026-10-24T04:17:09Z
 sources:
   - id: tree
     resource: "src/pynescript/mcp"
@@ -24,7 +24,7 @@ okf_lock: generated
 * `cli.py` — builtin_cmd, diagnostics_cmd, execute_cmd, mcp_call_cmd, mcp_config_cmd, mcp_group, mcp_tools_cmd, parity_cmd, register_cli_commands, symbols_cmd
 * `dispatch.py` — call_tool, coerce_cli_value, parse_kv, resolve_tool_name
 * `serialize.py` — clamp_bars, clamp_sample, clamp_timeout, fail, jsonable, ok, split_plots, strip_secrets, summarize_series
-* `server.py` — client_config, convert_to_v6, create_server, debug_pine, pyne_builtin, pyne_check, pyne_compile, pyne_complete, pyne_convert, pyne_data, pyne_diagnostics, pyne_download_builtins
+* `server.py` — client_config, convert_to_v6, create_server, debug_pine, pyne_axb1, pyne_builtin, pyne_check, pyne_compile, pyne_complete, pyne_convert, pyne_data, pyne_diagnostics
 
 # Nested
 

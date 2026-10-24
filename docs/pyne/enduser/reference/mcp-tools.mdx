@@ -71,6 +71,8 @@ These also run from the CLI (`pyne mcp call TOOL`, plus first-class commands whe
 | `pyne_signature` | `pyne mcp call signature PATH` | signature help for the enclosing call |
 | `pyne_builtin` | `pyne builtin ta.sma` | `builtin_metadata.json` row (`ta.sma`, …) |
 | `pyne_diagnostics` | `pyne diagnostics PATH` | parse errors + lint in one list |
+| `pyne_axb1` | `pyne mcp call axb1` | AXB1 encoder vs golden vectors (hex-exact) + fnv1a32 + reject rules |
+| `pyne_sessions` | `pyne mcp call sessions` | pooled live sessions: anchor vs store window, zombie suspects |
 
 `pyne_execute` plot cells: `{len, last, na_count, sample}` (`sample` default 8, max 64). Timeout default 30s, cap 120s. Bars cap 5000.
 

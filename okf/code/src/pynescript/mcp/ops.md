@@ -7,7 +7,7 @@ tags: [code, mcp, ops, pynescript]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-19T17:27:04Z
+  at: 2026-10-24T04:17:09Z
 sources:
   - id: tree
     resource: "src/pynescript/mcp/ops"
@@ -19,6 +19,7 @@ okf_lock: generated
 # Files
 
 * `__init__.py`
+* `axb1.py` — bundled_vectors_path, encode_frame_spec, frame_from_spec, verify_axb1_vectors
 * `builtins.py` — list_builtins, list_facade_templates, lookup_builtin
 * `common.py` — call_path, load_source, parse_error_fields, script_declaration, synthetic_ohlcv_cols, synthetic_ohlcv_rows, version_from_source
 * `compile.py` — compile_source, prewarm_sources, run_synthetic
@@ -29,3 +30,4 @@ okf_lock: generated
 * `lsp.py` — complete_source, hover_source, signature_source
 * `optimize.py` — optimize_source
 * `runner.py` — runner_delete, runner_deploy, runner_enable, runner_jobs, runner_list, runner_show, runner_tick
+* `sessions.py` — inspect_sessions

@@ -53,6 +53,8 @@ TOOL_NAMES: tuple[str, ...] = (
     "pyne_signature",
     "pyne_builtin",
     "pyne_diagnostics",
+    "pyne_axb1",
+    "pyne_sessions",
 )
 
 RESOURCE_URIS: tuple[str, ...] = (

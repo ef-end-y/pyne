@@ -7,7 +7,7 @@ tags: [code, tests]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-24T03:38:35Z
+  at: 2026-10-24T04:17:09Z
 sources:
   - id: tree
     resource: "tests"
@@ -84,7 +84,7 @@ okf_lock: generated
 * `test_matrix_collections.py` — TestMatrixAggregations, TestMatrixColumnOperations, TestMatrixCore, TestMatrixFilling, TestMatrixRowOperations, TestMatrixTransformations
 * `test_matrix_v6_surface.py` — test_array_binary_search_udt_method_form, test_array_binary_search_udt_sort_field, test_array_sort_udt_sort_field, test_input_text_area_returns_value, test_matrix_add_row_inserts_not_only_appends, test_matrix_eval_dispatch_det_and_avg, test_matrix_linear_algebra_det_inv_trace, test_matrix_new_empty_and_add_row_at_index, test_matrix_predicates_and_sort, test_matrix_sort_order_descending_numeric, test_matrix_sort_udt_sort_field, test_order_ascending_descending_constants
 * `test_mcp.py` — test_builtin_resource, test_call_execute_and_parity, test_call_lint_and_parse, test_call_run_truncated, test_list_tools_covers_catalog, test_resources_and_prompts
-* `test_mcp_ops.py` — test_builtin_lookup, test_call_tool_covers_catalog, test_call_tool_execute_and_unknown, test_call_tool_lint_and_alias, test_check_source_and_path, test_client_config, test_compile_emit, test_complete_ta_dot, test_data_mock, test_dump_and_symbols, test_execute_interpret, test_format_and_convert
+* `test_mcp_ops.py` — test_builtin_lookup, test_call_axb1_only_filter_and_alias, test_call_axb1_verifies_bundled_vectors, test_call_sessions_inspects_pool_and_flags_zombie, test_call_sessions_sees_journaled_nonresident, test_call_tool_covers_catalog, test_call_tool_execute_and_unknown, test_call_tool_lint_and_alias, test_check_source_and_path, test_client_config, test_compile_emit, test_complete_ta_dot
 * `test_method_drawing_builtin.py` — test_array_field_push_is_not_the_user_method, test_font_family_constants_are_strings, test_label_set_xy_wrapper_calls_builtin, test_line_and_label_set_color_overloads_do_not_recurse
 * `test_multi_plot_cross.py` — test_crossover_strategy_events, test_dual_host_visual_series_keys, test_fill_background_series_keys_compile_matches_interpret, test_hline_in_series_and_plot_meta, test_hline_series_keys_compile_matches_interpret, test_kwargs_titled_plots_column_length_no_append_growth, test_lazy_first_non_null_plot_color, test_multi_plot_series_and_colors, test_plot_na_exports_none_not_zero, test_plotshape_bgcolor_keys_via_materialize_match_interpret
 * `test_numba_builtins_direct.py` — f64, test_abs_max_min_scalars, test_array_abs_every_some, test_array_mode_range, test_array_percentiles, test_array_sort_and_fill, test_array_standardize_normalized_sort_indices, test_barssince, test_bb_constant_series, test_bb_warmup_is_nan, test_binary_search_variants, test_cci_flat_is_zero

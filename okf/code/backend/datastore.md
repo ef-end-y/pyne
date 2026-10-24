@@ -7,7 +7,7 @@ tags: [backend, code, datastore]
 status: stable
 generated:
   by: process:axis-okf/1
-  at: 2026-10-15T18:34:04Z
+  at: 2026-10-24T04:17:09Z
 sources:
   - id: tree
     resource: "backend/datastore"
@@ -21,4 +21,4 @@ okf_lock: generated
 * `__init__.py`
 * `live.py` — SeriesBinding, SyncOutcome, bind_session, binding_of, sync_session
 * `series.py` — DataError, SeriesKey, SeriesStore, canonical_interval, check_history_bars, data_dir, get_store, interval_seconds, make_key, normalize_bars, now_seconds
-* `session_log.py` — count_records, delete_all_records, delete_record, load_meta, load_record, record_append, record_binding, record_create, record_tick, reset_session_log, session_db_path, sweep_expired
+* `session_log.py` — count_records, delete_all_records, delete_record, list_meta, load_meta, load_record, record_append, record_binding, record_create, record_tick, reset_session_log, session_db_path

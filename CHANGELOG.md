@@ -1,4 +1,9 @@
-## [Unreleased]
+## [0.6.20] — 2026-10-24
+
+### Added
+
+- **MCP `pyne_axb1` golden-vector check.** Verifies the AXB1 encoder against the bundled `tests/data/axb1-vectors.json` contract shared with AXIS (hex-exact per vector, fnv1a32 hash checks, codec reject-rule probes). Accepts inline `vectors` / `vectors_path` and an `only` name filter; callable in-process via `pyne mcp call axb1`.
+- **MCP `pyne_sessions` pool inspector (read-only).** Snapshots every live session with its binding anchor against the store window: `lag_bars`, store bounds, and a `suspect` flag when the anchor is provably outside the store window (the pool-zombie shape). Optional `key` filter; never creates or drops sessions.
 
 ### Fixed
 

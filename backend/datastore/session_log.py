@@ -324,3 +324,34 @@ def count_records(path: str) -> int:
     with _POOL.lock:
         row = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()
     return int(row[0]) if row else 0
+
+
+def list_meta(path: str) -> list[dict[str, Any]]:
+    """Every journaled session row (id, binding, counts) — no bar payloads.
+
+    Survives the owning process: this is how an out-of-process inspector
+    (MCP, CLI) sees sessions journaled by a backend worker whose memory it
+    cannot read. Best-effort; a missing/unreadable file reads as empty.
+    """
+    try:
+        conn = _connect(path)
+        with _POOL.lock:
+            rows = conn.execute("SELECT id, binding, bar_count, updated_at FROM sessions").fetchall()
+    except Exception as exc:
+        logger.warning("session log: list failed (%s)", exc)
+        return []
+    out: list[dict[str, Any]] = []
+    for sid, binding, bar_count, updated_at in rows:
+        try:
+            parsed = json.loads(binding) if binding else None
+        except Exception:
+            parsed = None
+        out.append(
+            {
+                "id": sid,
+                "binding": parsed,
+                "bar_count": bar_count,
+                "updated_at": updated_at,
+            }
+        )
+    return out

@@ -27,6 +27,7 @@ import json
 from typing import Any
 
 from pynescript import __version__
+from pynescript.mcp.ops.axb1 import verify_axb1_vectors
 from pynescript.mcp.ops.builtins import list_builtins
 from pynescript.mcp.ops.builtins import list_facade_templates
 from pynescript.mcp.ops.builtins import lookup_builtin
@@ -57,6 +58,7 @@ from pynescript.mcp.ops.runner import runner_jobs
 from pynescript.mcp.ops.runner import runner_list
 from pynescript.mcp.ops.runner import runner_show
 from pynescript.mcp.ops.runner import runner_tick
+from pynescript.mcp.ops.sessions import inspect_sessions
 
 
 _INSTRUCTIONS = """\
@@ -402,6 +404,30 @@ def pyne_diagnostics(source: str | None = None, path: str | None = None, encodin
     return diagnostics_source(source, path, encoding=encoding)
 
 
+def pyne_axb1(
+    vectors_path: str | None = None,
+    vectors: Any | None = None,
+    only: Any | None = None,
+) -> dict[str, Any]:
+    """Verify the AXB1 encoder against golden vectors (hex-exact).
+
+    Defaults to the bundled ``tests/data/axb1-vectors.json`` — the wire
+    contract shared with AXIS. ``vectors`` takes inline JSON (doc or bare
+    array), ``vectors_path`` a file, ``only`` selects vectors by name.
+    Also runs fnv1a32 hash checks and codec reject-rule probes.
+    """
+    return verify_axb1_vectors(vectors_path=vectors_path, vectors=vectors, only=only)
+
+
+def pyne_sessions(key: str | None = None) -> dict[str, Any]:
+    """Inspect pooled live sessions: anchor vs store window, zombie suspects.
+
+    ``key`` optionally filters to one ``exchange|market|SYMBOL|interval``
+    series. Read-only — never creates or drops a session.
+    """
+    return inspect_sessions(key=key)
+
+
 def review_pine(source: str) -> str:
     """Review Pine: lint, convert to v6 if needed, report issues."""
     return (
@@ -468,6 +494,8 @@ def create_server() -> Any:
         (pyne_signature, ro),
         (pyne_builtin, ro),
         (pyne_diagnostics, ro),
+        (pyne_axb1, ro),
+        (pyne_sessions, ro),
         (pyne_data, net),
         (pyne_download_builtins, net),
         (pyne_runner_list, net),

@@ -524,6 +524,37 @@ class SessionStore:
         self._log(_session_log.delete_all_records)
         return count
 
+    def describe_all(self) -> list[dict[str, Any]]:
+        """Read-only snapshot of every live session (pool inspector).
+
+        Never raises: a session whose binding cannot be read is reported
+        with ``key: None`` instead of failing the whole snapshot. Lock is
+        held only for the in-memory read; callers join store windows
+        afterwards.
+        """
+        now = time.monotonic()
+        with self._lock:
+            self._sweep_locked(now)
+            pooled = {sid: fp for fp, sid in self._shared.items()}
+            rows: list[dict[str, Any]] = []
+            for sid, session in self._sessions.items():
+                try:
+                    binding = _live.binding_of(session)
+                except Exception:
+                    binding = None
+                rows.append(
+                    {
+                        "session_id": sid,
+                        "pooled": sid in pooled,
+                        "fingerprint": pooled.get(sid),
+                        "refcount": int(self._shared_refs.get(sid, 0)),
+                        "key": binding.key.text if binding is not None else None,
+                        "anchor_time": int(binding.last_time) if binding is not None else None,
+                        "idle_seconds": round(max(0.0, now - self._last_seen.get(sid, now)), 3),
+                    }
+                )
+        return rows
+
 
 # Process-wide singleton. Module-level because the store must be shared by
 # every request handler in this worker — and deliberately NOT shared across

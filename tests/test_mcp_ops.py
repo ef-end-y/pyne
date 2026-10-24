@@ -283,3 +283,117 @@ def test_call_tool_covers_catalog() -> None:
     from pynescript.mcp.dispatch import _handlers
 
     assert set(_handlers()) == set(TOOL_NAMES)
+
+
+def test_call_axb1_verifies_bundled_vectors() -> None:
+    from pynescript.mcp.ops.axb1 import bundled_vectors_path
+
+    assert bundled_vectors_path() is not None
+    out = call_tool("axb1", {})
+    assert out["ok"] is True, out.get("failures")
+    assert out["vectors_checked"] == out["vectors_total"] > 0
+    assert out["vectors_failed"] == 0
+    assert out["hash_checks"]["failed"] == 0
+    assert all(out["reject_rules"].values())
+
+
+def test_call_axb1_only_filter_and_alias() -> None:
+    import json as _json
+
+    from pynescript.mcp.ops.axb1 import bundled_vectors_path
+
+    doc = _json.loads(bundled_vectors_path().read_text(encoding="utf-8"))
+    first = doc["vectors"][0]["name"]
+    out = call_tool("pyne_axb1", {"only": first})
+    assert out["ok"] is True
+    assert out["vectors_checked"] == 1
+    assert out["vectors_passed"] == 1
+
+
+def test_call_sessions_inspects_pool_and_flags_zombie(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PYNE_DATA_DIR", str(tmp_path / "data"))
+    from backend.api.live_ensure import ensure_live_session
+    from backend.datastore import series as series_store
+
+    key = series_store.make_key("binance", "PROBE/USDT", "1m", "spot")
+    start = 1_700_000_000
+    bars = [
+        {"time": start + i * 60, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0} for i in range(10)
+    ]
+    series_store.get_store().provide(key, bars, source="test")
+    script = 'indicator("mcp-sessions-probe")'
+    a = ensure_live_session("script", key.text, 10, script=script, symbol="PROBEUSDT")
+    assert a["outcome"] == "ready"
+    b = ensure_live_session("script", key.text, 10, script=script, symbol="PROBEUSDT")
+    assert b["session_id"] == a["session_id"]
+
+    out = call_tool("sessions", {"key": key.text})
+    assert out["ok"] is True
+    assert out["count"] == 1
+    entry = out["sessions"][0]
+    assert entry["pooled"] is True
+    assert entry["resident"] is True
+    assert entry["key"] == key.text
+    assert entry["anchor_time"] == start + 9 * 60
+    assert entry["lag_bars"] == 0
+    assert entry["suspect"] is False
+
+    # The store window moves a full day past the pooled anchor: the session
+    # is provably left behind and must be flagged.
+    moved = [
+        {"time": start + 86_400 + i * 60, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+        for i in range(10)
+    ]
+    series_store.get_store().purge(key)
+    series_store.get_store().provide(key, moved, source="test")
+    out = call_tool("pyne_sessions", {"key": key.text})
+    entry = out["sessions"][0]
+    assert entry["lag_bars"] == 1440
+    assert entry["suspect"] is True
+    assert "left behind" in entry["why"]
+
+
+def test_call_sessions_sees_journaled_nonresident(tmp_path, monkeypatch) -> None:
+    """A session journaled by another worker (memory gone) still inspects.
+
+    Simulates a backend restart: the journal row survives while this
+    process's memory does not. The entry must show resident=false with the
+    same anchor the (now unreachable) session was born over.
+    """
+    monkeypatch.setenv("PYNE_DATA_DIR", str(tmp_path / "data"))
+    db_path = str(tmp_path / "sessions.db")
+    monkeypatch.setenv("PYNE_SESSION_DB", db_path)
+    from backend.api.live_ensure import ensure_live_session
+    from backend.datastore import series as series_store
+    from backend.middleware.sessions import SESSIONS
+
+    # The singleton binds its journal path at import; pin it explicitly so
+    # this test is independent of whichever test imported it first.
+    monkeypatch.setattr(SESSIONS, "_db_path", db_path)
+
+    key = series_store.make_key("binance", "GHOST/USDT", "1m", "spot")
+    start = 1_700_000_000
+    bars = [
+        {"time": start + i * 60, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0} for i in range(10)
+    ]
+    series_store.get_store().provide(key, bars, source="test")
+    script = 'indicator("mcp-sessions-ghost-probe")'
+    created = ensure_live_session("script", key.text, 10, script=script, symbol="GHOSTUSDT")
+    assert created["outcome"] == "ready"
+    sid = created["session_id"]
+
+    # Evict from memory without touching the journal (a restart would).
+    SESSIONS._sessions.pop(sid, None)
+    for fp, pooled in list(SESSIONS._shared.items()):
+        if pooled == sid:
+            del SESSIONS._shared[fp]
+    SESSIONS._shared_refs.pop(sid, None)
+
+    out = call_tool("pyne_sessions", {"key": key.text})
+    assert out["ok"] is True
+    assert out["count"] == 1
+    entry = out["sessions"][0]
+    assert entry["resident"] is False
+    assert entry["key"] == key.text
+    assert entry["anchor_time"] == start + 9 * 60
+    assert entry["suspect"] is False
