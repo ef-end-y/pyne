@@ -37,12 +37,31 @@ from pynescript.runtime.series import PineSeries
 
 
 _MISSING: Any = object()
+"""Sentinel object representing a missing or unset value in plot capture."""
+
 # Type-identity for plot(close) / host OHLCV series (no getattr).
 _PINE_SERIES_T = PineSeries
 
 
 def _serialize_color(c: Any) -> str | None:
-    """JSON-safe color string for plot_meta / bgcolor series values."""
+    """JSON-safe color string for plot_meta / bgcolor series values.
+
+    Converts various color representations (hex int, string, objects with
+    to_rgba()/to_hex() methods) to a JSON-compatible string format. Returns
+    None for falsy/invalid colors.
+
+    Args:
+        c: Color value to serialize. Can be:
+            - None: Returns None
+            - str: Returns the string if truthy, else None
+            - int: Converts hex int to #RRGGBB format
+            - object with to_rgba()/to_hex() methods: Calls method and converts
+              result to string
+            - Other: Stringifies the value
+
+    Returns:
+        JSON-safe color string in #RRGGBB format, rgba string, or None.
+    """
     if c is None:
         return None
     # Hot path: color.* constants are already hex/rgba strings
@@ -68,7 +87,21 @@ def _serialize_color(c: Any) -> str | None:
 
 
 def _plot_display_kw(kwargs: dict[str, Any] | None) -> str | int | None:
-    """Pine ``display=`` from kwargs — int bitfield or token string."""
+    """Extract Pine ``display=`` parameter from kwargs.
+
+    Parses the display parameter from keyword arguments. TradingView's display
+    parameter can be an integer bitfield, a float that can be safely converted
+    to int, or a string token. Returns the appropriate type for downstream use.
+
+    Args:
+        kwargs: Keyword arguments dictionary from a plot call. Can be None.
+
+    Returns:
+        int: If raw value is an integer (bitfield)
+        int: If raw value is a valid float (converted to int)
+        str: If raw value is a non-empty string token
+        None: If no display parameter found or value is empty/falsy
+    """
     if not kwargs:
         return None
     raw = kwargs.get("display")
@@ -77,14 +110,31 @@ def _plot_display_kw(kwargs: dict[str, Any] | None) -> str | int | None:
     t = type(raw)
     if t is int:
         return raw
-    if t is float and raw == raw:
+    if t is float and raw == raw:  # NaN check using x != x idiom
         return int(raw)
     s = str(raw).strip()
     return s or None
 
 
 def _unwrap_scalar(value: Any) -> Any:
-    """Bar-mode: PineSeries / list → current scalar for plot capture."""
+    """Extract current scalar value from plot-captured objects.
+
+    Bar-mode helper: converts PineScript series objects to their current scalar
+    values for plot capture. This is used when evaluating plot expressions
+    that may contain series, lists, or other wrapper objects in bar-by-bar mode.
+
+    Args:
+        value: Value to unwrap. Can be:
+            - scalar (float, int, str, bool, None): returned as-is
+            - PineSeries: returns its current value
+            - list: returns last element if non-empty, else None
+            - Other objects with .current attribute: returns current if available
+            - Other: returned as-is
+
+    Returns:
+        The current scalar value appropriate for the given input type.
+        None for empty lists or invalid inputs.
+    """
     t = type(value)
     # Dominant after incremental TA: already a scalar
     if t is float or t is int or value is None or t is bool or t is str:
@@ -102,7 +152,22 @@ def _unwrap_scalar(value: Any) -> Any:
 
 
 def _wire_seen(kind: str, param: str, args: list[Any], kwargs: dict[str, Any] | None) -> bool:
-    """True when *param* appears in the source call (kwarg or positional slot)."""
+    """Check if a parameter appears in the source function call.
+
+    Determines whether a given parameter name was actually provided in the
+    original function call, either as a keyword argument or positional argument.
+    Used for wire parameter tracking and lazy evaluation.
+
+    Args:
+        kind: Builtin function kind (e.g., "plot", "hline") for param lookup.
+        param: Parameter name to check (e.g., "color", "linewidth").
+        args: Positional arguments from the original function call.
+        kwargs: Keyword arguments from the original function call (can be None).
+
+    Returns:
+        True if the parameter was provided in the call (via kwargs or
+        positional args based on param's canonical position), False otherwise.
+    """
     if kwargs and param in kwargs:
         return True
     idx = param_index(kind, param)
@@ -110,7 +175,19 @@ def _wire_seen(kind: str, param: str, args: list[Any], kwargs: dict[str, Any] | 
 
 
 def _plot_numeric_cell(raw: Any) -> Any:
-    """JSON-safe numeric plot/hline cell (float/int/None identity; never na→0)."""
+    """Convert raw value to JSON-safe numeric plot/hline cell.
+
+    Produces numeric values suitable for plot/hline cells in the captured
+    output. Preserves float/int identity and never converts NaN to 0.
+    Handles None identity correctly. Other types are unwrapped and coerced.
+
+    Args:
+        raw: Raw value from plot expression evaluation.
+
+    Returns:
+        float/int/None: JSON-safe numeric value. NaN becomes None,
+        non-numeric values are coerced via _coerce_plot_numeric after unwrapping.
+    """
     t = type(raw)
     if t is float:
         return None if raw != raw else raw
@@ -120,7 +197,23 @@ def _plot_numeric_cell(raw: Any) -> Any:
 
 
 def _coerce_plot_numeric(value: Any) -> Any:
-    """JSON-safe plot/hline cell. NaN → None; bool → 0.0/1.0; never na→0."""
+    """Coerce value to JSON-safe plot/hline numeric cell.
+
+    Ensures numeric plot cells are JSON-serializable and follow TradingView
+    semantics. NaN converts to None, booleans become 0.0/1.0, and import
+    stubs are filtered out.
+
+    Args:
+        value: Input value to coerce. Can be:
+            - float: NaN becomes None, other floats preserved
+            - int/None: returned as-is
+            - bool: converted to 1.0 (True) or 0.0 (False)
+            - object with __pine_import_stub__ flag: filtered to None
+            - Other: returned as-is (may need further processing)
+
+    Returns:
+        JSON-safe numeric value following TradingView plot semantics.
+    """
     t = type(value)
     if t is float:
         return None if value != value else value
@@ -134,10 +227,23 @@ def _coerce_plot_numeric(value: Any) -> Any:
 
 
 def _coerce_plot_shape(value: Any) -> Any:
-    """JSON-safe plotshape/plotchar cell (True when shown, None when not).
+    """Convert value to JSON-safe plotshape/plotchar cell state.
 
-    Compile materialize uses None for the off state — never a hard False —
-    so dual-host series compare equal.
+    Plot shapes and characters are boolean-like for display purposes but need
+    a special "None" state for "off" (not shown). This ensures consistency
+    between host and compile modes where off state is represented as None,
+    not False.
+
+    Args:
+        value: Input value from plotshape/plotchar expressions.
+
+    Returns:
+        True when shape should be shown, None when off (not shown).
+        Handles various input types:
+        - None: returns None
+        - bool: True → True, False → None
+        - numeric: zero → None, non-zero → True
+        - other: truthy → True, falsy → None
     """
     if value is None:
         return None
@@ -156,11 +262,28 @@ def _coerce_plot_shape(value: Any) -> Any:
 
 
 def _as_plot_int(value: Any, default: int = 1) -> int:
-    """Coerce plot linewidth / similar to int without crashing on list/series.
+    """Coerce value to integer for plot parameters (linewidth, etc.).
 
-    AXIS may re-send input overrides as full series arrays (or last-run snapshots
-    as lists). ``int([1, 2, 3])`` raises TypeError and aborts the bar loop —
-    unwrap to the current sample first (same as ``_unwrap_scalar``).
+    Safely converts various input types to int without crashing on complex
+    objects like lists or PineSeries. Used for plot parameters that must be
+    integers (e.g., linewidth). Handles the case where AXIS may send full
+    series arrays or snapshots as lists.
+
+    Args:
+        value: Input value to convert to int. Can be:
+            - int: returned as-is
+            - None: returns default (1)
+            - float: converted to int, NaN becomes default
+            - bool: converted to 0/1
+            - Other (list, PineSeries, etc.): unwrapped and processed
+
+        default: Default value to return on conversion failure or None input.
+
+    Returns:
+        int: Integer value suitable for plot parameters. Default on failure.
+
+    Raises:
+        No exceptions; gracefully handles conversion failures.
     """
     t = type(value)
     if t is int:
@@ -198,9 +321,14 @@ def _as_plot_int(value: Any, default: int = 1) -> int:
 
 
 class CustomEvaluator(NodeLiteralEvaluator):
-    """
-    Evaluator that captures plot commands.
-    Supports optional data_feed / data_provider for request.* integration.
+    """Evaluator that captures plot commands and meta data for visualization.
+
+    This evaluator extends NodeLiteralEvaluator to support plot capture in
+    bar-by-bar mode (used by the Runtime host). It records plot values,
+    titles, colors, and other metadata to support AXIS visualization.
+
+    Supports optional data_feed / data_provider integration for request.*
+    built-in functions.
 
     Plot capture (bar mode / Runtime host):
       - Values go into columnar ``_plot_value_cols`` (one list per call-site order).
@@ -212,10 +340,22 @@ class CustomEvaluator(NodeLiteralEvaluator):
         any mid-bar readers; Runtime prefers columns when present.
       - ``PlotRegistry`` (super()) is optional: Runtime disables it when the
         script has no ``fill()`` so plot() need not return Plot handles.
+
+    The class maintains columnar buffers for efficient storage and retrieval
+    of plot data across bars. It supports both first-pass capture (recording
+    metadata) and steady-state updates (just values).
     """
 
     def __init__(self, context=None, data_feed=None, data_provider=None):
+        """Initialize CustomEvaluator with plot capture capabilities.
+
+        Args:
+            context: Parser context for script execution.
+            data_feed: Optional data feed for request.* built-in functions.
+            data_provider: Optional data provider for external data access.
+        """
         super().__init__(context, data_feed=data_feed, data_provider=data_provider)
+        # Legacy per-bar buffer for mid-bar readers; Runtime prefers columnar capture
         self.plot_outputs: list[Any] = []
         # Columnar capture (preferred by Runtime post-process)
         self._plot_value_cols: list[list[Any]] = []
@@ -251,8 +391,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
             self._once_fired = {}
 
     def _write_plot_cell(self, i: int, value: Any) -> None:
-        """Write one cell at the current bar (pre-sized index, else append)."""
+        """Write one plot cell value to columnar buffer at current bar index.
+
+        Writes a single plot value to the appropriate column and bar position.
+        Columns may be pre-sized by the host (when _plot_n_bars > 0) or
+        dynamically appended. Marks the column as dirty if the value needs
+        special processing by the host.
+
+        Args:
+            i: Column index (call-site position) for the plot value.
+            value: Value to write. Non-standard types trigger dirty flag.
+        """
         t = type(value)
+        # Mark column as needing host processing if value is complex
         if t is not float and t is not int and value is not None and t is not bool and t is not str:
             self._plot_pack_dirty = True
         col = self._plot_value_cols[i]
@@ -263,7 +414,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
             col.append(value)
 
     def _new_plot_column(self, value: Any) -> list[Any]:
-        """Allocate a column; pre-size to ``_plot_n_bars`` when the host set it."""
+        """Allocate a new plot column buffer with appropriate sizing.
+
+        Creates a column (list) for a plot call-site. If the host has pre-sized
+        the columns by setting _plot_n_bars, creates a pre-sized buffer.
+        Otherwise creates a dynamically sized buffer.
+
+        Args:
+            value: Initial value for the current bar (if within pre-sized range).
+
+        Returns:
+            list[Any]: Column buffer initialized with None values or the initial
+            value at the appropriate position.
+        """
         n = self._plot_n_bars
         bar = self._plot_bars_done
         if n > 0:
@@ -286,7 +449,21 @@ class CustomEvaluator(NodeLiteralEvaluator):
         linewidth: int = 1,
         **extra: Any,
     ) -> None:
-        """Write one plot cell for this bar into columnar buffers."""
+        """Capture first-sight plot metadata and value for new call-site.
+
+        Records plot metadata (type, title, color, etc.) and the initial
+        value for a new plot call-site. Called on the first sighting of a
+        plot call in a script. For subsequent sightings of the same call-site,
+        updates existing metadata (e.g., color) but doesn't write values.
+
+        Args:
+            kind: Plot type (e.g., "plot", "hline").
+            value: Initial plot value for current bar.
+            title: Plot title string or None.
+            color_s: Serialized color string or None.
+            linewidth: Line width (defaults to 1).
+            **extra: Additional metadata parameters (style, display, etc.).
+        """
         if self._pine_light_plots:
             return
         i = self._plot_capture_i
@@ -316,9 +493,17 @@ class CustomEvaluator(NodeLiteralEvaluator):
         self._write_plot_cell(i, value)
 
     def _append_plot_value(self, value: Any) -> int:
-        """Steady-state: known call-site → write value only (no meta work).
+        """Write plot value for known call-site (steady-state bar updates).
 
-        Returns the call-site index used (for optional lazy meta fill).
+        Called for subsequent sightings of the same plot call-site after the
+        first sighting has been captured. Writes only the value, no metadata
+        work. Returns the call-site index for potential lazy metadata filling.
+
+        Args:
+            value: Plot value for current bar.
+
+        Returns:
+            int: Call-site index (i) for this plot.
         """
         if self._pine_light_plots:
             return 0
@@ -336,7 +521,15 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return i
 
     def finish_bar_plots(self) -> None:
-        """Pad short columns for call sites not hit this bar; advance bar counter."""
+        """Finalize plot columns for completed bar and reset for next bar.
+
+        Called at the end of each bar to complete plot processing. Pads
+        columns for call-sites that weren't hit in this bar with None values,
+        then advances the bar counter and resets capture index for the next
+        bar.
+
+        When columns are pre-sized (_plot_n_bars > 0), no padding is needed.
+        """
         if self._pine_light_plots:
             self._plot_capture_i = 0
             self._plot_bars_done += 1
@@ -352,12 +545,21 @@ class CustomEvaluator(NodeLiteralEvaluator):
         self._plot_capture_i = 0
 
     def _maybe_registry(self, method_name: str, args: list[Any], kwargs: dict[str, Any] | None) -> Any:
-        """Optional PlotRegistry path for fill() handles; never abort the bar loop.
+        """Optional PlotRegistry path for fill() handles; resilient error handling.
 
-        Soft-fails expected registry/shape errors. Re-raises programming bugs
-        (TypeError / AttributeError outside the super call surface) only when
-        the exception is clearly not from optional registry plumbing — kept
-        broad so fill()-less hosts stay resilient.
+        Provides plot handles for fill() expressions when the host supports
+        them. Soft-fails on expected registry/shape errors to never abort the
+        bar loop. Only re-raises clear programming bugs outside the super call
+        surface. Maintains resilience for hosts that don't use fill().
+
+        Args:
+            method_name: Name of the method to call on the parent class.
+            args: Positional arguments for the method call.
+            kwargs: Keyword arguments for the method call.
+
+        Returns:
+            Plot handle from PlotRegistry, or None if registry is disabled or
+            errors occur (including expected registry errors).
         """
         if not self._pine_need_plot_ids:
             return None
@@ -374,7 +576,17 @@ class CustomEvaluator(NodeLiteralEvaluator):
             return None
 
     def _lazy_plot_color(self, i: int, args: list[Any], kwargs: dict[str, Any] | None) -> None:
-        """Fill meta.color on the first non-null sighting (pending sites only)."""
+        """Fill color metadata on first non-null sighting for pending sites.
+
+        Dynamically fills color metadata for plot call-sites that didn't have
+        a color on first sighting (e.g., dynamic color expressions). Called
+        when there's pending color work (_plot_color_pending > 0).
+
+        Args:
+            i: Call-site index for the plot.
+            args: Positional arguments from the original plot call.
+            kwargs: Keyword arguments from the original plot call.
+        """
         color = None
         if kwargs:
             color = kwargs.get("color")
@@ -396,7 +608,22 @@ class CustomEvaluator(NodeLiteralEvaluator):
         args: list[Any],
         kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Serialize-only plot_meta extras; registers lazy retries for na dynamics."""
+        """Extract wire parameter metadata for serialization and lazy retry tracking.
+
+        Extracts wire parameter values (e.g., trackprice, offset) from the
+        original plot call for serialization to AXIS. Registers any missing
+        dynamic wire parameters for lazy evaluation on subsequent sightings.
+
+        Args:
+            kind: Plot kind (e.g., "plot", "hline").
+            args: Positional arguments from the original plot call.
+            kwargs: Keyword arguments from the original plot call.
+
+        Returns:
+            dict[str, Any]: Wire parameter metadata for serialization. Includes
+            a special "_wire_missing" entry if dynamic wire parameters need
+            lazy evaluation.
+        """
         extras = extract_wire_meta(kind, args, kwargs, unwrap=_unwrap_scalar)
         missing = tuple(
             p for p in WIRE_PARAM_NAMES.get(kind, ()) if p not in extras and _wire_seen(kind, p, args, kwargs)
@@ -413,7 +640,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
         args: list[Any],
         kwargs: dict[str, Any] | None,
     ) -> None:
-        """First-non-na retry for dynamic wire params on a pending site."""
+        """Evaluate missing dynamic wire parameters for a pending call-site.
+
+        Called when dynamic wire parameters (e.g., trackprice, offset) need
+        lazy evaluation. Retrieves the missing parameter names, evaluates them
+        on the current sighting, and fills in the metadata. Updates pending
+        counter when parameters still need evaluation.
+
+        Args:
+            i: Call-site index for the plot.
+            kind: Plot kind (e.g., "plot", "hline").
+            args: Positional arguments from the original plot call.
+            kwargs: Keyword arguments from the original plot call.
+        """
         m = self._plot_meta_list[i]
         missing = m.pop("_wire_missing", None)
         if not missing:
@@ -429,13 +668,45 @@ class CustomEvaluator(NodeLiteralEvaluator):
             self._plot_wire_pending -= 1
 
     def _append_wire(self, value: Any, kind: str, args: list[Any], kwargs: dict[str, Any] | None) -> None:
-        """Append cell + retry pending wire params (no-op unless pending)."""
+        """Append plot value and evaluate any pending dynamic wire parameters.
+
+        Writes the plot value for the current bar and, if there are pending
+        dynamic wire parameters (_plot_wire_pending > 0), triggers their
+        lazy evaluation using the current call-site arguments.
+
+        Args:
+            value: Plot value for current bar.
+            kind: Plot kind (e.g., "plot", "hline").
+            args: Positional arguments from the original plot call.
+            kwargs: Keyword arguments from the original plot call.
+        """
         i = self._append_plot_value(value)
         if self._plot_wire_pending:
             self._lazy_plot_wire(i, kind, args, kwargs)
 
     def _builtin_plot(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture plot value + title/color for multi-series AXIS response."""
+        """Handle plot builtin evaluation with capture and optional registry handles.
+
+        Manages plot evaluation for both first-sightings (recording metadata) and
+        steady-state updates (just values). Supports both positional and keyword
+        argument styles for maximum compatibility with Pine Script variations.
+
+        The method follows a two-phase approach:
+        1. First sighting: Records plot metadata and allocates column buffers
+        2. Steady-state: Writes values for subsequent sightings of same call-site
+
+        Args:
+            args: Positional arguments from the plot call.
+            kwargs: Keyword arguments from the plot call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+
+        Note:
+            This method is the core plot handling logic. It maintains state
+            through instance variables to track column buffers, metadata, and
+            pending operations across multiple bar evaluations.
+        """
         if self._pine_light_plots:
             return None
         i = self._plot_capture_i
@@ -525,7 +796,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return self._maybe_registry("_builtin_plot", args, None) if self._pine_need_plot_ids else None
 
     def _builtin_hline(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture hline as a constant-price series for AXIS (kind=hline)."""
+        """Capture horizontal line (hline) as a constant-price series for AXIS.
+
+        Handles both first-sight capture and steady-state updates for horizontal
+        line plot types. Horizontal lines represent constant price levels across
+        the chart and are captured as single-value series.
+
+        Args:
+            args: Positional arguments from the hline call.
+            kwargs: Keyword arguments from the hline call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         if self._pine_light_plots:
             return None
         if self._plot_capture_i < len(self._plot_value_cols):
@@ -683,7 +966,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return reg
 
     def _builtin_plotshape(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture plotshape condition + style for AXIS bar markers."""
+        """Capture plotshape condition + style for AXIS bar markers.
+
+        Handles both first-sight capture and steady-state updates for plotshape
+        plot types. Plot shapes represent bar markers (arrows, labels, etc.) and
+        are captured with conditions, styles, locations, colors, and text content.
+
+        Args:
+            args: Positional arguments from the plotshape call.
+            kwargs: Keyword arguments from the plotshape call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         if self._pine_light_plots:
             return None
         if kwargs:
@@ -746,7 +1041,20 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return self._maybe_registry("_builtin_plotshape", args, None) if self._pine_need_plot_ids else None
 
     def _builtin_plotchar(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture plotchar condition + char for AXIS bar markers."""
+        """Capture plotchar condition + char for AXIS bar markers.
+
+        Handles both first-sight capture and steady-state updates for plotchar
+        plot types. Plot characters represent bar markers with specific characters
+        (e.g., arrows, symbols) and are captured with conditions, characters,
+        locations, and colors.
+
+        Args:
+            args: Positional arguments from the plotchar call.
+            kwargs: Keyword arguments from the plotchar call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         if self._pine_light_plots:
             return None
         if kwargs:
@@ -806,7 +1114,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return self._maybe_registry("_builtin_plotchar", args, None) if self._pine_need_plot_ids else None
 
     def _builtin_plotarrow(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture plotarrow series (numeric up/down, None when na)."""
+        """Capture plotarrow series (numeric up/down, None when na).
+
+        Handles both first-sight capture and steady-state updates for plotarrow
+        plot types. Plot arrows represent directional indicators and are captured
+        as numeric values (up/down) with titles, colors, and optional styling.
+
+        Args:
+            args: Positional arguments from the plotarrow call.
+            kwargs: Keyword arguments from the plotarrow call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         if self._pine_light_plots:
             return None
         kwargs = kwargs or {}
@@ -830,7 +1150,19 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return self._maybe_registry("_builtin_plotarrow", args, kwargs) if self._pine_need_plot_ids else None
 
     def _builtin_barcolor(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture barcolor per-bar color series."""
+        """Capture barcolor per-bar color series.
+
+        Handles both first-sight capture and steady-state updates for barcolor
+        plot types. Bar colors represent individual bar fills and are captured
+        as per-bar color values with optional titles and styling.
+
+        Args:
+            args: Positional arguments from the barcolor call.
+            kwargs: Keyword arguments from the barcolor call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         if self._pine_light_plots:
             return None
         kwargs = kwargs or {}
@@ -854,14 +1186,35 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return self._maybe_registry("_builtin_barcolor", args, kwargs) if self._pine_need_plot_ids else None
 
     def _find_registered_ohlc_site(self, kind: str, title: str) -> int:
-        """Base meta index of an already-registered candle/bar site (-1 when none)."""
+        """Base meta index of an already-registered candle/bar site (-1 when none).
+
+        Searches through the plot metadata list to find an existing OHLC (candlestick
+        or bar) plot site that hasn't been designated as an OHLC component.
+        Used to prevent duplicate site registration and maintain consistency.
+
+        Args:
+            kind: The plot kind to search for (e.g., "plotcandle", "plotbar").
+            title: The title of the plot site to find.
+
+        Returns:
+            int: Index of the found plot site in _plot_meta_list, or -1 if not found.
+        """
         for j, m in enumerate(self._plot_meta_list):
             if m.get("kind") == kind and not m.get("ohlc_component") and m.get("title") == title:
                 return j
         return -1
 
     def _write_ohlc_cells(self, i: int, vals: tuple[Any, ...]) -> None:
-        """Steady-state write of close/open/high/low cells at slots i..i+3."""
+        """Steady-state write of close/open/high/low cells at slots i..i+3.
+
+        Writes OHLC (Open, High, Low, Close) values to their respective column
+        slots for a given bar. This is called during steady-state processing when
+        all OHLC data for a bar is available and can be written directly.
+
+        Args:
+            i: Starting column index for the OHLC data.
+            vals: Tuple containing (close, open, high, low) values in that order.
+        """
         bar = self._plot_bars_done
         cols = self._plot_value_cols
         for off, v in enumerate(vals):
@@ -879,7 +1232,20 @@ class CustomEvaluator(NodeLiteralEvaluator):
         vals: tuple[Any, ...],
         title_s: str,
     ) -> None:
-        """First sighting: parent meta + close/open/high/low columns at the tail."""
+        """First sighting: parent meta + close/open/high/low columns at the tail.
+
+        Registers a new OHLC plot site when it's first encountered. Creates the
+        primary column for the OHLC data and three additional columns for the
+        individual OHLC components. This is called during the first sighting
+        of an OHLC plot type.
+
+        Args:
+            kind: The plot kind (e.g., "plotcandle", "plotbar").
+            args: Positional arguments from the plot call.
+            kwargs: Keyword arguments from the plot call.
+            vals: Tuple containing (close, open, high, low) values.
+            title_s: The title string for the plot site.
+        """
         raw_color = kwargs.get("color", args[5] if len(args) > 5 else None)
         entry: dict[str, Any] = {
             "type": kind,
@@ -922,7 +1288,21 @@ class CustomEvaluator(NodeLiteralEvaluator):
         args: list[Any],
         kwargs: dict[str, Any] | None,
     ) -> Any:
-        """plotbar/plotcandle: close-primary column + open/high/low siblings."""
+        """plotbar/plotcandle: close-primary column + open/high/low siblings.
+
+        Handles OHLC plot capture for both plotbar and plotcandle types. Manages
+        the complex logic of determining whether to write to an existing OHLC
+        structure or register a new one. This method coordinates the extraction
+        of OHLC values and their proper assignment to the appropriate columns.
+
+        Args:
+            kind: The plot kind ("plotbar" or "plotcandle").
+            args: Positional arguments from the plot call.
+            kwargs: Keyword arguments from the plot call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         if self._pine_light_plots:
             return None
         kwargs = kwargs or {}
@@ -966,22 +1346,59 @@ class CustomEvaluator(NodeLiteralEvaluator):
         return None
 
     def _builtin_plotcandle(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture plotcandle OHLC columns + wick/border colors (AXIS tier-2)."""
+        """Capture plotcandle OHLC columns + wick/border colors (AXIS tier-2).
+
+        Specialized handler for plotcandle plot type that captures candlestick
+        data including OHLC values, wick colors, and border colors. This provides
+        detailed candlestick visualization with enhanced styling capabilities
+        beyond basic bar charts.
+
+        Args:
+            args: Positional arguments from the plotcandle call.
+            kwargs: Keyword arguments from the plotcandle call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         return self._capture_ohlc_plot("plotcandle", args, kwargs)
 
     def _builtin_plotbar(self, args: list[Any], kwargs: dict[str, Any] | None = None) -> Any:
-        """Capture plotbar OHLC columns + border color (AXIS tier-2)."""
+        """Capture plotbar OHLC columns + border color (AXIS tier-2).
+
+        Specialized handler for plotbar plot type that captures bar chart data
+        including OHLC values and border colors. This provides enhanced bar
+        visualization with border styling capabilities.
+
+        Args:
+            args: Positional arguments from the plotbar call.
+            kwargs: Keyword arguments from the plotbar call (optional).
+
+        Returns:
+            Plot handle from PlotRegistry if needed, or None for non-registry mode.
+        """
         return self._capture_ohlc_plot("plotbar", args, kwargs)
 
     def reset_plots(self):
-        # Per-bar index reset; columns accumulate across the run.
-        # Legacy plot_outputs kept empty (Runtime uses columns).
+        """Reset plot capture state for a new bar.
+
+        Clears the per-bar capture index and any legacy plot outputs. This is
+        called at the beginning of each new bar to ensure clean state for the
+        upcoming bar's plot capture operations. Column buffers accumulate
+        across the run (as needed for AXIS response), but the capture index
+        resets per bar.
+        """
         if self.plot_outputs:
             self.plot_outputs.clear()
         self._plot_capture_i = 0
 
     def reset_var_declarations(self):
-        """Reset var declarations set for per-run (from plan branch var support)."""
+        """Reset var declarations set for per-run (from plan branch var support).
+
+        Clears the set of variable declarations that were tracked during the
+        previous run. This is used to support plan branching where variable
+        declarations may differ between plan versions. The _once_fired dictionary
+        is also cleared to reset one-time execution state.
+        """
         self._var_declarations = set()
         self._once_fired = {}
 
