@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Fixed
+
+- **Stale pooled live sessions recreate instead of resuming.** `ensure_live_session` hits by content fingerprint, blind to the bars underneath: after a repair / replace / purge the store window could move hundreds of bars past a pooled session's birth anchor, and every resubscribe resumed the pre-repair window (overlays frozen on old bars across reloads and flushes). A hit lagging the store tail by more than the requested window now drops the entry and creates fresh over the current store; live sessions mid-tick keep sharing. `DELETE /data/series` also cascades into the session pool (`drop_by_key`), so the purge no longer leaves bound sessions evaluating the window it just threw away. Pinned by a stale-recreate test, a healthy-share test, and a `drop_by_key` unit test.
+
 ## [0.6.19] — 2026-10-23
 
 ### Added

@@ -416,6 +416,31 @@ class SessionStore:
             self._discard_locked(session_id, reason="explicit")
             return existed
 
+    def drop_by_key(self, key_text: str) -> int:
+        """Drop every session bound to one series key. Returns the count.
+
+        Purge cascade: ``DELETE /data/series`` replaces the stored window out
+        from under pooled sessions; a fingerprint hit afterwards would resume
+        the pre-purge window indefinitely (fingerprints never re-validate),
+        so the purge drops the bound sessions together with the bars.
+        Unbound sessions (plain ``/session`` runs) are never touched — only
+        pooled live sessions carry a binding.
+        """
+        if not key_text:
+            return 0
+        with self._lock:
+            victims = []
+            for sid, session in self._sessions.items():
+                try:
+                    binding = _live.binding_of(session)
+                except Exception:
+                    continue
+                if binding is not None and binding.key.text == key_text:
+                    victims.append(sid)
+        for sid in victims:
+            self.drop(sid)
+        return len(victims)
+
     def _journal_meta(self, session_id: str) -> dict[str, Any] | None:
         """Row for a journaled-but-unloaded id, honouring TTL (no rebuild)."""
         if self._db_path is None:

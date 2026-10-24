@@ -83,3 +83,27 @@ def test_stats_reports_shared():
     assert store.stats()["shared"] == 0
     store.acquire_shared(_fp(), object)
     assert store.stats()["shared"] == 1
+
+
+def test_drop_by_key_removes_only_bound_series():
+    from types import SimpleNamespace
+
+    from backend.datastore import live as data_live
+    from backend.datastore.series import make_key
+
+    store = SessionStore()
+    bar = {"time": 1, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+    ka = make_key("binance", "BTC/USDT", "1m", "spot")
+    kb = make_key("binance", "ETH/USDT", "1m", "spot")
+    sa, sb, sc = SimpleNamespace(), SimpleNamespace(), SimpleNamespace()
+    data_live.bind_session(sa, ka, bar)
+    data_live.bind_session(sb, kb, bar)
+    ida = store.put(sa)
+    idb = store.put(sb)
+    idc = store.put(sc)
+    assert store.drop_by_key(ka.text) == 1
+    assert store.get(ida) is None
+    assert store.get(idb) is not None
+    assert store.get(idc) is not None
+    assert store.drop_by_key("") == 0
+    assert store.drop_by_key("nope|nope|NOPE|1m") == 0

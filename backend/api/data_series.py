@@ -443,11 +443,19 @@ def series_purge():
 
     A client that flushed its own dataset uses this to drop the engine's copy
     too, so the next read starts from the venue again. Per key only: the
-    store is shared, so a purge never touches another series.
+    store is shared, so a purge never touches another series. Sessions bound
+    to the purged key are dropped with the bars — resuming one afterwards
+    would evaluate the window the purge just threw away.
     """
     key = _key_from_args(request.args)
     result = series_store.get_store().purge(key)
-    return jsonify({"status": "success", **result}), 200
+    try:
+        from backend.middleware.sessions import SESSIONS
+
+        dropped = SESSIONS.drop_by_key(key.text)
+    except Exception:
+        dropped = 0
+    return jsonify({"status": "success", **result, "sessions_dropped": dropped}), 200
 
 
 @bp.route("/series/bars", methods=["GET"])

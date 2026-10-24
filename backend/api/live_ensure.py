@@ -36,6 +36,31 @@ def key_text_symbol(series_key_text: str) -> str:
     return parts[2] if len(parts) == 4 else ""
 
 
+def _pooled_window_moved_on(store: Any, key: Any, session: Any, history_bars: Any) -> bool:
+    """True when a pooled session's window no longer overlaps the store tail.
+
+    Pool hits are keyed by content fingerprint, blind to the bars underneath:
+    after a repair / replace / purge the store window can move hundreds of
+    bars past a pooled session's birth anchor, and resuming it would evaluate
+    a window the chart left behind (stale overlays that survive reloads —
+    the fingerprint never changes). A lag beyond the requested window means
+    zero overlap, so recreate instead of resume. Anything closer is a live
+    session mid-tick and must keep sharing.
+    """
+    try:
+        from backend.datastore import live as data_live
+
+        binding = data_live.binding_of(session)
+        anchor = int(binding.last_time) if binding is not None else 0
+        newest = int(store.status(key)["newest"] or 0)
+        step = int(key.interval_seconds) or 60
+        if anchor <= 0 or newest <= anchor:
+            return False
+        return (newest - anchor) // step > max(1, int(history_bars))
+    except Exception:
+        return False
+
+
 def ensure_live_session(
     kind: str,
     series_key_text: str,
@@ -123,6 +148,22 @@ def ensure_live_session(
     session = SESSIONS.get(session_id)
     if session is None:
         return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": "Shared session vanished."}
+    if not created and _pooled_window_moved_on(store, key, session, history):
+        # The store window moved past the pooled session (repair / replace /
+        # purge + refetch, or a gap the session never saw): resuming it would
+        # evaluate bars that no longer overlap the chart, and every later
+        # resubscribe would hit the same stale entry. Drop it and create
+        # fresh over the current window.
+        SESSIONS.drop(session_id)
+        try:
+            session_id, created = SESSIONS.acquire_shared(fingerprint, _factory)
+        except RuntimeError:
+            return {"outcome": "error", "code": "SESSIONS_FULL", "message": "Session capacity reached."}
+        except Exception as exc:
+            return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": str(exc)[:500]}
+        session = SESSIONS.get(session_id)
+        if session is None:
+            return {"outcome": "error", "code": "SESSION_CREATE_FAILED", "message": "Shared session vanished."}
     if created:
         data_live.bind_session(session, key, bars[-1])
         binding = data_live.binding_of(session)
