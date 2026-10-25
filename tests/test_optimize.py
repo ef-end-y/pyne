@@ -445,6 +445,39 @@ class TestSamplers:
         nxt = smp.suggest(space, hist, rng)
         assert "Fast" in nxt and "Slow" in nxt
 
+    def test_tpe_follows_oos_score_when_present(self) -> None:
+        space = space_from_payload({"params": [{"name": "X", "kind": "float", "min": 0, "max": 1}]})
+        # In-sample peaks at low X; out-of-sample peaks at high X.
+        hist = [
+            TrialResult(index=i, params={"X": x}, is_score=1.0 - x, oos_score=x)
+            for i, x in enumerate((0.05, 0.10, 0.15, 0.20, 0.80, 0.85, 0.90, 0.95))
+        ]
+        smp = TPESampler(n_startup=4, gamma=0.25, n_ei_candidates=24)
+        samples = [float(smp.suggest(space, hist, random.Random(0))["X"]) for _ in range(24)]
+        assert sum(samples) / len(samples) > 0.6
+
+    def test_tpe_follows_is_score_without_oos(self) -> None:
+        space = space_from_payload({"params": [{"name": "X", "kind": "float", "min": 0, "max": 1}]})
+        hist = [
+            TrialResult(index=i, params={"X": x}, is_score=1.0 - x)
+            for i, x in enumerate((0.05, 0.10, 0.15, 0.20, 0.80, 0.85, 0.90, 0.95))
+        ]
+        smp = TPESampler(n_startup=4, gamma=0.25, n_ei_candidates=24)
+        samples = [float(smp.suggest(space, hist, random.Random(0))["X"]) for _ in range(24)]
+        assert sum(samples) / len(samples) < 0.4
+
+    def test_tpe_treats_zero_oos_as_a_real_score(self) -> None:
+        space = space_from_payload({"params": [{"name": "X", "kind": "float", "min": 0, "max": 1}]})
+        hist = [
+            TrialResult(index=0, params={"X": 0.1}, is_score=5.0, oos_score=-1.0),
+            TrialResult(index=1, params={"X": 0.2}, is_score=5.0, oos_score=-1.0),
+            TrialResult(index=2, params={"X": 0.3}, is_score=5.0, oos_score=-0.5),
+            TrialResult(index=3, params={"X": 0.9}, is_score=-5.0, oos_score=0.0),
+        ]
+        smp = TPESampler(n_startup=2, gamma=0.25, n_ei_candidates=16)
+        samples = [float(smp.suggest(space, hist, random.Random(1))["X"]) for _ in range(16)]
+        assert sum(samples) / len(samples) > 0.6
+
     def test_auto_sampler(self) -> None:
         assert parse_sampler("auto", n_trials=10) == "random"
         assert parse_sampler("auto", n_trials=30) == "tpe"

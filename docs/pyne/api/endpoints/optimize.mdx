@@ -109,7 +109,7 @@ Full event arrays are **not** returned (memory). Re-run the winner via `/run` + 
 1. Always **interpret** (input overrides skip compile).
 2. Train and test are **bar slices**, not trade filters on a full-sample run.
 3. In-sample mode is allowed and **warned**.
-4. Ranking prefers **OOS** score when validation is holdout or walk-forward.
+4. Ranking prefers **OOS** score when validation is holdout or walk-forward. TPE's good/bad split uses that same score (`oos_score` when the trial has one, otherwise `is_score`).
 
 ## CLI
 
