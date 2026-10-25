@@ -428,15 +428,31 @@ class SessionStore:
         """
         if not key_text:
             return 0
+        victims: list[str] = []
+        seen: set[str] = set()
         with self._lock:
-            victims = []
             for sid, session in self._sessions.items():
                 try:
                     binding = _live.binding_of(session)
                 except Exception:
-                    continue
+                    binding = None
                 if binding is not None and binding.key.text == key_text:
                     victims.append(sid)
+                    seen.add(sid)
+        # Journaled-but-unloaded ids (worker recycle, never-touched row) would
+        # otherwise survive and rebuild the thrown-away window on resume.
+        if self._db_path is not None:
+            try:
+                for record in _session_log.list_meta(self._db_path):
+                    sid = str(record.get("id") or "")
+                    if not sid or sid in seen:
+                        continue
+                    binding = record.get("binding") or {}
+                    if isinstance(binding, dict) and binding.get("key") == key_text:
+                        victims.append(sid)
+                        seen.add(sid)
+            except Exception as exc:
+                logger.warning("session store: journal scan failed (%s)", exc)
         for sid in victims:
             self.drop(sid)
         return len(victims)
@@ -530,11 +546,11 @@ class SessionStore:
         Never raises: a session whose binding cannot be read is reported
         with ``key: None`` instead of failing the whole snapshot. Lock is
         held only for the in-memory read; callers join store windows
-        afterwards.
+        afterwards. Does not sweep idle TTL — an inspector pointed at the
+        live journal must not delete rows.
         """
         now = time.monotonic()
         with self._lock:
-            self._sweep_locked(now)
             pooled = {sid: fp for fp, sid in self._shared.items()}
             rows: list[dict[str, Any]] = []
             for sid, session in self._sessions.items():

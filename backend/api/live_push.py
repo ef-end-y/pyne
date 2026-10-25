@@ -59,6 +59,44 @@ class PushHub:
 
 HUB = PushHub()
 
+
+def notify_session_gone(
+    engine_session_id: str,
+    *,
+    registry: Any | None = None,
+    hub: PushHub | None = None,
+) -> int:
+    """Tell every live socket still attached to this engine session it's gone.
+
+    Stale-pool recreate drops the shared object; remaining tabs would otherwise
+    tick a vanished id until the next resume. Best-effort: a missing hub or
+    registry is a no-op, never raises.
+    """
+    if not engine_session_id:
+        return 0
+    try:
+        from backend.api.live_ws import _SHARED_REGISTRY
+    except Exception:
+        return 0
+    registry = registry if registry is not None else _SHARED_REGISTRY
+    hub = hub if hub is not None else HUB
+    try:
+        client_ids = registry.client_ids_for_engine(engine_session_id)
+    except Exception:
+        return 0
+    sent = 0
+    for client_id in client_ids:
+        frame = {
+            "type": "error",
+            "id": client_id,
+            "message": "Session was replaced; subscribe again",
+            "code": "SESSION_GONE",
+            "retryable": True,
+        }
+        if hub.send(client_id, frame):
+            sent += 1
+    return sent
+
 # Forming re-ticks (same bar slot) coalesce on the feed thread. Closes and
 # multi-slot batches flush immediately so seq / close frames stay ordered.
 CONFLATE_MS = 75
@@ -315,6 +353,16 @@ def attach_feed(
         session = SESSIONS.get(engine_session_id)
         if session is None:
             manager.unsubscribe(key_text, engine_session_id)
+            hub.send(
+                client_id,
+                {
+                    "type": "error",
+                    "id": client_id,
+                    "message": "Session was released",
+                    "code": "SESSION_GONE",
+                    "retryable": True,
+                },
+            )
             hub.unregister(client_id)
             return
         binding = data_live.binding_of(session)

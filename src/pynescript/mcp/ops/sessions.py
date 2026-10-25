@@ -81,6 +81,16 @@ def _backend() -> tuple[Any, Any]:
     return series_store, sessions_mod
 
 
+def _as_int(value: Any) -> int | None:
+    """Coerce journal/store timestamps that may arrive as str/float."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _parse_key(series_store: Any, key_text: str) -> Any | None:
     """``exchange|market|SYMBOL|interval`` → SeriesKey, or ``None``."""
     try:
@@ -151,27 +161,22 @@ def _enrich(series_store: Any, store: Any, row: dict[str, Any]) -> dict[str, Any
         status = None
     if not status:
         return entry
-    oldest = status.get("oldest")
-    newest = status.get("newest")
+    oldest = _as_int(status.get("oldest"))
+    newest = _as_int(status.get("newest"))
     entry["store_oldest"] = oldest
     entry["store_newest"] = newest
     entry["store_count"] = status.get("count")
-    anchor = row.get("anchor_time")
+    anchor = _as_int(row.get("anchor_time"))
     try:
         step = int(series_key.interval_seconds) or 0
     except Exception:
         step = 0
-    if isinstance(anchor, int) and isinstance(newest, int) and isinstance(oldest, int) and step > 0:
-        # Journal bindings may encode the anchor as a string.
-        try:
-            anchor_int = int(anchor)
-        except (TypeError, ValueError):
-            return entry
-        entry["lag_bars"] = max(0, (newest - anchor_int) // step)
-        if anchor_int < oldest:
+    if anchor is not None and newest is not None and oldest is not None and step > 0:
+        entry["lag_bars"] = max(0, (newest - anchor) // step)
+        if anchor < oldest:
             entry["suspect"] = True
             entry["why"] = "anchor older than store oldest: session window left behind"
-        elif anchor_int > newest:
+        elif anchor > newest:
             entry["suspect"] = True
             entry["why"] = "anchor newer than store newest: store replaced under the session"
     return entry

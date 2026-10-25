@@ -27,6 +27,8 @@ from backend.api.live_push import PushHub
 @pytest.fixture(autouse=True)
 def _disable_forming_conflate(monkeypatch):
     monkeypatch.setattr("backend.api.live_push.CONFLATE_MS", 0)
+
+
 from backend.api.live_ws import LiveConnection
 from backend.api.live_ws import LiveRegistry
 
@@ -620,6 +622,55 @@ def test_forming_batches_conflate_on_the_feed_thread(monkeypatch):
     deltas = [f for f in sent if f.get("type") == "delta"]
     assert len(deltas) == 1
     assert deltas[0]["payload"]["bars"][0]["close"] == 1.15
+
+
+def test_notify_session_gone_reaches_attached_clients():
+    from backend.api import live_push as push_mod
+
+    registry = LiveRegistry()
+    registry.subscribe("sub-a", "script", KEY_TEXT, 10)
+    registry.subscribe("sub-b", "script", KEY_TEXT, 10)
+    registry.attach("sub-a", "eng-1", _bars10())
+    registry.attach("sub-b", "eng-1", _bars10())
+    sent: list[dict] = []
+    hub = PushHub()
+    hub.register("sub-a", sent.append)
+    hub.register("sub-b", sent.append)
+    n = push_mod.notify_session_gone("eng-1", registry=registry, hub=hub)
+    assert n == 2
+    assert {f["id"] for f in sent} == {"sub-a", "sub-b"}
+    assert all(f["code"] == "SESSION_GONE" and f["retryable"] is True for f in sent)
+    assert push_mod.notify_session_gone("nobody", registry=registry, hub=hub) == 0
+
+
+def test_attach_feed_gone_session_emits_session_gone(monkeypatch):
+    from backend.api import live_push as push_mod
+    from backend.middleware.sessions import SESSIONS
+
+    registry = LiveRegistry()
+    registry.subscribe("sub-s", "script", KEY_TEXT, 10)
+    registry.attach("sub-s", "missing-ses", _bars10())
+    sent: list[dict] = []
+    hub = PushHub()
+    hub.register("sub-s", sent.append)
+    monkeypatch.setattr(push_mod, "HUB", hub)
+
+    class _Mgr:
+        def subscribe(self, key_text, session_id, cb):
+            self.cb = cb
+            return True
+
+        def unsubscribe(self, *_a):
+            self.unsubscribed = True
+
+    mgr = _Mgr()
+    monkeypatch.setattr("backend.api.feed_manager.get_feed_manager", lambda: mgr)
+    monkeypatch.setattr(push_mod, "persist_feed_bars", lambda *_a, **_k: True)
+    monkeypatch.setattr(SESSIONS, "get", lambda *_a, **_k: None)
+    assert push_mod.attach_feed(KEY_TEXT, "missing-ses", "sub-s", registry, hub) is True
+    mgr.cb([{"time": 1_700_000_000, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}])
+    assert sent and sent[0]["code"] == "SESSION_GONE"
+    assert getattr(mgr, "unsubscribed", False) is True
 
 
 # ---------------------------------------------------------------------------

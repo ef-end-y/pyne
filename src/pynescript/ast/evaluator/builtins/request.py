@@ -5707,7 +5707,7 @@ class RequestBuiltinsMixin(BuiltinDispatchMixin):
         never an invented static table.
         """
         from_currency = self._resolve_symbol(args[0] if len(args) > 0 else "USD", default="USD")
-        to_currency = self._resolve_symbol(args[1] if len(args) > 0 else "EUR", default="EUR")
+        to_currency = self._resolve_symbol(args[1] if len(args) > 1 else "EUR", default="EUR")
 
         # Prefer live feed pair if available (e.g. EUR/USD last)
         pair = f"{from_currency}/{to_currency}"

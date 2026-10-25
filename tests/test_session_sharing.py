@@ -107,3 +107,53 @@ def test_drop_by_key_removes_only_bound_series():
     assert store.get(idc) is not None
     assert store.drop_by_key("") == 0
     assert store.drop_by_key("nope|nope|NOPE|1m") == 0
+
+
+def test_drop_by_key_drops_journaled_unloaded_session(tmp_path):
+    """A journaled session not in this worker's memory is still purged.
+
+    Restart-shaped: bind + journal, evict memory, drop_by_key, then get/resume
+    must not rebuild the thrown-away window.
+    """
+    from types import SimpleNamespace
+
+    from backend.datastore import live as data_live
+    from backend.datastore.series import make_key
+
+    store = SessionStore(db_path=str(tmp_path / "sessions.db"))
+    bar = {"time": 1_700_000_000, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+    key = make_key("binance", "BTC/USDT", "1m", "spot")
+    session = SimpleNamespace(_ohlcv_data=[bar], _n_bars=1)
+    data_live.bind_session(session, key, bar)
+    sid = store.put(session)
+    store.track(
+        sid,
+        script="indicator()",
+        symbol="BTCUSDT",
+        bars=[bar],
+        binding={"key": key.text, "last_time": bar["time"], "last_bar": dict(bar)},
+    )
+    store._sessions.pop(sid, None)
+    store._last_seen.pop(sid, None)
+    assert store.drop_by_key(key.text) == 1
+    assert store.get(sid) is None
+    assert store._journal_meta(sid) is None
+
+
+def test_describe_all_does_not_sweep_journal(tmp_path, monkeypatch):
+    """The pool inspector is a snapshot: it must not TTL-delete journal rows."""
+    from backend.datastore import session_log
+
+    called: list[float] = []
+    real = session_log.sweep_expired
+
+    def spy(path, ttl):
+        called.append(float(ttl))
+        return real(path, ttl)
+
+    monkeypatch.setattr(session_log, "sweep_expired", spy)
+    store = SessionStore(db_path=str(tmp_path / "sessions.db"))
+    store.put(object())
+    store._last_sweep = 0.0
+    store.describe_all()
+    assert called == []

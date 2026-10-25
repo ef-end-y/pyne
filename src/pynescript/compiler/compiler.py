@@ -7631,12 +7631,8 @@ class CompilerVisitor(NodeVisitor):
                 positional.append(expr)
         items = [f"'__type__': {type_name!r}"]
         for i, f in enumerate(fields):
-            # Named args bind to that field. Positional ``i`` is field ``i``,
-            # and a keyword for the same field wins (as in interpret). A keyword
-            # must not slide onto the next field (``Type.new(res=array.new())``
-            # used to overwrite ``valid``). Omitted args use the type-body
-            # default. ``np.nan`` for missing bools is ``True`` under ``bool()``
-            # and flips flags.
+            # Keyword binds by field name and wins over the same-index
+            # positional; omitted fields use the type default.
             if f in named:
                 v = named[f]
             elif i < len(positional):

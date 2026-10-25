@@ -52,8 +52,12 @@ def _pooled_window_moved_on(store: Any, key: Any, session: Any, history_bars: An
 
         binding = data_live.binding_of(session)
         anchor = int(binding.last_time) if binding is not None else 0
-        newest = int(store.status(key)["newest"] or 0)
+        status = store.status(key)
+        count = int(status.get("count") or 0)
+        newest = int(status.get("newest") or 0)
         step = int(key.interval_seconds) or 60
+        if count <= 0:
+            return True
         if anchor <= 0 or newest <= anchor:
             return False
         return (newest - anchor) // step > max(1, int(history_bars))
@@ -152,9 +156,17 @@ def ensure_live_session(
         # The store window moved past the pooled session (repair / replace /
         # purge + refetch, or a gap the session never saw): resuming it would
         # evaluate bars that no longer overlap the chart, and every later
-        # resubscribe would hit the same stale entry. Drop it and create
+        # resubscribe would hit the same stale entry. Drop it (other tabs
+        # sharing this id get SESSION_GONE so they re-ensure) and create
         # fresh over the current window.
-        SESSIONS.drop(session_id)
+        stale_id = session_id
+        SESSIONS.drop(stale_id)
+        try:
+            from backend.api.live_push import notify_session_gone
+
+            notify_session_gone(stale_id)
+        except Exception:
+            pass
         try:
             session_id, created = SESSIONS.acquire_shared(fingerprint, _factory)
         except RuntimeError:

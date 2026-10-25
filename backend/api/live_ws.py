@@ -153,6 +153,13 @@ class LiveRegistry:
             self._seqs[client_id] = seq
             return seq
 
+    def client_ids_for_engine(self, engine_session_id: str) -> list[str]:
+        """Subscription ids currently attached to one engine session."""
+        if not engine_session_id:
+            return []
+        with self._lock:
+            return [cid for cid, rec in self._subs.items() if rec.get("engine_session_id") == engine_session_id]
+
 
 _SHARED_REGISTRY = LiveRegistry()
 

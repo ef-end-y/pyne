@@ -136,3 +136,48 @@ def test_healthy_pooled_session_keeps_sharing(_isolated):
     b = ensure_live_session("script", KEY, 10, script=script, symbol="BTCUSDT")
     assert b["outcome"] == "ready"
     assert b["session_id"] == a["session_id"]
+
+
+def test_empty_store_window_is_stale(_isolated):
+    """A pooled session over a purged (empty) store must recreate, not share."""
+    from types import SimpleNamespace
+
+    from backend.api.live_ensure import _pooled_window_moved_on
+    from backend.datastore import live as data_live
+    from backend.datastore import series as series_store
+
+    key = series_store.make_key("binance", "BTC/USDT", "1m", "spot")
+    bar = {"time": 1_700_000_000, "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0}
+    session = SimpleNamespace()
+    data_live.bind_session(session, key, bar)
+    store = series_store.get_store()
+    assert _pooled_window_moved_on(store, key, session, 10) is True
+    _provide(_bars10())
+    # Current window overlaps the birth anchor — not stale.
+    assert _pooled_window_moved_on(store, key, session, 10) is False
+
+
+def test_purge_drops_journaled_unloaded_session(_isolated, tmp_path, monkeypatch):
+    """DELETE-cascade after a restart: journaled id is gone, get does not rebuild."""
+    from backend.api.live_ensure import resume_live_session
+    from backend.datastore import series as series_store
+    from backend.middleware.sessions import SESSIONS
+
+    db = str(tmp_path / "sessions.db")
+    monkeypatch.setattr(SESSIONS, "_db_path", db)
+    key = series_store.make_key("binance", "PURGE/USDT", "1m", "spot")
+    series_store.get_store().provide(key, _bars10(), source="test")
+    script = 'indicator("purge-journal-probe")'
+    created = ensure_live_session("script", key.text, 10, script=script, symbol="PURGEUSDT")
+    assert created["outcome"] == "ready"
+    sid = created["session_id"]
+    SESSIONS._sessions.pop(sid, None)
+    SESSIONS._last_seen.pop(sid, None)
+    for fp, pooled in list(SESSIONS._shared.items()):
+        if pooled == sid:
+            del SESSIONS._shared[fp]
+    SESSIONS._shared_refs.pop(sid, None)
+    series_store.get_store().purge(key)
+    assert SESSIONS.drop_by_key(key.text) == 1
+    assert resume_live_session(sid) == {"outcome": "gone"}
+    assert SESSIONS.get(sid) is None

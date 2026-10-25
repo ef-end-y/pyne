@@ -397,3 +397,27 @@ def test_call_sessions_sees_journaled_nonresident(tmp_path, monkeypatch) -> None
     assert entry["key"] == key.text
     assert entry["anchor_time"] == start + 9 * 60
     assert entry["suspect"] is False
+
+
+def test_enrich_coerces_string_anchor_times() -> None:
+    """Journal bindings may encode last_time as a string; lag still computes."""
+    from backend.datastore import series as series_store
+    from pynescript.mcp.ops.sessions import _enrich
+
+    key = series_store.make_key("binance", "STR/USDT", "1m", "spot")
+    start = 1_700_000_000
+
+    class _Store:
+        def status(self, _k):
+            return {"oldest": start, "newest": start + 9 * 60, "count": 10}
+
+    row = {"key": key.text, "anchor_time": str(start + 9 * 60)}
+    out = _enrich(series_store, _Store(), row)
+    assert out["lag_bars"] == 0
+    assert out["suspect"] is False
+
+    left_behind = {"key": key.text, "anchor_time": str(start - 86_400)}
+    flagged = _enrich(series_store, _Store(), left_behind)
+    assert flagged["suspect"] is True
+    assert flagged["lag_bars"] == (9 * 60 + 86_400) // 60
+    assert "left behind" in flagged["why"]

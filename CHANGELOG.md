@@ -1,3 +1,15 @@
+## [0.6.21] — 2026-10-25
+
+### Fixed
+
+- **`request.currency_rate` 0/1-arg IndexError.** The honest-NA rewrite guarded `to_currency` with `len(args) > 0`, so a short builtin-map call raised `IndexError` instead of defaulting to `"EUR"`. Restored `len(args) > 1`.
+- **Purge cascade walks the session journal.** `drop_by_key` only scanned in-memory sessions; a journaled-but-unloaded id survived `DELETE /data/series` and `resume` rebuilt the thrown-away window after a worker recycle. Matching journal rows are now dropped too.
+- **Stale pool recreate notifies remaining subscribers.** Dropping a pooled session whose store window moved on publishes `SESSION_GONE` so other tabs re-ensure instead of ticking a gone id. An empty store window is treated as stale. A feed batch against a released session emits `SESSION_GONE` rather than going silent.
+
+### Changed
+
+- **`pyne_sessions` is a true snapshot.** `describe_all` no longer runs the idle TTL sweep, so an inspector pointed at the live journal cannot delete expired rows. String `last_time` anchors coerce for `lag_bars` / `suspect`.
+
 ## [0.6.20] — 2026-10-24
 
 ### Added

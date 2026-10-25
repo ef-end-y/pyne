@@ -103,6 +103,17 @@ def test_currency_rate_prefers_feed_pair() -> None:
     assert abs(float(_eval(ev, 'request.currency_rate("EUR", "USD")')) - 1.12) < 0.01
 
 
+def test_currency_rate_short_arg_list_does_not_indexerror() -> None:
+    """0-arg / 1-arg builtin-map calls default to_currency instead of IndexError."""
+    ev = NodeLiteralEvaluator()
+    assert ev._handle_request_currency_rate([]) is None
+    assert ev._handle_request_currency_rate(["USD"]) is None
+    stub = _FundamentalStub({("currency_rate", "USD/EUR"): 0.92})
+    hooked = NodeLiteralEvaluator(data_provider=stub)
+    assert hooked._handle_request_currency_rate([]) == 0.92
+    assert hooked._handle_request_currency_rate(["USD"]) == 0.92
+
+
 def test_fundamental_na_records_policy() -> None:
     ev = NodeLiteralEvaluator()
     assert _eval(ev, 'request.dividends("AAPL")') is None
