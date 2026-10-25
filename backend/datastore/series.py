@@ -374,6 +374,32 @@ class SeriesStore:
             for t, o, h, lo, c, v in reversed(rows)
         ]
 
+    def widest_gap(self, key: SeriesKey, step_s: int) -> tuple[int, int] | None:
+        """The widest internal hole, as ``(bar_before, bar_after)``.
+
+        ``step_s`` is one interval. A step of exactly one bar is not a hole.
+        ``None`` when the series is empty or continuous.
+        """
+        if step_s <= 0:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                """
+                WITH ordered AS (
+                  SELECT time, LAG(time) OVER (ORDER BY time) AS prev
+                  FROM bars WHERE key = ?
+                )
+                SELECT prev, time FROM ordered
+                WHERE prev IS NOT NULL AND time - prev > ?
+                ORDER BY (time - prev) DESC
+                LIMIT 1
+                """,
+                (key.text, int(step_s)),
+            ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return int(row[0]), int(row[1])
+
     def _existing_times(self, key_text: str, times: list[int]) -> set[int]:
         found: set[int] = set()
         for start in range(0, len(times), _CHUNK):

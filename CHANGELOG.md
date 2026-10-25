@@ -2,6 +2,7 @@
 
 ### Fixed
 
+- **A clamped series tick fills one page of the hole it skipped.** When the stored anchor was older than `TICK_MAX_BARS`, the tick wrote only the recent window and then treated `newest` as current, so the minutes in between stayed missing (the Donchian axis hole). The hot walk is still clamped. After it, one page of the widest internal gap is written, and `stale` stays true so the client reloads the session. A start that adds no bars is abandoned after three tries. A week-long stall is still not a 200-page walk.
 - **`request.currency_rate` 0/1-arg IndexError.** The honest-NA rewrite guarded `to_currency` with `len(args) > 0`, so a short builtin-map call raised `IndexError` instead of defaulting to `"EUR"`. Restored `len(args) > 1`.
 - **Purge cascade walks the session journal.** `drop_by_key` only scanned in-memory sessions; a journaled-but-unloaded id survived `DELETE /data/series` and `resume` rebuilt the thrown-away window after a worker recycle. Matching journal rows are now dropped too.
 - **Stale pool recreate notifies remaining subscribers.** Dropping a pooled session whose store window moved on publishes `SESSION_GONE` so other tabs re-ensure instead of ticking a gone id. An empty store window is treated as stale. A feed batch against a released session emits `SESSION_GONE` rather than going silent.

@@ -608,12 +608,26 @@ class TestDataSessionTick:
         body = res.get_json()
         assert body["stale"] is True
         assert body["appended"] == 300  # the clamped recent window, not the whole gap
-        # The walk starts at the bounded clamp window, not at the stale anchor.
-        assert (
-            exchange.calls[-1]["since"]
-            == (NOW + 10 - (data_api.TICK_MAX_BARS + data_api.TICK_OVERLAP_BARS) * MIN) * 1000
-        )
-        assert len(exchange.calls) == 1
+        # The hot walk starts at the bounded clamp, not at the week-old anchor.
+        clamp = (NOW + 10 - (data_api.TICK_MAX_BARS + data_api.TICK_OVERLAP_BARS) * MIN) * 1000
+        assert any(c["since"] == clamp for c in exchange.calls)
+        # One extra page starts at the old anchor to shrink the hole. Not 200 pages.
+        assert any(c["since"] == stale_last * 1000 for c in exchange.calls)
+        assert len(exchange.calls) <= 3
+
+    def test_tick_closes_a_hole_smaller_than_one_page(self, client, exchange):
+        """A stall shorter than TICK_MAX_BARS used to leave the skipped minutes missing."""
+        hole = 400  # minutes, under the 2500 clamp
+        anchor = NOW - hole * MIN
+        client.post("/data/series/provide", json={**KEY_BODY, "bars": closed_bars(58, last=anchor)})
+        sid = _create(client, 50).get_json()["session_id"]
+        exchange.candles = [candle(t) for t in range(anchor, NOW + 1, MIN)]
+        body = _tick(client, sid, exchange="binance", symbol="BTC/USDT").get_json()
+        assert body["status"] == "success"
+        status = client.get("/data/series", query_string=KEY_BODY).get_json()
+        span = (status["newest"] - status["oldest"]) // MIN
+        assert status["count"] >= span  # the hole was written back
+        assert len(exchange.calls) <= 3
 
     def test_tick_fetch_does_not_hold_key_lock(self, client, exchange):
         """The upstream walk runs outside key_lock (no head-of-line blocking)."""

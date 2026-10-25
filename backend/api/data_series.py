@@ -70,6 +70,11 @@ TICK_OVERLAP_BARS = 2
 TICK_MAX_BARS = 2500
 SOURCE_FETCH = "ccxt-fetch"
 SOURCE_TICK = "ccxt-tick"
+SOURCE_GAP = "ccxt-gap"
+# A weekend on a session venue, or an upstream that has no candles for the
+# hole, must not refetch the same gap on every tick.
+_GAP_GIVE_UP = 3
+_gap_failures: dict[str, tuple[int, int]] = {}
 
 # Short-lived reuse of the upstream tick walk, per series. AXIS ticks one
 # session per script instance (chart + N indicators) against the same series
@@ -190,6 +195,7 @@ def _reset_walk_cache_for_tests() -> None:
         _providers.clear()
         _provider_at.clear()
         _fetch_locks.clear()
+    _gap_failures.clear()
 
 
 def data_error_response(exc: DataError) -> tuple[Any, int]:
@@ -338,6 +344,59 @@ def fetch_history(key: SeriesKey, history_bars: int) -> dict[str, Any]:
     return {"fetched": len(window), **status}
 
 
+def _gap_blocked(key_text: str, start: int) -> bool:
+    prev = _gap_failures.get(key_text)
+    return prev is not None and prev[0] == start and prev[1] >= _GAP_GIVE_UP
+
+
+def _gap_failed(key_text: str, start: int) -> None:
+    prev = _gap_failures.get(key_text)
+    n = prev[1] + 1 if prev is not None and prev[0] == start else 1
+    _gap_failures[key_text] = (start, n)
+
+
+def _fill_one_gap(store: Any, provider: Any, key: SeriesKey, now_s: int) -> bool:
+    """Write one page into the widest hole. True when a hole was seen.
+
+    The page is at most ``TICK_MAX_BARS``. A hole larger than that shrinks
+    on later ticks instead of one 200-page walk. No candles for that start
+    (a closed market) gives up after ``_GAP_GIVE_UP`` tries.
+    """
+    step = key.interval_seconds
+    gap = store.widest_gap(key, step)
+    if gap is None:
+        _gap_failures.pop(key.text, None)
+        return False
+    start, _end = gap
+    if _gap_blocked(key.text, start):
+        return True
+    until_s = min(now_s, start + TICK_MAX_BARS * step)
+    try:
+        candles = _cached_walk(
+            provider,
+            key,
+            since_ms=start * 1000,
+            now_ms=until_s * 1000,
+            max_bars=TICK_MAX_BARS,
+            owner_id=None,
+        )
+    except DataError:
+        _gap_failed(key.text, start)
+        return True
+    if not candles:
+        _gap_failed(key.text, start)
+        return True
+    with store.key_lock(key.text):
+        before = int(store.status(key)["count"])
+        store.provide(key, candles, source=SOURCE_GAP)
+        after = int(store.status(key)["count"])
+    if after <= before:
+        _gap_failed(key.text, start)
+    else:
+        _gap_failures.pop(key.text, None)
+    return True
+
+
 def sync_data_session(
     session: Any,
     binding: live.SeriesBinding,
@@ -353,8 +412,9 @@ def sync_data_session(
     check, the persist (closed + forming tip) and the session advance.
 
     When the stored anchor is staler than :data:`TICK_MAX_BARS`, the walk is
-    clamped to a bounded recent window and the outcome is flagged ``stale`` so
-    the client can re-sync history instead of paging through the whole gap.
+    clamped to a bounded recent window. One extra page is then written into
+    the widest hole that clamp left behind. ``stale`` stays true while a hole
+    was seen so the client reloads the session instead of keeping the jump.
 
     ``is_alive`` (optional) re-checks session liveness after the fetch; when it
     returns ``False`` the tick raises ``SESSION_GONE`` before persisting or
@@ -401,7 +461,14 @@ def sync_data_session(
         # GET /data/series readers otherwise sit one bar behind the venue.
         if candles:
             store.provide(key, candles, source=SOURCE_TICK)
-        return live.sync_session(session, binding, candles, now_s, stale=stale, on_apply=on_apply)
+    # Network fill stays outside the per-series lock. One page only.
+    hole = _fill_one_gap(store, provider, key, now_s)
+    with store.key_lock(key.text):
+        if is_alive is not None and not is_alive():
+            raise DataError("SESSION_GONE", "Session was released while the tick was in flight.", 404)
+        return live.sync_session(
+            session, binding, candles, now_s, stale=stale or hole, on_apply=on_apply
+        )
 
 
 def _key_from_args(args: Any) -> SeriesKey:
