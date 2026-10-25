@@ -35,6 +35,7 @@ import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import {
   commands,
+  ConfigurationTarget,
   env,
   ExtensionContext,
   LogOutputChannel,
@@ -80,6 +81,40 @@ function log(msg: string): void {
 
 function cfg<T>(key: string): T | undefined {
   return workspace.getConfiguration('pynescript').get<T>(key);
+}
+
+function settingOn(key: string): boolean {
+  return cfg<boolean>(key) !== false;
+}
+
+async function togglePyneBool(key: string, label: string): Promise<boolean> {
+  const next = !settingOn(key);
+  await workspace.getConfiguration('pynescript').update(key, next, ConfigurationTarget.Global);
+  void window.showInformationMessage(`PYNE ${label} ${next ? 'on' : 'off'}.`);
+  return next;
+}
+
+const PINESCRIPT = { languageId: 'pinescript' } as const;
+
+function pinescriptEditorOn(key: string): boolean {
+  const v = workspace.getConfiguration('editor', PINESCRIPT).get(key);
+  if (key === 'inlayHints.enabled') {
+    return v !== 'off' && v !== false;
+  }
+  return v !== false;
+}
+
+async function togglePinescriptEditor(
+  key: string,
+  onValue: unknown,
+  offValue: unknown,
+  label: string,
+): Promise<void> {
+  const nextOn = !pinescriptEditorOn(key);
+  await workspace
+    .getConfiguration('editor', PINESCRIPT)
+    .update(key, nextOn ? onValue : offValue, ConfigurationTarget.Global, true);
+  void window.showInformationMessage(`PYNE ${label} ${nextOn ? 'on' : 'off'}.`);
 }
 
 /** Expand ${workspaceFolder} (and friends) in lsp.command / lsp.args for Docker. */
@@ -202,6 +237,15 @@ function buildClientOptions(): LanguageClientOptions {
       formattingEnabled: cfg('formatting.enabled') !== false,
       snippetsEnabled: cfg('completion.snippets') !== false,
       diagnosticsEnabled: cfg('diagnostics.enabled') !== false,
+    },
+    middleware: {
+      handleDiagnostics(uri, diagnostics, next) {
+        if (cfg<boolean>('diagnostics.enabled') === false) {
+          next(uri, []);
+          return;
+        }
+        next(uri, diagnostics);
+      },
     },
     // Share our channel so Show Output works even when client is mid-start/fail.
     outputChannel: output,
@@ -446,37 +490,34 @@ function registerCommands(context: ExtensionContext): void {
 
   context.subscriptions.push(
     commands.registerCommand(COMMANDS.diagnosticsToggle, async () => {
-      const currently = cfg<boolean>('diagnostics.enabled');
-      setDiagnosticsEnabled(!currently);
+      const next = await togglePyneBool('diagnostics.enabled', 'diagnostics');
+      if (!next) {
+        client?.diagnostics?.clear();
+      }
     }),
   );
 
   context.subscriptions.push(
     commands.registerCommand(COMMANDS.completionToggle, async () => {
-      const currently = cfg<boolean>('completion.snippets');
-      setCompletionEnabled(!currently);
+      await togglePyneBool('completion.snippets', 'snippet completions');
     }),
   );
 
   context.subscriptions.push(
     commands.registerCommand(COMMANDS.inlayHintsToggle, async () => {
-      const currently = cfg<boolean>('formatting.enabled');
-      setInlayHintsEnabled(!currently);
+      await togglePinescriptEditor('inlayHints.enabled', 'on', 'off', 'inlay hints');
     }),
   );
 
   context.subscriptions.push(
     commands.registerCommand(COMMANDS.foldingToggle, async () => {
-      // Folding is handled by the LSP server; toggle the config
-      const currently = cfg<boolean>('pynescript.formatting.enabled');
-      setFoldingEnabled(!currently);
+      await togglePinescriptEditor('folding', true, false, 'folding');
     }),
   );
 
   context.subscriptions.push(
     commands.registerCommand(COMMANDS.colorPreviewToggle, async () => {
-      // Color preview is handled by the LSP server
-      setColorPreviewEnabled(true);
+      await togglePinescriptEditor('colorDecorators', true, false, 'color preview');
     }),
   );
 }

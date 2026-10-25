@@ -1,3 +1,9 @@
+## [0.6.22] — 2026-10-25
+
+### Added
+
+- **VS Code palette toggles (VSIX 0.4.5).** **Toggle Diagnostics** / **Toggle Completion** flip `pynescript.diagnostics.enabled` and `pynescript.completion.snippets`. **Toggle Inlay Hints**, **Toggle Folding**, and **Toggle Color Preview** flip `[pinescript]` editor overrides (`editor.inlayHints.enabled`, `editor.folding`, `editor.colorDecorators`). Diagnostics off swallows squiggles client-side and clears the collection. Color preview is a real on/off (it previously only turned on, and inlay/folding wrote `formatting.enabled`).
+
 ## [0.6.21] — 2026-10-25
 
 ### Fixed

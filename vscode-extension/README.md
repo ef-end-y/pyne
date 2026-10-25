@@ -55,7 +55,7 @@ npm run package
 code --install-extension pyne-*.vsix
 ```
 
-Site download: [https://hoox.sh/pyne-vscode.vsix](https://hoox.sh/pyne-vscode.vsix) (unversioned alias). Versioned `pyne-vscode-0.4.4.vsix` is built in this folder and on GitHub Releases.
+Site download: [https://hoox.sh/pyne-vscode.vsix](https://hoox.sh/pyne-vscode.vsix) (unversioned alias). Versioned `pyne-vscode-0.4.5.vsix` is built in this folder and on GitHub Releases.
 
 > The VSIX is **self-contained** (esbuild bundles `vscode-languageclient`). You still need the **language server** on the machine (`pip install "hoox-pyne[lsp]"`).
 
@@ -81,6 +81,8 @@ code --extensionDevelopmentPath=.
 | `pynescript.formatting.enabled` | `true` | Format document |
 | `pynescript.completion.snippets` | `true` | Snippet inserts |
 
+Palette toggles: **Toggle Diagnostics** / **Toggle Completion** flip the `pynescript.*` keys above. **Toggle Inlay Hints**, **Toggle Folding**, and **Toggle Color Preview** flip `[pinescript]` editor settings (`editor.inlayHints.enabled`, `editor.folding`, `editor.colorDecorators`).
+
 **Example — pin a venv binary:**
 
 ```json
@@ -103,7 +105,7 @@ code --extensionDevelopmentPath=.
 You do **not** need a local Python install if you run the language server from the **LSP image**. The VSIX is still installed in the editor; only the server process is containerized.
 
 ```bash
-docker pull ghcr.io/hoox-sh/pyne/lsp:0.4.4
+docker pull ghcr.io/hoox-sh/pyne/lsp:0.6.22
 # local bake:  make docker-build-lsp
 ```
 
@@ -116,7 +118,7 @@ Pin the extension to Docker (`-i` keeps stdio open). `${workspaceFolder}` is exp
     "run", "-i", "--rm",
     "-v", "${workspaceFolder}:/work",
     "-w", "/work",
-    "ghcr.io/hoox-sh/pyne/lsp:0.4.4"
+    "ghcr.io/hoox-sh/pyne/lsp:0.6.22"
   ]
 }
 ```

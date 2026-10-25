@@ -1,8 +1,8 @@
 {
   "name": "pyne",
   "displayName": "PYNE Language Support",
-  "description": "Syntax highlighting, diagnostics, autocomplete, hover, and formatting for .pyne / .pine sources. Powered by hoox-pyne. Part of the HOOX open trading stack. Unofficial \u2014 not affiliated with TradingView, Inc.",
-  "version": "0.4.4",
+  "description": "Syntax highlighting, diagnostics, autocomplete, hover, and formatting for .pyne / .pine sources. Powered by hoox-pyne. Part of the HOOX open trading stack. Unofficial — not affiliated with TradingView, Inc.",
+  "version": "0.4.5",
   "publisher": "hoox-sh",
   "license": "AGPL-3.0-or-later",
   "author": {
@@ -55,6 +55,11 @@
     "onCommand:pynescript.showLspOutput",
     "onCommand:pynescript.showLspCommand",
     "onCommand:pynescript.convertToV6",
+    "onCommand:pynescript.diagnosticsToggle",
+    "onCommand:pynescript.completionToggle",
+    "onCommand:pynescript.inlayHintsToggle",
+    "onCommand:pynescript.foldingToggle",
+    "onCommand:pynescript.colorPreviewToggle",
     "workspaceContains:**/*.pyne",
     "workspaceContains:**/*.pine",
     "workspaceContains:**/*.pinev5",

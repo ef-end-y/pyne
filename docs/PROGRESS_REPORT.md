@@ -20,7 +20,7 @@
 
 PYNE is a complete Pine Script™ v5/v6 toolchain: ANTLR4 grammar → ASDL AST → bar-loop evaluator (interpret / compile / `mode=auto`), Language Server Protocol, Flask Pro API, and edge workers sharing one evaluate contract. The project is **not** a TradingView® platform clone — it is an independent, inspectable language engine whose canonical claim is **language coverage**, not bit-identical platform parity.
 
-Live package: **`hoox-pyne` 0.6.21** (`src/pynescript/__about__.py`). Import package: `pynescript`. CLIs: **`pyne`** / **`pyne-lsp`** (aliases `pynescript` / `pynescript-lsp`).
+Live package: **`hoox-pyne` 0.6.22** (`src/pynescript/__about__.py`). Import package: `pynescript`. CLIs: **`pyne`** / **`pyne-lsp`** (aliases `pynescript` / `pynescript-lsp`).
 
 ## Components Status
 
@@ -36,7 +36,7 @@ Live package: **`hoox-pyne` 0.6.21** (`src/pynescript/__about__.py`). Import pac
 | **Alerts** | Working | `alert()`/`alertcondition()` frequency rules; L2 webhooks (`webhook_url` / `ALERT_WEBHOOK_URL`). Interpret is the alert oracle; compile returns `[]`. |
 | **Compiler** (Numba/object) | Working | `mode=auto` falls back to interpret; warm-compile / disk IR cache (prewarm CLI/API); object mode for UDT/maps/drawings. `time_arr` for calendar/time builtins. |
 | **Pro API** | Working | Flask `/run`, `/run/batch`, `/session*`, `/data/series*`, `/optimize`, `/preview*`, `/backtest*`, `/stats`, auth (API keys + admin token), free-tier guards (opt-in). |
-| **LSP** (`pyne-lsp`) | Working | Diagnostics, completion, hover, definition/references, symbols, formatting, inlay hints, semantic tokens. Fernet-optional builtin metadata (`.enc`). VS Code extension `hoox-sh.pyne` 0.4.4. |
+| **LSP** (`pyne-lsp`) | Working | Diagnostics, completion, hover, definition/references, symbols, formatting, inlay hints, semantic tokens. Fernet-optional builtin metadata (`.enc`). VS Code extension `hoox-sh.pyne` 0.4.5. |
 | **PyneTS** | Partial | `@hoox-sh/pynets` 0.5.0 interpret + JS compile; Python Runtime remains the oracle. |
 
 ## Corpus Performance (set01–04 · 2,477 scripts · 2026-08-09)
@@ -53,7 +53,7 @@ EXPECTED_FAIL scripts are path-listed intentional demos (library `runtime.error`
 
 ## Recently Completed Themes (do not re-plan as greenfield)
 
-- **0.6.10–0.6.21**: engine-owned live plane (WS `/ws/live`), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + `PYNE_DATA_DIR`, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests.
+- **0.6.10–0.6.22**: engine-owned live plane (WS `/ws/live`), refcount-pooled shared sessions (F-29), opt-in delta envelopes, gevent WebSocket worker (F-30), CCXT provider caching + tick-walk sharing, live session persistence (SQLite journal), production profile + `PYNE_DATA_DIR`, Docker prod on VPS, Redis unpublished + opt-in auth, CORS for AXIS authenticated requests.
 - **0.6.7–0.6.9**: response windowing (`from_bar`/`to_bar`), live evaluation sessions (O(1) tick / O(delta) append), engine-owned OHLCV store, `GET /stats`, `PYNE_DEBUG`, faster interpret dispatch, compile `ta.uo`.
 - **Earlier**: interpret↔compile plot parity harness (official TV builtins **0 MISMATCH**), series caps (`PYNE_SERIES_CAP`, T1), pending-fill averaging (F2), Supertrend goldens (F1), `timeframe.change` D/W/M exchange calendar, UDT `sort_field` on `array.binary_search*`, `export const`/types/enums, multiline strings, square-bracket wrapping, drawing export parity.
 
@@ -74,9 +74,9 @@ Longer horizon (not next): ML wrappers, automatic refactor, parallel/distributed
 
 | Doc | Role | Status |
 |-----|------|--------|
-| `docs/pyne/index.mdx` | Product hub + what's new | Current (0.6.21) |
-| `docs/missing_features.md` | Living gap analysis | Current (0.6.21) |
-| `docs/pinescript_implementation_status.md` | High-level impl summary | Current (0.6.21) |
+| `docs/pyne/index.mdx` | Product hub + what's new | Current (0.6.22) |
+| `docs/missing_features.md` | Living gap analysis | Current (0.6.22) |
+| `docs/pinescript_implementation_status.md` | High-level impl summary | Current (0.6.22) |
 | `docs/pyne/reference/compatibility.mdx` | Grouped compatibility map | Current (honest "working / partial / by design") |
 | `docs/pyne/reference/missing-features.mdx` | Product-facing gap annex | Current |
 | `docs/pyne/reference/pine-v6-surface.mdx` | Name-level dispatch summary | Current (941 / 255 / 0 missing) |
