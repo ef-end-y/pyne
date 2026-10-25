@@ -112,9 +112,7 @@ _PS_OTHER = 9
 
 # Calendar series materialize on first read (LazyCalendarContext). Every other
 # name is a plain dict slot — dict.__getitem__ skips that Python override.
-_CAL_ARG_NAMES = frozenset(
-    {"year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek"}
-)
+_CAL_ARG_NAMES = frozenset({"year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek"})
 
 # Script declarations — constant after bar 0 (host sets ``_pine_defs_locked``).
 _DECL_CALL_NAMES = frozenset({"indicator", "strategy", "library", "study"})

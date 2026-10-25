@@ -324,9 +324,7 @@ class MatrixBuiltinsMixin(BuiltinDispatchMixin):
             # (matrix, row_index, array)
             row_index = self._expect_int(args[UNARY], "matrix.add_row: row index must be int")
             row_data = (
-                args[2]
-                if isinstance(args[2], list)
-                else self._expect_list(args[2], "matrix.add_row: array required")
+                args[2] if isinstance(args[2], list) else self._expect_list(args[2], "matrix.add_row: array required")
             )
         else:
             self._error("matrix.add_row requires matrix and optional row data")
@@ -437,9 +435,7 @@ class MatrixBuiltinsMixin(BuiltinDispatchMixin):
         elif len(args) >= 3:
             col_index = self._expect_int(args[UNARY], "matrix.add_col: column index must be int")
             col_data = (
-                args[2]
-                if isinstance(args[2], list)
-                else self._expect_list(args[2], "matrix.add_col: array required")
+                args[2] if isinstance(args[2], list) else self._expect_list(args[2], "matrix.add_col: array required")
             )
         else:
             self._error("matrix.add_col requires matrix and optional column data")

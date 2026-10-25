@@ -2319,9 +2319,7 @@ class StrategyBuiltinsMixin(StrategyBracketCore, BuiltinDispatchMixin):
                             stop=order.stop_price,
                         )
             elif self._risk_allows_entry("long", fill_price):
-                self._open_position_qty(
-                    "long", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission
-                )
+                self._open_position_qty("long", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission)
         elif self._strategy_state.position_direction == "long":
             max_cover = (
                 self._entry_open_size(order_from_entry) if order_from_entry else self._strategy_state.position_size
@@ -2343,9 +2341,7 @@ class StrategyBuiltinsMixin(StrategyBracketCore, BuiltinDispatchMixin):
                         stop=order.stop_price,
                     )
         elif self._risk_allows_entry("short", fill_price):
-            self._open_position_qty(
-                "short", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission
-            )
+            self._open_position_qty("short", fill_qty, fill_price, order.order_id, bar_index, bar_time, commission)
 
         self._record_strategy_event(
             StrategyEvent(

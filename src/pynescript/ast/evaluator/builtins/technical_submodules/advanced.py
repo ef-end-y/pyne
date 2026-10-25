@@ -145,9 +145,7 @@ class AdvancedIndicators(TechnicalHelpers):
         Full path uses :meth:`_supertrend`; incremental uses
         :meth:`_supertrend_inc_update`. Same simplified contract as Numba.
         """
-        if len(args) == BINARY and all(
-            isinstance(a, (int, float)) and not isinstance(a, bool) for a in args
-        ):
+        if len(args) == BINARY and all(isinstance(a, (int, float)) and not isinstance(a, bool) for a in args):
             factor = float(args[0])
             atr_period = self._expect_int(args[1], "ta.supertrend atrPeriod must be int")
             highs = self._context_series("high")
@@ -628,8 +626,11 @@ class AdvancedIndicators(TechnicalHelpers):
         if len(close) < period or period <= 0 or levels <= 0:
             return close[-1] if close else 100.0
 
-        data = [(close[i], volume[i]) for i in range(-period, 0)
-                if isinstance(close[i], (int, float)) and isinstance(volume[i], (int, float))]
+        data = [
+            (close[i], volume[i])
+            for i in range(-period, 0)
+            if isinstance(close[i], (int, float)) and isinstance(volume[i], (int, float))
+        ]
 
         if not data:
             return close[-1] if close else 100.0
@@ -760,9 +761,7 @@ class AdvancedIndicators(TechnicalHelpers):
             stochrsi_val = (valid_rsi[-1] - rsi_low) / rsi_range * 100.0
 
         # Signal is EMA of StochRSI
-        signal = stochrsi_val * 0.33 + (
-            getattr(self, "_last_stochrsi_signal", stochrsi_val) * 0.67
-        )
+        signal = stochrsi_val * 0.33 + (getattr(self, "_last_stochrsi_signal", stochrsi_val) * 0.67)
         self._last_stochrsi_signal = signal
 
         return {"stochrsi": stochrsi_val, "signal": signal}
@@ -808,9 +807,7 @@ class AdvancedIndicators(TechnicalHelpers):
         length4 = self._expect_int(args[3], "length4 must be integer")
 
         if self._use_incremental_ta():
-            return self._kst_inc_update(
-                self._context_source("close"), length1, length2, length3, length4
-            )
+            return self._kst_inc_update(self._context_source("close"), length1, length2, length3, length4)
 
         closes = (getattr(self, "current_series", None) or {}).get("close", [])
         if not closes:
@@ -821,26 +818,10 @@ class AdvancedIndicators(TechnicalHelpers):
             return None
 
         # Calculate ROCs (Rate of Change)
-        roc1 = (
-            (closes[-1] - closes[-length1]) / closes[-length1] * 100
-            if len(closes) >= length1
-            else 0
-        )
-        roc2 = (
-            (closes[-1] - closes[-length2]) / closes[-length2] * 100
-            if len(closes) >= length2
-            else 0
-        )
-        roc3 = (
-            (closes[-1] - closes[-length3]) / closes[-length3] * 100
-            if len(closes) >= length3
-            else 0
-        )
-        roc4 = (
-            (closes[-1] - closes[-length4]) / closes[-length4] * 100
-            if len(closes) >= length4
-            else 0
-        )
+        roc1 = (closes[-1] - closes[-length1]) / closes[-length1] * 100 if len(closes) >= length1 else 0
+        roc2 = (closes[-1] - closes[-length2]) / closes[-length2] * 100 if len(closes) >= length2 else 0
+        roc3 = (closes[-1] - closes[-length3]) / closes[-length3] * 100 if len(closes) >= length3 else 0
+        roc4 = (closes[-1] - closes[-length4]) / closes[-length4] * 100 if len(closes) >= length4 else 0
 
         # Weighted sum
         kst_val = roc1 * 1.0 + roc2 * 2.0 + roc3 * 3.0 + roc4 * 4.0
@@ -1018,8 +999,11 @@ class AdvancedIndicators(TechnicalHelpers):
             return 0.0
 
         vol_sum = sum([v for v in volume[-period:] if isinstance(v, (int, float))])
-        mom_data = [(momentum[i], volume[i]) for i in range(-period, 0)
-                    if isinstance(momentum[i], (int, float)) and isinstance(volume[i], (int, float))]
+        mom_data = [
+            (momentum[i], volume[i])
+            for i in range(-period, 0)
+            if isinstance(momentum[i], (int, float)) and isinstance(volume[i], (int, float))
+        ]
 
         if not mom_data or vol_sum == 0:
             return 0.0
@@ -1071,14 +1055,14 @@ class AdvancedIndicators(TechnicalHelpers):
         # Calculate commodity change
         comm_valid = isinstance(commodities[0], (int, float)) and isinstance(commodities[-1], (int, float))
         if comm_valid and commodities[0] != 0:
-            comm_change = ((commodities[-1] - commodities[0]) / commodities[0] * 100)
+            comm_change = (commodities[-1] - commodities[0]) / commodities[0] * 100
         else:
             comm_change = 0.0
         # Calculate yields change
         yields_valid = isinstance(yields[-1], (int, float)) and isinstance(yields[0], (int, float))
         yields_change = yields[-1] - yields[0] if yields_valid else 0.0
 
-        inflation_pressure = (usd_change * 0.3 + comm_change * 0.4 + yields_change * 0.3)
+        inflation_pressure = usd_change * 0.3 + comm_change * 0.4 + yields_change * 0.3
         return max(-100.0, min(100.0, inflation_pressure * 10))
 
     def _builtin_ta_employment_cycle_indicator(self, args: list[Any]) -> str:
@@ -1393,7 +1377,7 @@ class AdvancedIndicators(TechnicalHelpers):
         spread_avg = sum([s for s in spread[-period:] if isinstance(s, (int, float))]) / period if spread else 0.1
         spread_score = max(0.0, 100.0 - spread_avg * 100.0)
 
-        liquidity = (vol_score * 0.4 + volatility_score * 0.3 + spread_score * 0.3)
+        liquidity = vol_score * 0.4 + volatility_score * 0.3 + spread_score * 0.3
         return max(0.0, min(100.0, liquidity))
 
     def _builtin_ta_volume_thrust(self, args: list[Any]) -> bool:
@@ -1470,8 +1454,7 @@ class AdvancedIndicators(TechnicalHelpers):
         rsi_score = min(100.0, abs(rsi - 50.0) * 2.0) if abs(rsi - 50.0) > 10.0 else 40.0
         alignment_bonus = 20.0 if abs(rsi_alignment) > 0.5 else 0.0
 
-        total = (momentum_score * 0.25 + trend_score * 0.3 + strength_score * 0.25
-                 + rsi_score * 0.15 + alignment_bonus)
+        total = momentum_score * 0.25 + trend_score * 0.3 + strength_score * 0.25 + rsi_score * 0.15 + alignment_bonus
         return max(0.0, min(100.0, total))
 
     def _builtin_ta_market_structure_pivot(self, args: list[Any]) -> dict:
@@ -1490,8 +1473,7 @@ class AdvancedIndicators(TechnicalHelpers):
         period = self._expect_int(args[3], msg)
         mode = self._expect_int(args[4], msg)
 
-        if (not high_list or not low_list or not close_list
-                or len(high_list) < period or period <= 0):
+        if not high_list or not low_list or not close_list or len(high_list) < period or period <= 0:
             return {"pivot_price": 100.0, "strength": 50.0, "structure": "neutral"}
 
         h_vals = [h for h in high_list[-period:] if isinstance(h, (int, float))]
@@ -1547,7 +1529,7 @@ class AdvancedIndicators(TechnicalHelpers):
         vol_score = min(100.0, vol_val * 100.0)
         vix_score = min(100.0, vix_val * 2.0)
 
-        volatility_score = (atr_score * 0.4 + vol_score * 0.3 + vix_score * 0.3)
+        volatility_score = atr_score * 0.4 + vol_score * 0.3 + vix_score * 0.3
 
         if volatility_score < threshold * 0.5:
             regime = "low"
@@ -1889,67 +1871,27 @@ class AdvancedIndicators(TechnicalHelpers):
         momentum_list = self._expect_list(args[1], msg)
         volatility_list = self._expect_list(args[2], msg)
         volume_list = self._expect_list(args[3], msg)
-        market_condition = (
-            args[4]
-            if isinstance(args[4], str)
-            else "ranging"
-        )
-        risk_profile = (
-            args[5]
-            if isinstance(args[5], str)
-            else "balanced"
-        )
+        market_condition = args[4] if isinstance(args[4], str) else "ranging"
+        risk_profile = args[5] if isinstance(args[5], str) else "balanced"
 
         # Extract numeric values from each category
-        trend_vals = [
-            t for t in trend_list
-            if isinstance(t, (int, float))
-        ]
-        momentum_vals = [
-            m for m in momentum_list
-            if isinstance(m, (int, float))
-        ]
-        volatility_vals = [
-            v for v in volatility_list
-            if isinstance(v, (int, float))
-        ]
-        volume_vals = [
-            vol for vol in volume_list
-            if isinstance(vol, (int, float))
-        ]
+        trend_vals = [t for t in trend_list if isinstance(t, (int, float))]
+        momentum_vals = [m for m in momentum_list if isinstance(m, (int, float))]
+        volatility_vals = [v for v in volatility_list if isinstance(v, (int, float))]
+        volume_vals = [vol for vol in volume_list if isinstance(vol, (int, float))]
 
         # Calculate average signals from each category
-        trend_avg = (
-            sum(trend_vals) / len(trend_vals)
-            if trend_vals
-            else 0.0
-        )
-        momentum_avg = (
-            sum(momentum_vals) / len(momentum_vals)
-            if momentum_vals
-            else 0.0
-        )
-        volatility_avg = (
-            sum(volatility_vals) / len(volatility_vals)
-            if volatility_vals
-            else 0.5
-        )
-        volume_avg = (
-            sum(volume_vals) / len(volume_vals)
-            if volume_vals
-            else 0.0
-        )
+        trend_avg = sum(trend_vals) / len(trend_vals) if trend_vals else 0.0
+        momentum_avg = sum(momentum_vals) / len(momentum_vals) if momentum_vals else 0.0
+        volatility_avg = sum(volatility_vals) / len(volatility_vals) if volatility_vals else 0.5
+        volume_avg = sum(volume_vals) / len(volume_vals) if volume_vals else 0.0
 
         # Normalize volatility to 0-1 range
         volatility_normalized = max(0.0, min(1.0, volatility_avg))
 
         # Composite signal calculation
         # Trend: 40%, Momentum: 35%, Volume: 25%
-        composite = (
-            trend_avg * 0.4 +
-            momentum_avg * 0.35 +
-            volume_avg * 0.25
-        )
+        composite = trend_avg * 0.4 + momentum_avg * 0.35 + volume_avg * 0.25
         composite_signal = max(-1.0, min(1.0, composite))
 
         # Confidence scoring based on signal agreement
@@ -1963,10 +1905,7 @@ class AdvancedIndicators(TechnicalHelpers):
 
         base_confidence = agreement_count / 3.0
         volatility_penalty = volatility_normalized * 0.3
-        confidence_level = max(
-            0.1,
-            min(0.99, base_confidence - volatility_penalty)
-        )
+        confidence_level = max(0.1, min(0.99, base_confidence - volatility_penalty))
 
         # Strategy recommendation based on composite signal
         if composite_signal > 0.6:

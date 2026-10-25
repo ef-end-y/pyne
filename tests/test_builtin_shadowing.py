@@ -48,7 +48,6 @@ KNOWN_DUPLICATES: dict[str, str] = {
     "_range": "BasicIndicators",
     "_supertrend_inc_update": "AdvancedIndicators",
     "_variance": "BasicIndicators",
-
     # -- builtin handlers --
     "_builtin_ta_acceleration_factor": "AdvancedIndicators",
     "_builtin_ta_atr": "BasicIndicators",

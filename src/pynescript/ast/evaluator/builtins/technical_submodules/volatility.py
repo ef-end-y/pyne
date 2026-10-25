@@ -263,11 +263,7 @@ class VolatilityIndicators(TechnicalHelpers):
             lows = self._context_series("low") or closes
         elif len(args) in {TERNARY, QUATERNARY} and not self._is_period_like(args[1]):
             # Legacy: high, low, close [, length]
-            length = (
-                self._expect_int(args[3], "ta.kc length must be integer")
-                if len(args) > TERNARY
-                else 20
-            )
+            length = self._expect_int(args[3], "ta.kc length must be integer") if len(args) > TERNARY else 20
             if use_inc:
                 return self._kc_inc_update(args[0], args[1], args[2], length, mult)
             highs = self._expect_list(args[0], "ta.kc takes high, low, close series, length")
@@ -414,9 +410,7 @@ class VolatilityIndicators(TechnicalHelpers):
         std_dev = float(args[1]) if isinstance(args[1], (int, float)) else 2.0
 
         if self._use_incremental_ta():
-            return self._bb_pct_inc_update(
-                self._context_source("close"), length, std_dev
-            )
+            return self._bb_pct_inc_update(self._context_source("close"), length, std_dev)
 
         closes = (getattr(self, "current_series", None) or {}).get("close", [])
         if not closes or len(closes) < length:
@@ -424,7 +418,7 @@ class VolatilityIndicators(TechnicalHelpers):
 
         sma_val = sum(closes[-length:]) / length
         variance = sum((v - sma_val) ** 2 for v in closes[-length:]) / length
-        std_val = variance ** 0.5
+        std_val = variance**0.5
 
         upper = sma_val + (std_val * std_dev)
         lower = sma_val - (std_val * std_dev)
@@ -512,7 +506,7 @@ class VolatilityIndicators(TechnicalHelpers):
             return 0.0
 
         correlation = covariance / ((var1 * var2) ** 0.5)
-        r_squared = correlation ** 2
+        r_squared = correlation**2
 
         return max(0.0, min(1.0, r_squared))
 

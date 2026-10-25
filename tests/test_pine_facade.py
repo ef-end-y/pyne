@@ -64,9 +64,7 @@ def test_assign_filenames_suffixes_version_on_clash() -> None:
 
 
 def test_meta_name_unescapes_html_entities() -> None:
-    assert _meta_name({"scriptName": "Kaufman&#039;s Adaptive Moving Average"}) == (
-        "Kaufman's Adaptive Moving Average"
-    )
+    assert _meta_name({"scriptName": "Kaufman&#039;s Adaptive Moving Average"}) == ("Kaufman's Adaptive Moving Average")
 
 
 def test_meta_kind_falls_back_to_name() -> None:
@@ -111,9 +109,7 @@ def test_download_writes_and_can_skip_existing(monkeypatch, tmp_path: Path) -> N
         return {"source": f'//@version=5\nindicator("{script_id_part}")\n'}
 
     monkeypatch.setattr("pynescript.util.pine_facade.get_script", _fake_get)
-    first = download_builtin_scripts(
-        tmp_path, max_workers=1, confirm=False, plain=True
-    )
+    first = download_builtin_scripts(tmp_path, max_workers=1, confirm=False, plain=True)
     assert first["saved"] == 3
     assert first["failed"] == 0
     pines = sorted(p.name for p in tmp_path.glob("*.pine"))
@@ -122,9 +118,7 @@ def test_download_writes_and_can_skip_existing(monkeypatch, tmp_path: Path) -> N
         "strategy_example.pine",
         "supertrend.pine",
     ]
-    second = download_builtin_scripts(
-        tmp_path, max_workers=1, confirm=False, plain=True, skip_existing=True
-    )
+    second = download_builtin_scripts(tmp_path, max_workers=1, confirm=False, plain=True, skip_existing=True)
     assert second["saved"] == 0
     assert second["skipped"] == 3
 

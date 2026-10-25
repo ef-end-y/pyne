@@ -385,8 +385,7 @@ class PineSeries:
     def _binary_op(self, other: Any, op: Callable) -> Any:
         # Duck-type RingPineSeries / other wrappers (flag-on host mix).
         if isinstance(other, PineSeries) or (
-            hasattr(other, "current")
-            and type(other).__name__ in {"PineSeries", "RingPineSeries"}
+            hasattr(other, "current") and type(other).__name__ in {"PineSeries", "RingPineSeries"}
         ):
             other_val = other.current
         else:

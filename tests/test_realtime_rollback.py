@@ -137,6 +137,7 @@ if barstate.isrealtime
 plot(array.size(a), "sz")
 """
 
+
 def test_var_array_push_rolls_back_unconfirmed_ticks() -> None:
     """``var`` array.push on the last bar commits once, not once per tick."""
     out = Runtime(symbol="RT").run(_VAR_ARRAY_SRC, _bars(), mode="interpret", realtime_ticks=3)
@@ -160,9 +161,7 @@ plot(array.size(array.get(a, 0)), "sz")
 
 def test_var_nested_array_push_rolls_back_unconfirmed_ticks() -> None:
     """Inner ``array.push`` on a ``var`` list-of-lists commits once, not N ticks."""
-    out = Runtime(symbol="RT").run(
-        _VAR_NESTED_ARRAY_SRC, _bars(), mode="interpret", realtime_ticks=3
-    )
+    out = Runtime(symbol="RT").run(_VAR_NESTED_ARRAY_SRC, _bars(), mode="interpret", realtime_ticks=3)
     assert "error" not in out, out.get("error")
     sz = [float(v) for v in out["series"]["sz"]]
     # Historical bars seed an empty inner array; last bar's 3 ticks each

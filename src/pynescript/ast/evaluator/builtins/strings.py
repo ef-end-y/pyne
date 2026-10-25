@@ -541,12 +541,7 @@ class StringBuiltinsMixin(BuiltinDispatchMixin):
                 if z in {"syminfo.timezone", "UTC", "utc", "Etc/UTC", "GMT"}:
                     tz = datetime.timezone.utc
                 elif "GMT" in z.upper() or z.startswith(("UTC+", "UTC-", "utc+", "utc-")):
-                    offset_str = (
-                        z.upper()
-                        .replace("GMT", "")
-                        .replace("UTC", "")
-                        .strip()
-                    )
+                    offset_str = z.upper().replace("GMT", "").replace("UTC", "").strip()
                     if offset_str:
                         # Accept "+2", "-5", "2"
                         offset = int(offset_str)

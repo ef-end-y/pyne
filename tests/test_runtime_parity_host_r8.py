@@ -182,9 +182,7 @@ plot(time, title="t")
 
 class TestCompileSeriesEnvelope:
     def test_header_parse(self) -> None:
-        h = _parse_script_header_fields(
-            '//@version=5\nindicator("My SMA", overlay=true)\nplot(close)\n'
-        )
+        h = _parse_script_header_fields('//@version=5\nindicator("My SMA", overlay=true)\nplot(close)\n')
         assert h["script_name"] == "My SMA"
         assert h["script_type"] == "indicator"
         assert h["overlay"] is True

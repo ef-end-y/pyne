@@ -30,7 +30,6 @@ from antlr4 import TokenStream
 
 
 class PinescriptParserBase(Parser):
-
     def __init__(self, input: TokenStream, output: TextIO = sys.stdout):
         super().__init__(input, output)
 

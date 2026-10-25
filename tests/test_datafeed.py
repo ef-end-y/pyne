@@ -105,6 +105,7 @@ def test_ccxtpro_poll_ohlcv_returns_cached_watch_sample():
     dfmod.CCXTProDataFeed._get_exchange = fake_get
     feed = CCXTProDataFeed(exchange="binance")
     try:
+
         async def _one():
             async for payload in feed.watch_ohlcv("BTC/USDT", "1m"):
                 return payload

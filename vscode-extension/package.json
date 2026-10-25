@@ -1,7 +1,7 @@
 {
   "name": "pyne",
   "displayName": "PYNE Language Support",
-  "description": "Syntax highlighting, diagnostics, autocomplete, hover, and formatting for .pyne / .pine sources. Powered by hoox-pyne. Part of the HOOX open trading stack. Unofficial — not affiliated with TradingView, Inc.",
+  "description": "Syntax highlighting, diagnostics, autocomplete, hover, and formatting for .pyne / .pine sources. Powered by hoox-pyne. Part of the HOOX open trading stack. Unofficial \u2014 not affiliated with TradingView, Inc.",
   "version": "0.4.4",
   "publisher": "hoox-sh",
   "license": "AGPL-3.0-or-later",
@@ -152,27 +152,62 @@
       {
         "command": "pynescript.restartServer",
         "title": "Restart Language Server",
-        "category": "PYNE"
+        "category": "PYNE",
+        "description": "Restart Language Server command"
       },
       {
         "command": "pynescript.formatDocument",
         "title": "Format Document",
-        "category": "PYNE"
+        "category": "PYNE",
+        "description": "Format Document command"
       },
       {
         "command": "pynescript.showLspOutput",
         "title": "Show Language Server Output",
-        "category": "PYNE"
+        "category": "PYNE",
+        "description": "Show Language Server Output command"
       },
       {
         "command": "pynescript.showLspCommand",
         "title": "Show Resolved LSP Launch Command",
-        "category": "PYNE"
+        "category": "PYNE",
+        "description": "Show Resolved LSP Launch Command command"
       },
       {
         "command": "pynescript.convertToV6",
         "title": "Convert to Pine v6",
-        "category": "PYNE"
+        "category": "PYNE",
+        "description": "Convert to Pine v6 command"
+      },
+      {
+        "command": "pynescript.diagnosticsToggle",
+        "title": "Toggle Diagnostics",
+        "category": "PYNE",
+        "description": "Toggle Diagnostics command"
+      },
+      {
+        "command": "pynescript.completionToggle",
+        "title": "Toggle Completion",
+        "category": "PYNE",
+        "description": "Toggle Completion command"
+      },
+      {
+        "command": "pynescript.inlayHintsToggle",
+        "title": "Toggle Inlay Hints",
+        "category": "PYNE",
+        "description": "Toggle Inlay Hints command"
+      },
+      {
+        "command": "pynescript.foldingToggle",
+        "title": "Toggle Folding",
+        "category": "PYNE",
+        "description": "Toggle Folding command"
+      },
+      {
+        "command": "pynescript.colorPreviewToggle",
+        "title": "Toggle Color Preview",
+        "category": "PYNE",
+        "description": "Toggle Color Preview command"
       }
     ],
     "menus": {
@@ -193,6 +228,21 @@
         {
           "command": "pynescript.convertToV6",
           "when": "editorLangId == pinescript"
+        },
+        {
+          "command": "pynescript.diagnosticsToggle"
+        },
+        {
+          "command": "pynescript.completionToggle"
+        },
+        {
+          "command": "pynescript.inlayHintsToggle"
+        },
+        {
+          "command": "pynescript.foldingToggle"
+        },
+        {
+          "command": "pynescript.colorPreviewToggle"
         }
       ],
       "editor/context": [

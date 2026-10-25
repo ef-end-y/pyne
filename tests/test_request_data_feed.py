@@ -73,9 +73,7 @@ def _daily_bars(n: int = 40, start: float = 100.0) -> list[dict]:
     return _bars(n, start=start, step_ms=86_400_000)
 
 
-def _expect_pivot_confirm(
-    src: list[float], left: int, right: int, *, is_high: bool
-) -> float | None:
+def _expect_pivot_confirm(src: list[float], left: int, right: int, *, is_high: bool) -> float | None:
     """Last-sample ``ta.pivothigh`` / ``ta.pivotlow`` on a chronological unique series."""
     need = left + right + 1
     if len(src) < need:
@@ -1626,7 +1624,7 @@ plot(ta.ao(), title="cao")
             lo = min(float(b["low"]) for b in chunk)
             daily_hl2.append((hi + lo) * 0.5)
         # SMA(34) first output at unique index 33 (during day 34).
-        assert all(_is_na(x) for x in hao[1:34 * 24])
+        assert all(_is_na(x) for x in hao[1 : 34 * 24])
         day36 = hao[36 * 24 : 37 * 24]
         assert all(not _is_na(x) for x in day36)
         ref = float(day36[0])
@@ -1660,7 +1658,7 @@ plot(ta.ao(3, 8), title="cao")
             lo = min(float(b["low"]) for b in chunk)
             daily_hl2.append((hi + lo) * 0.5)
         # SMA(8) first output at unique index 7 (during day 8).
-        assert all(_is_na(x) for x in hao[1:8 * 24])
+        assert all(_is_na(x) for x in hao[1 : 8 * 24])
         day9 = hao[9 * 24 : 10 * 24]
         assert all(not _is_na(x) for x in day9)
         ref = float(day9[0])
@@ -1805,7 +1803,7 @@ plot(ta.ao(3), title="cao")
             lo = min(float(b["low"]) for b in chunk)
             daily_hl2.append((hi + lo) * 0.5)
         # SMA(34) first output at unique index 33 (during day 34).
-        assert all(_is_na(x) for x in hao[1:34 * 24])
+        assert all(_is_na(x) for x in hao[1 : 34 * 24])
         day36 = hao[36 * 24 : 37 * 24]
         assert all(not _is_na(x) for x in day36)
         ref = float(day36[0])
@@ -1914,8 +1912,12 @@ plot(ta.mfi(3), title="cmfi")
         assert abs(float(hmfi[-1]) - expect_mfi) < 1e-9
         cadx_day8 = out["series"]["cadx"][8 * 24 : 9 * 24]
         cmfi_day8 = out["series"]["cmfi"][8 * 24 : 9 * 24]
-        assert any(abs(float(hadx[8 * 24 + i]) - float(cadx_day8[i])) > 1e-6 for i in range(24) if not _is_na(cadx_day8[i]))
-        assert any(abs(float(hmfi[8 * 24 + i]) - float(cmfi_day8[i])) > 1e-6 for i in range(24) if not _is_na(cmfi_day8[i]))
+        assert any(
+            abs(float(hadx[8 * 24 + i]) - float(cadx_day8[i])) > 1e-6 for i in range(24) if not _is_na(cadx_day8[i])
+        )
+        assert any(
+            abs(float(hmfi[8 * 24 + i]) - float(cmfi_day8[i])) > 1e-6 for i in range(24) if not _is_na(cmfi_day8[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -1967,8 +1969,12 @@ plot(ta.cmf(3), title="ccmf")
         assert abs(float(hcmf[-1]) - expect_cmf) < 1e-9
         cobv_day5 = out["series"]["cobv"][5 * 24 : 6 * 24]
         ccmf_day5 = out["series"]["ccmf"][5 * 24 : 6 * 24]
-        assert any(abs(float(hobv[5 * 24 + i]) - float(cobv_day5[i])) > 1e-6 for i in range(24) if not _is_na(cobv_day5[i]))
-        assert any(abs(float(hcmf[5 * 24 + i]) - float(ccmf_day5[i])) > 1e-6 for i in range(24) if not _is_na(ccmf_day5[i]))
+        assert any(
+            abs(float(hobv[5 * 24 + i]) - float(cobv_day5[i])) > 1e-6 for i in range(24) if not _is_na(cobv_day5[i])
+        )
+        assert any(
+            abs(float(hcmf[5 * 24 + i]) - float(ccmf_day5[i])) > 1e-6 for i in range(24) if not _is_na(ccmf_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2024,8 +2030,12 @@ plot(ta.pvi(), title="cpvi")
         assert abs(float(hpvi[-1]) - expect_pvi) < 1e-9
         cnvi_day5 = out["series"]["cnvi"][5 * 24 : 6 * 24]
         cpvi_day5 = out["series"]["cpvi"][5 * 24 : 6 * 24]
-        assert any(abs(float(hnvi[5 * 24 + i]) - float(cnvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cnvi_day5[i]))
-        assert any(abs(float(hpvi[5 * 24 + i]) - float(cpvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cpvi_day5[i]))
+        assert any(
+            abs(float(hnvi[5 * 24 + i]) - float(cnvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cnvi_day5[i])
+        )
+        assert any(
+            abs(float(hpvi[5 * 24 + i]) - float(cpvi_day5[i])) > 1e-6 for i in range(24) if not _is_na(cpvi_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2078,8 +2088,12 @@ plot(ta.wad(), title="cwad")
         assert abs(float(hwad[-1]) - expect_wad) < 1e-9
         cad_day5 = out["series"]["cad"][5 * 24 : 6 * 24]
         cwad_day5 = out["series"]["cwad"][5 * 24 : 6 * 24]
-        assert any(abs(float(had[5 * 24 + i]) - float(cad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cad_day5[i]))
-        assert any(abs(float(hwad[5 * 24 + i]) - float(cwad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwad_day5[i]))
+        assert any(
+            abs(float(had[5 * 24 + i]) - float(cad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cad_day5[i])
+        )
+        assert any(
+            abs(float(hwad[5 * 24 + i]) - float(cwad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwad_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2133,8 +2147,12 @@ plot(ta.tsi(2, 3), title="ctsi")
         assert abs(float(htsi[-1]) - float(expect_tsi)) < 1e-9
         ctr_day5 = out["series"]["ctr"][5 * 24 : 6 * 24]
         ctsi_day5 = out["series"]["ctsi"][5 * 24 : 6 * 24]
-        assert any(abs(float(htr[5 * 24 + i]) - float(ctr_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctr_day5[i]))
-        assert any(abs(float(htsi[5 * 24 + i]) - float(ctsi_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctsi_day5[i]))
+        assert any(
+            abs(float(htr[5 * 24 + i]) - float(ctr_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctr_day5[i])
+        )
+        assert any(
+            abs(float(htsi[5 * 24 + i]) - float(ctsi_day5[i])) > 1e-6 for i in range(24) if not _is_na(ctsi_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2180,7 +2198,9 @@ plot(ta.bbw(close, 3, 2), title="cbbw")
         assert abs(float(hbbw[-1]) - expect_bbw) < 1e-9
         assert abs(float(hbbw2[-1]) - expect_bbw) < 1e-9
         cbbw_day5 = out["series"]["cbbw"][5 * 24 : 6 * 24]
-        assert any(abs(float(hbbw[5 * 24 + i]) - float(cbbw_day5[i])) > 1e-6 for i in range(24) if not _is_na(cbbw_day5[i]))
+        assert any(
+            abs(float(hbbw[5 * 24 + i]) - float(cbbw_day5[i])) > 1e-6 for i in range(24) if not _is_na(cbbw_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2343,9 +2363,7 @@ plot(ta.percentile_nearest_rank(close, 3, 50), title="cpnr")
         assert abs(float(hpli[-1]) - expect_pli) < 1e-9
         cpnr_day5 = out["series"]["cpnr"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hpnr[5 * 24 + i]) - float(cpnr_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cpnr_day5[i])
+            abs(float(hpnr[5 * 24 + i]) - float(cpnr_day5[i])) > 1e-6 for i in range(24) if not _is_na(cpnr_day5[i])
         )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
@@ -2408,9 +2426,7 @@ plot(ta.dpo(3), title="cdpo")
         assert abs(float(hxu[-1]) - expect_xu) < 1e-9
         cdpo_day5 = out["series"]["cdpo"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hdpo[5 * 24 + i]) - float(cdpo_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cdpo_day5[i])
+            abs(float(hdpo[5 * 24 + i]) - float(cdpo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cdpo_day5[i])
         )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
@@ -2455,9 +2471,7 @@ plot(ta.correlation(close, volume, 3), title="ccorr")
         assert abs(float(hcorr[-1]) - expect_corr) < 1e-9
         ccorr_day5 = out["series"]["ccorr"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hcorr[5 * 24 + i]) - float(ccorr_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(ccorr_day5[i])
+            abs(float(hcorr[5 * 24 + i]) - float(ccorr_day5[i])) > 1e-6 for i in range(24) if not _is_na(ccorr_day5[i])
         )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
@@ -2509,9 +2523,7 @@ plot(ta.dpo(3), title="cdpo")
         assert abs(float(hx[-1]) - expect_x) < 1e-9
         cdpo_day5 = out["series"]["cdpo"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hdpo[5 * 24 + i]) - float(cdpo_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cdpo_day5[i])
+            abs(float(hdpo[5 * 24 + i]) - float(cdpo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cdpo_day5[i])
         )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
@@ -2573,8 +2585,12 @@ plot(ta.wvad(3), title="cwvad")
         assert abs(float(hwvad[-1]) - expect_wvad) < 1e-9
         cvpt_day5 = out["series"]["cvpt"][5 * 24 : 6 * 24]
         cwvad_day5 = out["series"]["cwvad"][5 * 24 : 6 * 24]
-        assert any(abs(float(hvpt[5 * 24 + i]) - float(cvpt_day5[i])) > 1e-6 for i in range(24) if not _is_na(cvpt_day5[i]))
-        assert any(abs(float(hwvad[5 * 24 + i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i]))
+        assert any(
+            abs(float(hvpt[5 * 24 + i]) - float(cvpt_day5[i])) > 1e-6 for i in range(24) if not _is_na(cvpt_day5[i])
+        )
+        assert any(
+            abs(float(hwvad[5 * 24 + i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2627,8 +2643,12 @@ plot(ta.apo(close, 2, 3), title="capo")
         assert abs(float(hapo[-1]) - float(expect_apo)) < 1e-9
         cuo_day5 = out["series"]["cuo"][5 * 24 : 6 * 24]
         capo_day5 = out["series"]["capo"][5 * 24 : 6 * 24]
-        assert any(abs(float(huo[5 * 24 + i]) - float(cuo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cuo_day5[i]))
-        assert any(abs(float(hapo[5 * 24 + i]) - float(capo_day5[i])) > 1e-6 for i in range(24) if not _is_na(capo_day5[i]))
+        assert any(
+            abs(float(huo[5 * 24 + i]) - float(cuo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cuo_day5[i])
+        )
+        assert any(
+            abs(float(hapo[5 * 24 + i]) - float(capo_day5[i])) > 1e-6 for i in range(24) if not _is_na(capo_day5[i])
+        )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})
         assert pol.get("htf_reeval") is False
@@ -2669,9 +2689,7 @@ plot(ta.emv(3), title="cemv")
         assert abs(float(hemv[-1]) - float(expect_emv)) < 1e-9
         cemv_day5 = out["series"]["cemv"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hemv[5 * 24 + i]) - float(cemv_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cemv_day5[i])
+            abs(float(hemv[5 * 24 + i]) - float(cemv_day5[i])) > 1e-6 for i in range(24) if not _is_na(cemv_day5[i])
         )
         pol = (out.get("meta") or {}).get("request_security") or {}
         assert "htf_simple_ta_resample" in (pol.get("policies") or {})

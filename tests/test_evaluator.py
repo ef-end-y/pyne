@@ -1601,10 +1601,10 @@ def test_evaluator_input_source_list_override_by_bar_index():
     h = _H()
     h.context = {"bar_index": 2}  # type: ignore[attr-defined]
     h._input_overrides = {"Source": [10.0, 20.0, 30.0, 40.0]}  # type: ignore[attr-defined]
-    out = h._handle_input_source([ "close", "Source" ])
+    out = h._handle_input_source(["close", "Source"])
     assert out == 30.0
     h.context = {"bar_index": 0}  # type: ignore[attr-defined]
-    out0 = h._handle_input_source([ "close", "Source" ])
+    out0 = h._handle_input_source(["close", "Source"])
     assert out0 == 10.0
 
 
@@ -1708,9 +1708,7 @@ plot(1)
     assert enums[0]["group"] == "G"
     # options inferred from enum or empty — must not crash
     assert isinstance(enums[0]["options"], list)
-    assert enums[0]["value"] in ("Easing.linear", "linear") or str(enums[0]["value"]).endswith(
-        "linear"
-    )
+    assert enums[0]["value"] in ("Easing.linear", "linear") or str(enums[0]["value"]).endswith("linear")
 
 
 def test_evaluator_input_with_all_parameters():
@@ -2687,4 +2685,3 @@ def test_strategy_entry_qualified_path_still_dispatches():
         assert site[1] == "strategy.entry"
     else:
         raise AssertionError(f"unexpected site kind {kind}: {site!r}")
-

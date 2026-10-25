@@ -518,11 +518,7 @@ def _string_constants_containing(tree, needle: str) -> list[str]:
     from pynescript.ast import walk
     from pynescript.ast.grammar.asdl.generated.PinescriptASTNode import Constant
 
-    return [
-        n.value
-        for n in walk(tree)
-        if isinstance(n, Constant) and isinstance(n.value, str) and needle in n.value
-    ]
+    return [n.value for n in walk(tree) if isinstance(n, Constant) and isinstance(n.value, str) and needle in n.value]
 
 
 class TestMultilineStrings:

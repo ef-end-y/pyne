@@ -428,10 +428,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
             try:
                 out.append(abs(item))
             except TypeError:
-                self._error(
-                    "array.abs requires numeric elements "
-                    f"(got {self._type_name(item)})"
-                )
+                self._error(f"array.abs requires numeric elements (got {self._type_name(item)})")
         return out
 
     def _builtin_array_avg(self, args: list[Any]) -> float | None:
@@ -568,10 +565,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
                 try:
                     start = self._coerce_index(raw_from, soft=False)
                 except (TypeError, ValueError):
-                    self._error(
-                        "array.fill index_from must be int "
-                        f"(got {self._type_name(raw_from)})"
-                    )
+                    self._error(f"array.fill index_from must be int (got {self._type_name(raw_from)})")
                 if start is None:
                     start = 0
             if raw_to is None:
@@ -580,10 +574,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
                 try:
                     end = self._coerce_index(raw_to, soft=False)
                 except (TypeError, ValueError):
-                    self._error(
-                        "array.fill index_to must be int "
-                        f"(got {self._type_name(raw_to)})"
-                    )
+                    self._error(f"array.fill index_to must be int (got {self._type_name(raw_to)})")
                 if end is None:
                     end = n
             start = max(start, 0)
@@ -635,9 +626,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
         if sequence is None:
             return None
         raw_index = self._as_scalar(args[1])
-        if raw_index is None or (
-            isinstance(raw_index, float) and raw_index != raw_index
-        ):
+        if raw_index is None or (isinstance(raw_index, float) and raw_index != raw_index):
             self._error("array.insert index must be int (got na)")
         if isinstance(raw_index, bool):
             index = int(raw_index)
@@ -646,17 +635,12 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
         elif isinstance(raw_index, int):
             index = raw_index
         else:
-            self._error(
-                "array.insert index must be int "
-                f"(got {self._type_name(raw_index)})"
-            )
+            self._error(f"array.insert index must be int (got {self._type_name(raw_index)})")
         n = len(sequence)
         if index < 0:
             index = n + index
             if index < 0:
-                self._error(
-                    f"array.insert index out of bounds: {index} (size={n})"
-                )
+                self._error(f"array.insert index out of bounds: {index} (size={n})")
         # index > len appends (Python list.insert clamps); allow == len as append
         sequence.insert(index, self._array_snapshot_value(args[2]))
         return sequence
@@ -813,11 +797,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
         # Snapshot series handles (``array.set(a, i, close)``) so slots hold
         # bar values, not live PineSeries that all track the latest sample.
         store_val = args[2]
-        if (
-            store_val is not None
-            and hasattr(store_val, "current")
-            and hasattr(store_val, "history")
-        ):
+        if store_val is not None and hasattr(store_val, "current") and hasattr(store_val, "history"):
             store_val = getattr(store_val, "current", store_val)
         if idx_guess < 0:
             # v6: count from end; OOB negative → no-op (not grow)
@@ -1021,9 +1001,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
             return None
         return sum(nums)
 
-    def _parse_binary_search_args(
-        self, args: list[Any], name: str
-    ) -> tuple[list[Any], Any, Any]:
+    def _parse_binary_search_args(self, args: list[Any], name: str) -> tuple[list[Any], Any, Any]:
         """Return ``(sequence, value, sort_field)`` for ``array.binary_search*``.
 
         Forms: ``(id, value)``, ``(id, value, sort_field)``, kwargs via
@@ -1110,9 +1088,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
                     left = mid + 1
                 else:
                     right = mid
-            if left < n and self._key_eq(
-                self._search_elem_key(sequence[left], sort_field), target
-            ):
+            if left < n and self._key_eq(self._search_elem_key(sequence[left], sort_field), target):
                 return left
             return -1
 
@@ -1124,9 +1100,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
                     right = mid
                 else:
                     left = mid + 1
-            if left > 0 and self._key_eq(
-                self._search_elem_key(sequence[left - 1], sort_field), target
-            ):
+            if left > 0 and self._key_eq(self._search_elem_key(sequence[left - 1], sort_field), target):
                 return left - 1
             return -1
 
@@ -1148,9 +1122,7 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
         August 2026: UDT arrays compare ``sort_field`` (const int index, default
         0, or const string name). Array must be sorted by that field ascending.
         """
-        sequence, value, sort_field = self._parse_binary_search_args(
-            args, "array.binary_search"
-        )
+        sequence, value, sort_field = self._parse_binary_search_args(args, "array.binary_search")
         return self._binary_search_by_field(sequence, value, sort_field, side="any")
 
     def _builtin_array_mode(self, args: list[Any]) -> Any:
@@ -1198,13 +1170,9 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
 
     def _builtin_array_binary_search_leftmost(self, args: list[Any]) -> int:
         """``array.binary_search_leftmost(id, value, sort_field?)`` — first match or ``-1``."""
-        sequence, value, sort_field = self._parse_binary_search_args(
-            args, "array.binary_search_leftmost"
-        )
+        sequence, value, sort_field = self._parse_binary_search_args(args, "array.binary_search_leftmost")
         # Primitive + na: linear first index (reference soft-fail).
-        if sort_field is None and not any(
-            self._looks_like_udt(x) for x in sequence if x is not None
-        ):
+        if sort_field is None and not any(self._looks_like_udt(x) for x in sequence if x is not None):
             if value is None or any(x is None for x in sequence):
                 try:
                     return sequence.index(value)
@@ -1214,12 +1182,8 @@ class ArrayBuiltinsMixin(BuiltinDispatchMixin):
 
     def _builtin_array_binary_search_rightmost(self, args: list[Any]) -> int:
         """``array.binary_search_rightmost(id, value, sort_field?)`` — last match or ``-1``."""
-        sequence, value, sort_field = self._parse_binary_search_args(
-            args, "array.binary_search_rightmost"
-        )
-        if sort_field is None and not any(
-            self._looks_like_udt(x) for x in sequence if x is not None
-        ):
+        sequence, value, sort_field = self._parse_binary_search_args(args, "array.binary_search_rightmost")
+        if sort_field is None and not any(self._looks_like_udt(x) for x in sequence if x is not None):
             if value is None or any(x is None for x in sequence):
                 try:
                     return len(sequence) - 1 - sequence[::-1].index(value)

@@ -304,9 +304,7 @@ def set_enabled(script_id: str, *, enabled: bool) -> bool:
 def get_cron_state(script_id: str) -> dict[str, Any]:
     conn = _connect()
     with _lock:
-        row = conn.execute(
-            "SELECT * FROM cron_state WHERE script_id = ?", (script_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM cron_state WHERE script_id = ?", (script_id,)).fetchone()
     if row is None:
         return {
             "script_id": script_id,

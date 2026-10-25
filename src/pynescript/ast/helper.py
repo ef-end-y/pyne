@@ -140,6 +140,7 @@ def _thread_parse_engine() -> _ThreadParseEngine:
         _PARSE_TLS.engine = eng
     return eng
 
+
 # Cached after first annotation pass (avoids circular import at module load).
 _StatementCollector = None
 
@@ -688,6 +689,7 @@ def dump(
     Raises:
         TypeError: If ``node`` is not an :class:`~pynescript.ast.node.AST`.
     """
+
     def _format(node, level=0):
         # Prepare indentation and separator based on indent parameter
         if indent is not None:

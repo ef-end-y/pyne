@@ -105,7 +105,14 @@ class TestRuntimeCompileMode:
         from backend.runtime import Runtime
 
         bars = [
-            {"open": float(100 + i), "high": float(101 + i), "low": float(99 + i), "close": float(100 + i), "volume": 1.0, "time": i}
+            {
+                "open": float(100 + i),
+                "high": float(101 + i),
+                "low": float(99 + i),
+                "close": float(100 + i),
+                "volume": 1.0,
+                "time": i,
+            }
             for i in range(40)
         ]
         src = """//@version=6
@@ -623,9 +630,7 @@ plot(strategy.position_size, title="ps")
             assert "from_entry=" in ln, ln
             assert "id=" not in ln or "from_entry=" in ln
             # Must not emit bare id= for the entry filter (would break market exits)
-            assert "from_entry='L'" in ln or 'from_entry="L"' in ln or "from_entry='L'" in ln.replace(
-                '"', "'"
-            ), ln
+            assert "from_entry='L'" in ln or 'from_entry="L"' in ln or "from_entry='L'" in ln.replace('"', "'"), ln
             assert "comment=" in ln
             assert "loss=10" in ln
             assert "profit=20" in ln
@@ -1128,6 +1133,7 @@ plot(sqrt(close), title="s")
         o, h, l, c, v = _ohlcv(15)
         out = compiled.run(o, h, l, c, v)
         assert abs(out["s"][-1] - (c[-1] ** 0.5)) < 1e-6
+
 
 class TestCompileCoverageSprint5:
     def test_sprint5_udf_ta_source(self) -> None:
@@ -1767,6 +1773,7 @@ plot(float(f), title="p")
         out = compiled.run(o, h, l, c, v)
         assert np.isnan(out["p"][-1])
 
+
 class TestCompileCoverageSprint6Materialize:
     """Non-array TA sources: materialize math.abs / arithmetic into synthetic series."""
 
@@ -1914,7 +1921,6 @@ plot(mfi(close, 2), title="m")
         o, h, l, c, v = _ohlcv(15)
         out = compiled.run(o, h, l, c, v)
         assert abs(out["m"][-1] - (c[-1] + 2.0)) < 1e-9
-
 
 
 class TestSprint6PlotFillExpr:
@@ -2468,6 +2474,7 @@ plot(p.price, title="p")
         out = compiled.run(o, h, l, c, v)
         assert abs(out["p"][-1] - c[-1]) < 1e-9
 
+
 # --- matrix/array set03 ---
 class TestSet03MatrixArrayApis:
     def test_array_sort_indices_object_mode(self) -> None:
@@ -2636,16 +2643,12 @@ plot(ta.min(close), title="mn")
                 assert abs(float(a) - float(b)) < 1e-12
             # gap to end + rewind mid
             st = np.full(3 + occ + 1, np.nan)
-            assert (
-                abs(
-                    float(nb.numba_valuewhen(cond, arr, occ, n - 1))
-                    - float(nb.numba_valuewhen_inc(cond, arr, occ, n - 1, st))
-                )
-                < 1e-12
-                or (
-                    np.isnan(nb.numba_valuewhen(cond, arr, occ, n - 1))
-                    and np.isnan(nb.numba_valuewhen_inc(cond, arr, occ, n - 1, st))
-                )
+            assert abs(
+                float(nb.numba_valuewhen(cond, arr, occ, n - 1))
+                - float(nb.numba_valuewhen_inc(cond, arr, occ, n - 1, st))
+            ) < 1e-12 or (
+                np.isnan(nb.numba_valuewhen(cond, arr, occ, n - 1))
+                and np.isnan(nb.numba_valuewhen_inc(cond, arr, occ, n - 1, st))
             )
             mid = n // 2
             b = nb.numba_valuewhen_inc(cond, arr, occ, mid, st)
@@ -3377,9 +3380,9 @@ plot(ta.sma(close, 5), title="s")
         # Drop memory caches; disk should rehydrate without re-parse path issues
         clear_compile_cache()
         b = cs(src)
-        assert b.generated_code.replace("@numba.njit(cache=True)", "@numba.njit(cache=False)") == a.generated_code.replace(
+        assert b.generated_code.replace(
             "@numba.njit(cache=True)", "@numba.njit(cache=False)"
-        )
+        ) == a.generated_code.replace("@numba.njit(cache=True)", "@numba.njit(cache=False)")
         o, h, l, c, v = _ohlcv(40)
         assert np.allclose(a.run(o, h, l, c, v)["s"], b.run(o, h, l, c, v)["s"], equal_nan=True)
 
@@ -3748,9 +3751,7 @@ plot(ta.uo(7, 14, 28), title="uo")
         hh = np.array([10.0, 11.0, 12.0, 10.0])
         ll = np.array([8.0, 8.0, 9.0, 7.0])
         cc = np.array([9.0, 10.0, 11.0, 8.0])
-        assert nb.numba_uo(hh, ll, cc, 1, 1, 2, 3) == pytest.approx(
-            100.0 * (4.0 * 0.25 + 2.0 * 0.25 + 3.0 / 7.0) / 7.0
-        )
+        assert nb.numba_uo(hh, ll, cc, 1, 1, 2, 3) == pytest.approx(100.0 * (4.0 * 0.25 + 2.0 * 0.25 + 3.0 / 7.0) / 7.0)
 
         # cmo zero-momentum flat series → 0 after seed
         flat = np.full(30, 50.0)
@@ -3924,7 +3925,9 @@ class TestAdxDmiBuiltinScriptPlotParity:
     """
 
     @staticmethod
-    def _synth_bars(n: int = 150, seed: int = 42) -> tuple[list[dict], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def _synth_bars(
+        n: int = 150, seed: int = 42
+    ) -> tuple[list[dict], np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         rng = np.random.default_rng(seed)
         close = 100.0 + np.cumsum(rng.normal(0, 1, n))
         high = close + rng.uniform(0.1, 2.0, n)
@@ -3945,7 +3948,9 @@ class TestAdxDmiBuiltinScriptPlotParity:
         return bars, open_, high, low, close, vol
 
     @staticmethod
-    def _series_max_err(interp_vals, compile_vals, *, rel: float = 1e-5, abs_: float = 1e-6) -> tuple[float, int, object]:
+    def _series_max_err(
+        interp_vals, compile_vals, *, rel: float = 1e-5, abs_: float = 1e-6
+    ) -> tuple[float, int, object]:
         """Max |i-c| over bars where both defined; return (max_err, n_both, first_div)."""
         max_err = 0.0
         n_both = 0
@@ -4488,9 +4493,7 @@ plot(ta.cmf(20), title="cmf")
             for key, full in (("kama", fk), ("cmf", fc)):
                 interp = ri["series"][key][i]
                 comp = out[key][i]
-                if np.isnan(full) and (
-                    interp is None or (isinstance(interp, float) and np.isnan(interp))
-                ):
+                if np.isnan(full) and (interp is None or (isinstance(interp, float) and np.isnan(interp))):
                     assert np.isnan(comp)
                     continue
                 assert abs(float(full) - float(interp)) <= 1e-9, f"{key}[{i}] interp"
@@ -4549,9 +4552,7 @@ plot(sr.signal, title="d")
             for key, full in (("k", fk), ("d", fd)):
                 interp = ri["series"][key][i]
                 comp = out[key][i]
-                if np.isnan(full) and (
-                    interp is None or (isinstance(interp, float) and np.isnan(interp))
-                ):
+                if np.isnan(full) and (interp is None or (isinstance(interp, float) and np.isnan(interp))):
                     assert np.isnan(comp)
                     continue
                 assert abs(float(full) - float(interp)) <= 1e-9, f"{key}[{i}] interp"
@@ -4650,4 +4651,3 @@ plot(w, title="w")
                 assert np.isnan(inc), i
             else:
                 assert abs(float(full) - float(inc)) < 1e-10, i
-

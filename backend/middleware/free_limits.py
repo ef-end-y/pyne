@@ -191,8 +191,7 @@ def check_free_rate_limit() -> tuple[dict[str, Any], int] | None:
             "status": "error",
             "code": "RATE_LIMITED",
             "message": (
-                f"Free-tier rate limit exceeded ({max_req} requests / "
-                f"{int(window)}s). Retry later or use an API key."
+                f"Free-tier rate limit exceeded ({max_req} requests / {int(window)}s). Retry later or use an API key."
             ),
         },
         429,
@@ -214,8 +213,7 @@ def acquire_free_slot() -> tuple[dict[str, Any], int] | None:
             "status": "error",
             "code": "TOO_MANY_REQUESTS",
             "message": (
-                f"Free-tier concurrency limit reached "
-                f"({max_free_concurrent()} simultaneous runs). Retry shortly."
+                f"Free-tier concurrency limit reached ({max_free_concurrent()} simultaneous runs). Retry shortly."
             ),
         },
         429,
@@ -255,10 +253,7 @@ def validate_free_run_bounds(
                     {
                         "status": "error",
                         "code": "SCRIPT_TOO_LARGE",
-                        "message": (
-                            f"Script exceeds free-tier limit "
-                            f"({max_chars} characters)."
-                        ),
+                        "message": (f"Script exceeds free-tier limit ({max_chars} characters)."),
                     },
                     413,
                 )

@@ -180,11 +180,7 @@ plot(close, "c")
     assert "up_bg" in rc["series"], sorted(rc["series"])
     assert "bgcolor" not in rc["series"]
     # Visuals live in series; Runtime compile drawings are geometry-only (interpret parity)
-    kinds = {
-        str(d.get("type") or d.get("kind") or "")
-        for d in (rc.get("drawings") or [])
-        if isinstance(d, dict)
-    }
+    kinds = {str(d.get("type") or d.get("kind") or "") for d in (rc.get("drawings") or []) if isinstance(d, dict)}
     assert "bgcolor" not in kinds
 
 
@@ -207,9 +203,7 @@ plot(close, "c")
     compiled = compile_script(src, use_cache=False)
     close = np.array([b["close"] for b in bars], dtype=np.float64)
     raw = compiled.run(close, close + 1, close - 1, close, np.ones(len(bars)))
-    series, meta = materialize_visual_series_from_drawings(
-        raw.get("__drawings") or [], len(bars), existing_keys=()
-    )
+    series, meta = materialize_visual_series_from_drawings(raw.get("__drawings") or [], len(bars), existing_keys=())
     assert "bgcolor" in series and "bgcolor_2" in series
     assert meta["bgcolor"].get("kind") == "bgcolor"
     # Color strings present most bars
@@ -230,9 +224,7 @@ plot(close, "c")
     close = np.array([b["close"] for b in bars], dtype=np.float64)
     raw = compiled.run(close, close + 1, close - 1, close, np.ones(len(bars)))
     series: dict = {}
-    DrawingRegistry.merge_visual_series_from_drawings(
-        series, raw.get("__drawings") or [], len(bars)
-    )
+    DrawingRegistry.merge_visual_series_from_drawings(series, raw.get("__drawings") or [], len(bars))
     assert "mark" in series
     assert len(series["mark"]) == len(bars)
     assert all(v is True or v == 1 for v in series["mark"])

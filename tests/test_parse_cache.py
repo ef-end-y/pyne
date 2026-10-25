@@ -167,9 +167,7 @@ plot(close)
 def test_tls_parse_concurrent_distinct_sources(monkeypatch):
     """Each thread has its own ANTLR engine; distinct sources must not collide."""
     monkeypatch.setenv("PYNE_PARSE_CACHE", "0")
-    sources = [
-        f'//@version=5\nindicator("t{i}")\nplot(close + {i})\n' for i in range(12)
-    ]
+    sources = [f'//@version=5\nindicator("t{i}")\nplot(close + {i})\n' for i in range(12)]
     errors: list[BaseException] = []
     dumps: dict[int, str] = {}
     lock = threading.Lock()

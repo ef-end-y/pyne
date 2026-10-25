@@ -206,11 +206,7 @@ def build_strategy_stats(
         if "entry" in kind or kind in {"long", "short"}:
             open_one(eid, ev, p, t, kind)
             continue
-        if not (
-            "close" in kind
-            or "exit" in kind
-            or kind in {"closelong", "closeshort"}
-        ):
+        if not ("close" in kind or "exit" in kind or kind in {"closelong", "closeshort"}):
             continue
         if ev.get("qty") == 0:
             continue

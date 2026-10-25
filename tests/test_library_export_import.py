@@ -300,9 +300,7 @@ class TestRuntimeGitPublishLibraries:
         vals = series.get("plot_0") or out.get("plots") or []
         if "error" in out:
             msg = str(out.get("error") or "")
-            assert any(
-                token in msg for token in ("Lib", "ns/", "FOO", "import", "Unknown")
-            )
+            assert any(token in msg for token in ("Lib", "ns/", "FOO", "import", "Unknown"))
             return
         assert vals
         assert all(v is None for v in vals)
@@ -319,9 +317,7 @@ export const float BAR = 9.0
             _AXIS_CONSUMER_FOO,
             _ohlcv(3),
             mode="interpret",
-            libraries=[
-                {"namespace": "ns", "name": "Lib", "version": 1, "source": lib}
-            ],
+            libraries=[{"namespace": "ns", "name": "Lib", "version": 1, "source": lib}],
         )
         assert "error" in out, f"expected fail-closed, got: {list(out.keys())}"
         assert "FOO" in str(out.get("error") or "")

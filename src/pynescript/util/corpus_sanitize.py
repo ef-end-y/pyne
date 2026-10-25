@@ -1126,7 +1126,11 @@ def _line_filter(source: str) -> str:
             cleaned.strip()
             and not cleaned.lstrip().startswith("//")
             and not _SHELL_IF_RE.match(cleaned)
-            and ("=" in cleaned or "(" in cleaned or cleaned.lstrip().startswith(("if ", "for ", "while ", "switch ", "once ")))
+            and (
+                "=" in cleaned
+                or "(" in cleaned
+                or cleaned.lstrip().startswith(("if ", "for ", "while ", "switch ", "once "))
+            )
         ):
             saw_pine = True
 

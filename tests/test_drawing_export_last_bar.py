@@ -211,11 +211,7 @@ plot(close)
         close = np.arange(10.0, 10.0 + n, dtype=np.float64)
         out = compiled.run(close, close + 1, close - 1, close, np.ones(n))
         drawings = out.get("__drawings") or []
-        methods = {
-            d.get("method")
-            for d in drawings
-            if isinstance(d, dict) and d.get("kind") == "delete"
-        }
+        methods = {d.get("method") for d in drawings if isinstance(d, dict) and d.get("kind") == "delete"}
         assert "label_delete" in methods
         assert "box_delete" in methods
         assert "polyline_delete" in methods
@@ -235,9 +231,7 @@ class TestExportLineFill:
         l1 = Line(x1=0, y1=10.0, x2=3, y2=12.0, xloc="bar_index", color="#f00")
         l2 = Line(x1=0, y1=5.0, x2=3, y2=7.0, xloc="bar_index", color="#0f0")
         DrawingRegistry.lines.extend([l1, l2])
-        DrawingRegistry.linefills.append(
-            LineFill(line1=l1, line2=l2, color="rgba(41,98,255,0.2)")
-        )
+        DrawingRegistry.linefills.append(LineFill(line1=l1, line2=l2, color="rgba(41,98,255,0.2)"))
         out = DrawingRegistry.export_for_api(times)
         fills = [d for d in out if d.get("type") == "linefill"]
         assert len(fills) == 1

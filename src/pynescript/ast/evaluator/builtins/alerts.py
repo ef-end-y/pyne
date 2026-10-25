@@ -317,9 +317,7 @@ def export_alerts_from_evaluator(evaluator: Any) -> list[dict[str, Any]]:
             return list(out) if out else []
         except Exception:
             return []
-    raw = getattr(evaluator, "_triggered_alerts", None) or getattr(
-        evaluator, "get_triggered_alerts", None
-    )
+    raw = getattr(evaluator, "_triggered_alerts", None) or getattr(evaluator, "get_triggered_alerts", None)
     if callable(raw):
         try:
             items = raw()

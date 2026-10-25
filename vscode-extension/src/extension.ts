@@ -60,6 +60,11 @@ export const COMMANDS = {
   showLspOutput: 'pynescript.showLspOutput',
   showLspCommand: 'pynescript.showLspCommand',
   convertToV6: 'pynescript.convertToV6',
+  diagnosticsToggle: 'pynescript.diagnosticsToggle',
+  completionToggle: 'pynescript.completionToggle',
+  inlayHintsToggle: 'pynescript.inlayHintsToggle',
+  foldingToggle: 'pynescript.foldingToggle',
+  colorPreviewToggle: 'pynescript.colorPreviewToggle',
 } as const;
 
 let client: LanguageClient | undefined;
@@ -436,6 +441,42 @@ function registerCommands(context: ExtensionContext): void {
         return;
       }
       void window.showInformationMessage('Converted script to Pine v6.');
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(COMMANDS.diagnosticsToggle, async () => {
+      const currently = cfg<boolean>('diagnostics.enabled');
+      setDiagnosticsEnabled(!currently);
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(COMMANDS.completionToggle, async () => {
+      const currently = cfg<boolean>('completion.snippets');
+      setCompletionEnabled(!currently);
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(COMMANDS.inlayHintsToggle, async () => {
+      const currently = cfg<boolean>('formatting.enabled');
+      setInlayHintsEnabled(!currently);
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(COMMANDS.foldingToggle, async () => {
+      // Folding is handled by the LSP server; toggle the config
+      const currently = cfg<boolean>('pynescript.formatting.enabled');
+      setFoldingEnabled(!currently);
+    }),
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand(COMMANDS.colorPreviewToggle, async () => {
+      // Color preview is handled by the LSP server
+      setColorPreviewEnabled(true);
     }),
   );
 }

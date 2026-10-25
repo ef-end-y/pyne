@@ -57,9 +57,7 @@ DEFAULT_SOURCE_OPTIONS: tuple[str, ...] = (
 )
 
 # Names resolvable from chart context / current_series (includes volume/tr).
-_BUILTIN_SOURCE_NAMES: frozenset[str] = frozenset(
-    (*DEFAULT_SOURCE_OPTIONS, "volume", "tr")
-)
+_BUILTIN_SOURCE_NAMES: frozenset[str] = frozenset((*DEFAULT_SOURCE_OPTIONS, "volume", "tr"))
 
 
 class InputBuiltinsMixin(BuiltinDispatchMixin):

@@ -142,7 +142,6 @@ class PinescriptASTLocator:
     to preserve source location information in AST nodes for error reporting.
     """
 
-
     def _setLocations(self, node: ast.AST, ctx: ParserRuleContext) -> ast.AST:
         """Attach location metadata from parser context to AST node.
 
@@ -197,7 +196,6 @@ class PinescriptCommentParser:
     - ``//# region`` / ``//# endregion`` → ``#`` (not attached as annotations)
     - plain ``// …`` → ``//``
     """
-
 
     _ASSIGNMENT_ANNOTATION_PATTERN = re.compile(r"^(//)(\s*)(@)(\s*)(version)(\s*)(=)(\s*)(.+)$")
     _SIMPLE_ANNOTATION_PATTERN = re.compile(
@@ -297,7 +295,6 @@ class PinescriptASTBuilder(
     resource grammar.
     """
 
-
     def _set_store_ctx(self, node):
         """Mark an assignment target tree as store (recurse into tuples).
 
@@ -348,9 +345,7 @@ class PinescriptASTBuilder(
         if trail:
             return self.visit(trail)
 
-    def visitTrailing_structure_statements(
-        self, ctx: PinescriptParser.Trailing_structure_statementsContext
-    ):
+    def visitTrailing_structure_statements(self, ctx: PinescriptParser.Trailing_structure_statementsContext):
         """Comma-separated simple statements ending with a structure (for/if/while/switch)."""
         stmts = [self.visit(s) for s in ctx.simple_statement()]
         structure = self.visit(ctx.structure())

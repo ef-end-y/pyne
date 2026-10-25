@@ -269,10 +269,7 @@ def run_study(
         )
 
     if val.mode == "in-sample":
-        warning = (
-            (warning + "; " if warning else "")
-            + "In-sample only overfits. Prefer holdout."
-        )
+        warning = (warning + "; " if warning else "") + "In-sample only overfits. Prefer holdout."
 
     n_bars = len(ohlcv)
     est = estimated_runs(n, val, n_bars, oos_every_trial=oos_every_trial)
@@ -345,9 +342,7 @@ def run_study(
                     train_sl, test_sl = split
                     is_stats, err = eval_window(_slice_bars(ohlcv, train_sl), params)
                     if err is None and oos_every_trial:
-                        run_bars, score_bars = _test_run_bars(
-                            ohlcv, train_sl, test_sl, val.warmup_bars
-                        )
+                        run_bars, score_bars = _test_run_bars(ohlcv, train_sl, test_sl, val.warmup_bars)
                         oos_stats, oos_err = eval_window(run_bars, params, score_bars)
                         if oos_err:
                             err = oos_err
@@ -369,9 +364,7 @@ def run_study(
                             break
                         if st is not None:
                             is_rows.append(st)
-                        run_bars, score_bars = _test_run_bars(
-                            ohlcv, train_sl, test_sl, val.warmup_bars
-                        )
+                        run_bars, score_bars = _test_run_bars(ohlcv, train_sl, test_sl, val.warmup_bars)
                         ot, e2 = eval_window(run_bars, params, score_bars)
                         if e2:
                             err = e2
@@ -384,9 +377,7 @@ def run_study(
 
             is_score = score_stats(is_stats, obj, min_trades=min_trades) if err is None else None
             oos_score = (
-                score_stats(oos_stats, obj, min_trades=min_trades)
-                if err is None and oos_stats is not None
-                else None
+                score_stats(oos_stats, obj, min_trades=min_trades) if err is None and oos_stats is not None else None
             )
             trial = TrialResult(
                 index=i,
@@ -414,6 +405,7 @@ def run_study(
     best_oos: float | None = None
     rankable = [t for t in history if t.error is None]
     if rankable:
+
         def key(t: TrialResult) -> tuple[float, float]:
             oos = t.oos_score if t.oos_score is not None else REJECT
             inn = t.is_score if t.is_score is not None else REJECT

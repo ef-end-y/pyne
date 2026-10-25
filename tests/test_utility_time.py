@@ -254,7 +254,6 @@ plot(timestamp(2024, m, 1, 0, 0))
 
 
 class TestTimePartArity:
-
     def test_hour_time_and_timezone(self) -> None:
         src = """//@version=5
 indicator("t")

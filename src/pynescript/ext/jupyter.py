@@ -195,7 +195,6 @@ def display_indicator_table(
     try:
         import pandas as pd  # optional dep, lazy import inside func
 
-
         df = pd.DataFrame(data)
         if columns:
             df = df[columns]

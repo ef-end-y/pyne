@@ -225,9 +225,7 @@ plot(x)
     assert any(isinstance(s, ast.Assign) and isinstance(s.target, ast.Name) and s.target.id == "x" for s in stmts)
     assert any(isinstance(s, ast.ReAssign) and isinstance(s.target, ast.Name) and s.target.id == "x" for s in stmts)
     assert any(
-        isinstance(s, ast.ReAssign)
-        and isinstance(s.target, ast.Attribute)
-        and s.target.attr == "initial_capital"
+        isinstance(s, ast.ReAssign) and isinstance(s.target, ast.Attribute) and s.target.attr == "initial_capital"
         for s in stmts
     )
 

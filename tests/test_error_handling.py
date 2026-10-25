@@ -267,9 +267,9 @@ plot(cl, "cl")
         assert series["lo"][1] is not None
         assert series["cl"][1] is not None
         # Must not collapse all three to the same last-of-list value
-        assert not (
-            series["hi"][1] == series["lo"][1] == series["cl"][1]
-        ) or True  # synthetic bars may coincide; structural unpack is enough
+        assert (
+            not (series["hi"][1] == series["lo"][1] == series["cl"][1]) or True
+        )  # synthetic bars may coincide; structural unpack is enough
         # Length parity
         assert len(series["hi"]) == len(series["lo"]) == len(series["cl"]) == 8
 

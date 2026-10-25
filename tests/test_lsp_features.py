@@ -315,10 +315,7 @@ class TestHoverHandler:
         assert result is not None
         assert isinstance(result, lsp.Hover)
         assert isinstance(result.contents, lsp.MarkupContent)
-        assert (
-            "https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma"
-            in result.contents.value
-        )
+        assert "https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma" in result.contents.value
 
     def test_handle_hover_line_fill(self) -> None:
         """Hover over ``line.fill`` (alias of linefill.new)."""
@@ -334,10 +331,7 @@ class TestHoverHandler:
         assert result is not None
         assert isinstance(result.contents, lsp.MarkupContent)
         assert "line.fill" in result.contents.value
-        assert (
-            "https://www.tradingview.com/pine-script-reference/v6/#fun_line.fill"
-            in result.contents.value
-        )
+        assert "https://www.tradingview.com/pine-script-reference/v6/#fun_line.fill" in result.contents.value
 
     def test_handle_hover_no_symbol(self) -> None:
         """Test hover where there's no symbol."""
@@ -545,19 +539,14 @@ s = Side.buy
         assert use_hover is not None
         assert isinstance(use_hover.contents, lsp.MarkupContent)
         assert "foo(a)" in use_hover.contents.value
-        assert (
-            "https://www.tradingview.com/pine-script-reference/v6/"
-            not in use_hover.contents.value
-        )
+        assert "https://www.tradingview.com/pine-script-reference/v6/" not in use_hover.contents.value
 
     def test_build_docs_link_only_dotted_labels(self) -> None:
         """Docs links are dotted-namespace builtins only; empty / undotted stay blank."""
         from pynescript.langserver.features.hover import _build_docs_link
 
         sma = _build_docs_link("ta.sma")
-        assert sma == (
-            "[Pine v6: ta.sma](https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma)\n"
-        )
+        assert sma == ("[Pine v6: ta.sma](https://www.tradingview.com/pine-script-reference/v6/#fun_ta.sma)\n")
         entry = _build_docs_link("strategy.entry")
         assert "fun_strategy.entry" in entry
         assert entry.endswith("\n")
@@ -1295,11 +1284,7 @@ _C002_LONG_TITLE = (
     "This is a very very very very very very very very very very very "
     "very very very very very very very very very very long line"
 )
-_C002_SRC = (
-    '//@version=6\n'
-    'indicator(  "t"  )\n'
-    f'plot(  ta.sma( close,14 ), title="{_C002_LONG_TITLE}"  )\n'
-)
+_C002_SRC = f'//@version=6\nindicator(  "t"  )\nplot(  ta.sma( close,14 ), title="{_C002_LONG_TITLE}"  )\n'
 
 
 def _code_action_params(uri: str = "file:///t.pine") -> lsp.CodeActionParams:
@@ -1363,11 +1348,7 @@ class TestC002QuickFix:
     def test_c002_quickfix_hidden_when_unparsed(self) -> None:
         from pynescript.ast.linter import lint_script
 
-        src = (
-            '//@version=6\n'
-            'indicator("t"\n'
-            f'plot(ta.sma(close, 14), title="{_C002_LONG_TITLE}")\n'
-        )
+        src = f'//@version=6\nindicator("t"\nplot(ta.sma(close, 14), title="{_C002_LONG_TITLE}")\n'
         warnings = lint_script(src)
         assert any(w.code == "C002" for w in warnings)
         assert handle_formatting(_format_params(), src) == []
@@ -2463,45 +2444,31 @@ class TestInlayHintParameters:
     def _param_labels(self, source: str) -> list[str]:
         hints = handle_inlay_hints(self._params(), source)
         assert hints is not None
-        return [
-            h.label if isinstance(h.label, str) else ""
-            for h in hints
-            if h.kind == lsp.InlayHintKind.Parameter
-        ]
+        return [h.label if isinstance(h.label, str) else "" for h in hints if h.kind == lsp.InlayHintKind.Parameter]
 
     def test_atr_length_parameter(self) -> None:
         labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.atr(14))\n')
         assert any("length" in label for label in labels)
 
     def test_correlation_parameter_names(self) -> None:
-        labels = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.correlation(close, volume, 20))\n'
-        )
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.correlation(close, volume, 20))\n')
         assert any("source1" in label for label in labels)
         assert any("source2" in label for label in labels)
         assert any("length" in label for label in labels)
 
     def test_roc_and_crossover_well_known_names(self) -> None:
-        roc = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.roc(close, 9))\n'
-        )
+        roc = self._param_labels('//@version=6\nindicator("T")\nplot(ta.roc(close, 9))\n')
         assert any("source" in label for label in roc)
         assert any("length" in label for label in roc)
-        cross = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.crossover(close, open))\n'
-        )
+        cross = self._param_labels('//@version=6\nindicator("T")\nplot(ta.crossover(close, open))\n')
         assert any("source1" in label for label in cross)
         assert any("source2" in label for label in cross)
 
     def test_strategy_entry_and_input_int_names(self) -> None:
-        entry = self._param_labels(
-            '//@version=6\nstrategy("T")\nstrategy.entry("L", strategy.long)\n'
-        )
+        entry = self._param_labels('//@version=6\nstrategy("T")\nstrategy.entry("L", strategy.long)\n')
         assert any("id" in label for label in entry)
         assert any("direction" in label for label in entry)
-        inp = self._param_labels(
-            '//@version=6\nindicator("T")\nn = input.int(5, "n")\n'
-        )
+        inp = self._param_labels('//@version=6\nindicator("T")\nn = input.int(5, "n")\n')
         assert any("defval" in label for label in inp)
         assert any("title" in label for label in inp)
 
@@ -2511,9 +2478,7 @@ class TestInlayHintParameters:
         assert not any("source" in label for label in labels)
 
     def test_cci_two_arg_source_length(self) -> None:
-        labels = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.cci(close, 14))\n'
-        )
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.cci(close, 14))\n')
         assert any("source" in label for label in labels)
         assert any("length" in label for label in labels)
 
@@ -2523,9 +2488,7 @@ class TestInlayHintParameters:
         assert not any("diLength" in label for label in labels)
 
     def test_adx_two_arg_dilength_adxsmoothing(self) -> None:
-        labels = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.adx(14, 14))\n'
-        )
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.adx(14, 14))\n')
         assert any("diLength" in label for label in labels)
         assert any("adxSmoothing" in label for label in labels)
 
@@ -2538,18 +2501,14 @@ class TestInlayHintParameters:
         assert not any("source" in label for label in bbw)
 
     def test_bbw_two_arg_is_length_mult_not_source(self) -> None:
-        labels = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.bbw(20, 2))\n'
-        )
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.bbw(20, 2))\n')
         assert any("length" in label for label in labels)
         assert any("mult" in label for label in labels)
         assert labels and "source" not in labels[0]
         assert not any("source" in label for label in labels)
 
     def test_bbw_three_arg_source_length_mult(self) -> None:
-        labels = self._param_labels(
-            '//@version=6\nindicator("T")\nplot(ta.bbw(close, 20, 2))\n'
-        )
+        labels = self._param_labels('//@version=6\nindicator("T")\nplot(ta.bbw(close, 20, 2))\n')
         assert any("source" in label for label in labels)
         assert any("length" in label for label in labels)
         assert any("mult" in label for label in labels)
@@ -2953,4 +2912,3 @@ class TestLinkedEditingRangeHandler:
             tree=None,
         )
         assert result is None or (result.ranges == [])
-

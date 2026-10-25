@@ -160,14 +160,10 @@ class PatternIndicators(TechnicalHelpers):
 
         # Check if current bar is a high fractal
         current_idx = len(highs) - 1
-        is_high_fractal = highs[current_idx] == max(
-            highs[current_idx - period : current_idx + period + 1]
-        )
+        is_high_fractal = highs[current_idx] == max(highs[current_idx - period : current_idx + period + 1])
 
         # Check if current bar is a low fractal
-        is_low_fractal = lows[current_idx] == min(
-            lows[current_idx - period : current_idx + period + 1]
-        )
+        is_low_fractal = lows[current_idx] == min(lows[current_idx - period : current_idx + period + 1])
 
         return {"is_high_fractal": is_high_fractal, "is_low_fractal": is_low_fractal}
 
@@ -204,18 +200,13 @@ class PatternIndicators(TechnicalHelpers):
 
         peaks = [recent_high[0]]
         for i in range(1, len(recent_high) - 1):
-            if (
-                recent_high[i] > recent_high[i - 1]
-                and recent_high[i] > recent_high[i + 1]
-            ):
+            if recent_high[i] > recent_high[i - 1] and recent_high[i] > recent_high[i + 1]:
                 peaks.append(recent_high[i])
 
         if len(peaks) >= 2:
             peak_diff = abs(peaks[-1] - peaks[-2])
             avg_peak = (peaks[-1] + peaks[-2]) / 2.0
-            strength = (
-                1.0 - min(1.0, peak_diff / avg_peak) if avg_peak > 0 else 0.0
-            )
+            strength = 1.0 - min(1.0, peak_diff / avg_peak) if avg_peak > 0 else 0.0
             breakout_level = min(recent_low) - (avg_peak * 0.1)
             return {
                 "pattern_type": "double_top",
@@ -313,18 +304,10 @@ class PatternIndicators(TechnicalHelpers):
         prev_close = closes[-2]
 
         # Bullish engulfing: current candle engulfs previous and is green
-        is_bullish = (
-            current_open < prev_close
-            and current_close > prev_open
-            and current_close > current_open
-        )
+        is_bullish = current_open < prev_close and current_close > prev_open and current_close > current_open
 
         # Bearish engulfing: current candle engulfs previous and is red
-        is_bearish = (
-            current_open > prev_close
-            and current_close < prev_open
-            and current_close < current_open
-        )
+        is_bearish = current_open > prev_close and current_close < prev_open and current_close < current_open
 
         # Pattern strength (0-1) based on how much body engulfed
         if is_bullish:
@@ -332,8 +315,7 @@ class PatternIndicators(TechnicalHelpers):
                 0,
                 min(
                     1,
-                    (current_close - prev_open)
-                    / abs(prev_open - prev_close + 0.0001),
+                    (current_close - prev_open) / abs(prev_open - prev_close + 0.0001),
                 ),
             )
         elif is_bearish:
@@ -341,8 +323,7 @@ class PatternIndicators(TechnicalHelpers):
                 0,
                 min(
                     1,
-                    (prev_open - current_close)
-                    / abs(prev_close - prev_open + 0.0001),
+                    (prev_open - current_close) / abs(prev_close - prev_open + 0.0001),
                 ),
             )
         else:
@@ -376,9 +357,7 @@ class PatternIndicators(TechnicalHelpers):
         is_doji = body_size < total_range * 0.1
 
         # Hammer: small body, long lower wick, short upper wick
-        is_hammer = (
-            body_size > 0 and lower_wick > body_size * 2 and upper_wick < body_size
-        )
+        is_hammer = body_size > 0 and lower_wick > body_size * 2 and upper_wick < body_size
 
         # Pattern strength
         if is_doji:
@@ -413,15 +392,11 @@ class PatternIndicators(TechnicalHelpers):
         if upside_gap > downside_gap:
             gap_size = upside_gap
             gap_type = 1  # Upside
-            gap_percent = (
-                (upside_gap / prev_close * 100) if prev_close != 0 else 0.0
-            )
+            gap_percent = (upside_gap / prev_close * 100) if prev_close != 0 else 0.0
         elif downside_gap > 0:
             gap_size = downside_gap
             gap_type = -1  # Downside
-            gap_percent = (
-                (downside_gap / prev_close * 100) if prev_close != 0 else 0.0
-            )
+            gap_percent = (downside_gap / prev_close * 100) if prev_close != 0 else 0.0
         else:
             gap_size = 0.0
             gap_type = 0  # No gap

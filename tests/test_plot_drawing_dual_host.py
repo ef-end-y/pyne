@@ -175,9 +175,7 @@ def _canon_geom(d: dict[str, Any]) -> tuple[Any, ...]:
     if kind == "box":
         return ("box", _num(d.get("t1")), _num(d.get("p1")), _num(d.get("t2")), _num(d.get("p2")), text, color)
     if kind == "polyline":
-        pts = tuple(
-            (p.get("time"), p.get("price")) for p in (d.get("points") or []) if isinstance(p, dict)
-        )
+        pts = tuple((p.get("time"), p.get("price")) for p in (d.get("points") or []) if isinstance(p, dict))
         return ("polyline", pts)
     if kind == "linefill":
         return (
@@ -221,14 +219,10 @@ def _assert_drawings_equal(interp: dict[str, Any], compiled: dict[str, Any]) -> 
     di = [d for d in (interp.get("drawings") or []) if isinstance(d, dict) and _geom_kind(d) in _GEOM]
     dc = [d for d in (compiled.get("drawings") or []) if isinstance(d, dict) and _geom_kind(d) in _GEOM]
     leftover_c = [
-        _geom_kind(d)
-        for d in (compiled.get("drawings") or [])
-        if isinstance(d, dict) and _geom_kind(d) not in _GEOM
+        _geom_kind(d) for d in (compiled.get("drawings") or []) if isinstance(d, dict) and _geom_kind(d) not in _GEOM
     ]
     leftover_i = [
-        _geom_kind(d)
-        for d in (interp.get("drawings") or [])
-        if isinstance(d, dict) and _geom_kind(d) not in _GEOM
+        _geom_kind(d) for d in (interp.get("drawings") or []) if isinstance(d, dict) and _geom_kind(d) not in _GEOM
     ]
     assert leftover_c == [], leftover_c
     assert leftover_i == [], leftover_i
@@ -402,11 +396,7 @@ plot(close, "c")
     assert texts == ["A", "B"]
     bg = str(tables[0].get("bgcolor") or tables[0].get("bg_color") or "").lower()
     assert bg and bg not in {"#000000", "000000", "black"}
-    cell_a = next(
-        c
-        for c in (tables[0].get("cells") or [])
-        if isinstance(c, dict) and c.get("text") == "A"
-    )
+    cell_a = next(c for c in (tables[0].get("cells") or []) if isinstance(c, dict) and c.get("text") == "A")
     text_color = str(cell_a.get("text_color") or "").lower()
     assert text_color and text_color not in {"#eceef4", "eceef4", ""}
     fills = [d for d in ri["drawings"] if _geom_kind(d) == "linefill"]

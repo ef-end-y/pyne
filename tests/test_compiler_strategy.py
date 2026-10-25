@@ -778,9 +778,7 @@ plot(strategy.closedtrades, title="ct")
         for ln in close_lines:
             assert "from_entry=" in ln, ln
             # Market exit must not only pass id= (broker ignores id when not is_exit)
-            assert "from_entry='A'" in ln or 'from_entry="A"' in ln or "from_entry='A'" in ln.replace(
-                '"', "'"
-            ), ln
+            assert "from_entry='A'" in ln or 'from_entry="A"' in ln or "from_entry='A'" in ln.replace('"', "'"), ln
 
         ohlcv = [
             {
@@ -854,9 +852,7 @@ plot(strategy.closedtrades, title="ct")
         b.entry("L", "long", 2.0)
         # 100 ticks * 0.01 = $1 trail; no activation → active immediately
         b.close(comment="XT", trail_offset=100.0)
-        assert "exit" in b.pending_orders or any(
-            po.is_trail for po in b.pending_orders.values()
-        )
+        assert "exit" in b.pending_orders or any(po.is_trail for po in b.pending_orders.values())
         trail = next(po for po in b.pending_orders.values() if po.is_trail)
         assert trail.trail_offset == pytest.approx(1.0)
         assert trail.trail_active is True
@@ -967,9 +963,7 @@ plot(strategy.closedtrades, title="ct")
         """Trail exit with from_entry only reduces matching pyramid leg qty."""
         from pynescript.compiler.strategy_broker import CompileStrategyBroker
 
-        b = CompileStrategyBroker(
-            initial_capital=10_000.0, pyramiding=1, mintick=0.01, commission_value=0.0
-        )
+        b = CompileStrategyBroker(initial_capital=10_000.0, pyramiding=1, mintick=0.01, commission_value=0.0)
         b.begin_bar(0, 100.0, 100.0, 100.0, 100.0)
         b.entry("A", "long", 2.0)
         b.begin_bar(1, 105.0, 105.0, 105.0, 105.0)

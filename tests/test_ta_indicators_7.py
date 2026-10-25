@@ -47,6 +47,7 @@ def evaluator():
 # Group A: Multi-Indicator Strategies Tests (16 tests)
 # ============================================================================
 
+
 class TestTrendConfirmationScore:
     """Tests for ta.trend_confirmation_score indicator."""
 
@@ -189,6 +190,7 @@ class TestCorrelationFilter:
 # Group B: Advanced Trend & Breakout Tests (16 tests)
 # ============================================================================
 
+
 class TestAdvancedBreakoutDetector:
     """Tests for ta.advanced_breakout_detector indicator."""
 
@@ -211,9 +213,7 @@ class TestAdvancedBreakoutDetector:
         """Test volume-driven breakout."""
         price = [99.0, 100.0, 101.0, 102.0, 103.0]
         volume = [1000.0, 1100.0, 1200.0, 2000.0, 3000.0]
-        result = evaluator._builtin_ta_advanced_breakout_detector(
-            [price, volume, 101.0, 10, 0.5]
-        )
+        result = evaluator._builtin_ta_advanced_breakout_detector([price, volume, 101.0, 10, 0.5])
         assert result["breakout_detected"] is True
 
     def test_fake_breakout(self, evaluator):
@@ -314,6 +314,7 @@ class TestPositionSizingScore:
 # ============================================================================
 # Group C: Advanced Entry/Exit Tests (16 tests)
 # ============================================================================
+
 
 class TestOptimalEntryZone:
     """Tests for ta.optimal_entry_zone indicator."""
@@ -419,6 +420,7 @@ class TestBreakevenLevel:
 # Group D: Risk & Regime Tests (8 tests)
 # ============================================================================
 
+
 class TestDrawdownRecoveryLevel:
     """Tests for ta.drawdown_recovery_level indicator."""
 
@@ -472,6 +474,7 @@ class TestRiskRewardAsymmetry:
 # ============================================================================
 # Group E: Market Timing & Regime Tests (8 tests)
 # ============================================================================
+
 
 class TestMarketTimingIndex:
     """Tests for ta.market_timing_index indicator."""
@@ -533,6 +536,7 @@ class TestRegimeAdaptiveSignal:
 # Edge Cases & Integration Tests (8 tests)
 # ============================================================================
 
+
 class TestEdgeCases:
     """Edge case tests for Tier 7 indicators."""
 
@@ -586,9 +590,13 @@ class TestIntegration:
         """Test complete long trading setup."""
         trend_score = evaluator._builtin_ta_trend_confirmation_score([50.0, 0.8, 2.0, 70.0, 0.9, 45.0])
         structure = evaluator._builtin_ta_market_structure_pivot(
-            [[100.0, 102.0, 104.0, 103.0, 101.0],
-             [98.0, 100.0, 102.0, 101.0, 99.0],
-             [99.0, 101.0, 103.0, 102.0, 100.0], 5, 0]
+            [
+                [100.0, 102.0, 104.0, 103.0, 101.0],
+                [98.0, 100.0, 102.0, 101.0, 99.0],
+                [99.0, 101.0, 103.0, 102.0, 100.0],
+                5,
+                0,
+            ]
         )
         assert isinstance(trend_score, (int, float))
         assert isinstance(structure, dict)

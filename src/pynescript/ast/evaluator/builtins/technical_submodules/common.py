@@ -287,13 +287,13 @@ class CommonIndicators(TechnicalHelpers):
 
         mean = sum(valid_data) / len(valid_data)
         variance = sum((x - mean) ** 2 for x in valid_data) / len(valid_data)
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
 
         if std_dev == 0:
             return 0.0
 
         # Skewness = E[(x - mean)³] / std_dev³
-        skewness_val = sum((x - mean) ** 3 for x in valid_data) / (len(valid_data) * (std_dev ** 3))
+        skewness_val = sum((x - mean) ** 3 for x in valid_data) / (len(valid_data) * (std_dev**3))
         return skewness_val
 
     def _builtin_ta_kurtosis(self, args: list[Any]) -> float | None:
@@ -326,14 +326,14 @@ class CommonIndicators(TechnicalHelpers):
 
         mean = sum(valid_data) / len(valid_data)
         variance = sum((x - mean) ** 2 for x in valid_data) / len(valid_data)
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
 
         if std_dev == 0:
             return 0.0
 
         # Kurtosis = E[(x - mean)⁴] / std_dev⁴ - 3
         fourth_moment = sum((x - mean) ** 4 for x in valid_data) / len(valid_data)
-        kurtosis_val = (fourth_moment / (std_dev ** 4)) - 3.0
+        kurtosis_val = (fourth_moment / (std_dev**4)) - 3.0
         return kurtosis_val
 
     def _builtin_ta_parkinson(self, args: list[Any]) -> float | None:
@@ -465,7 +465,11 @@ class CommonIndicators(TechnicalHelpers):
             if current_idx - i < 0:
                 return None
             left_val = source[current_idx - i]
-            lv = getattr(left_val, "current", left_val) if left_val is not None and hasattr(left_val, "history") else left_val
+            lv = (
+                getattr(left_val, "current", left_val)
+                if left_val is not None and hasattr(left_val, "history")
+                else left_val
+            )
             try:
                 if lv is not None and float(lv) >= float(current):
                     return None
@@ -505,7 +509,11 @@ class CommonIndicators(TechnicalHelpers):
             if current_idx - i < 0:
                 return None
             left_val = source[current_idx - i]
-            lv = getattr(left_val, "current", left_val) if left_val is not None and hasattr(left_val, "history") else left_val
+            lv = (
+                getattr(left_val, "current", left_val)
+                if left_val is not None and hasattr(left_val, "history")
+                else left_val
+            )
             try:
                 if lv is not None and float(lv) <= float(current):
                     return None
@@ -904,4 +912,3 @@ class CommonIndicators(TechnicalHelpers):
         if not hlc3_volume:
             return 0
         return sum(hlc3_volume) / len(hlc3_volume)
-

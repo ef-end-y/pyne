@@ -96,9 +96,7 @@ _WELL_KNOWN_PARAMS: dict[str, tuple[str, ...]] = {
 
 # 1-arg overloads whose single positional is ``length`` (typical price / OHLC
 # from context). 2-arg forms keep the map above except ``ta.bbw(length, mult)``.
-_LENGTH_ONLY_1ARG: frozenset[str] = frozenset(
-    {"ta.adx", "ta.cci", "ta.mfi", "ta.bbw"}
-)
+_LENGTH_ONLY_1ARG: frozenset[str] = frozenset({"ta.adx", "ta.cci", "ta.mfi", "ta.bbw"})
 
 # Built-in variable → return type. Only the ones the parser/builder treats as
 # plain `Name` nodes (so they can appear bare on the RHS of an Assign).
@@ -330,9 +328,7 @@ def _arg_start_position(arg: ast.AST) -> tuple[int, int] | None:
     return None
 
 
-def _param_names_from_info(
-    qualified: str, info: dict[str, Any], argc: int = 0
-) -> list[str]:
+def _param_names_from_info(qualified: str, info: dict[str, Any], argc: int = 0) -> list[str]:
     """Parameter names: real snippet placeholders, else longest of detail/docs/well-known.
 
     *argc* is ``len(call.args)``. 1-arg ``ta.cci`` / ``ta.adx`` / ``ta.mfi`` /

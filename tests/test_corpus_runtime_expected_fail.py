@@ -135,10 +135,7 @@ def test_parse_and_timeout_routes_would_classify_listed_only() -> None:
         )
         == "EXPECTED_FAIL"
     )
-    assert (
-        classify_parse("set04/indicators/unlisted_scrape.pine", "Parse Error: trash")
-        == "PARSE_FAIL"
-    )
+    assert classify_parse("set04/indicators/unlisted_scrape.pine", "Parse Error: trash") == "PARSE_FAIL"
     assert (
         classify_timeout(
             "set04/indicators/0898_ind_loop_is_too_long.pine",

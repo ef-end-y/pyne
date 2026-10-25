@@ -118,12 +118,7 @@ class Color:
         """Check equality with another color."""
         if not isinstance(other, Color):
             return NotImplemented
-        return (
-            self.r == other.r
-            and self.g == other.g
-            and self.b == other.b
-            and self.a == other.a
-        )
+        return self.r == other.r and self.g == other.g and self.b == other.b and self.a == other.a
 
     def __hash__(self) -> int:
         """Return hash for the color."""

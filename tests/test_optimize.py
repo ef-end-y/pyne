@@ -345,9 +345,7 @@ class TestObjective:
 
     def test_profit_factor_inf(self) -> None:
         s = StrategyStats(total_pnl=5, trades=5, profit_factor=float("inf"), wins=5)
-        assert math.isfinite(score_stats(s, "profit_factor")) or score_stats(
-            s, "profit_factor"
-        ) > 0
+        assert math.isfinite(score_stats(s, "profit_factor")) or score_stats(s, "profit_factor") > 0
 
 
 class TestWalkForward:
@@ -390,9 +388,7 @@ class TestSamplers:
             assert 10 <= int(p["Slow"]) <= 20
 
     def test_grid_enumerates(self) -> None:
-        space = space_from_payload(
-            {"params": [{"name": "N", "kind": "int", "min": 1, "max": 3, "step": 1}]}
-        )
+        space = space_from_payload({"params": [{"name": "N", "kind": "int", "min": 1, "max": 3, "step": 1}]})
         smp = GridSampler(max_cells=10)
         pts = smp.build(space)
         assert {p["N"] for p in pts} == {1, 2, 3}
@@ -410,9 +406,7 @@ class TestSamplers:
             GridSampler(max_cells=10).build(space)
 
     def test_grid_stepped_float_is_capped_not_refused(self) -> None:
-        space = space_from_payload(
-            {"params": [{"name": "X", "kind": "float", "min": 0, "max": 1, "step": 0.01}]}
-        )
+        space = space_from_payload({"params": [{"name": "X", "kind": "float", "min": 0, "max": 1, "step": 0.01}]})
         pts = GridSampler(max_cells=5).build(space)
         assert 1 <= len(pts) <= 16
         assert pts[0]["X"] == 0
@@ -420,20 +414,13 @@ class TestSamplers:
 
     def test_grid_refuses_multi_float_product(self) -> None:
         space = space_from_payload(
-            {
-                "params": [
-                    {"name": f"X{i}", "kind": "float", "min": 0, "max": 1}
-                    for i in range(3)
-                ]
-            }
+            {"params": [{"name": f"X{i}", "kind": "float", "min": 0, "max": 1} for i in range(3)]}
         )
         with pytest.raises(ValueError, match="grid has"):
             GridSampler(max_cells=10).build(space)
 
     def test_random_unstepped_float_is_continuous(self) -> None:
-        space = space_from_payload(
-            {"params": [{"name": "X", "kind": "float", "min": 0, "max": 1}]}
-        )
+        space = space_from_payload({"params": [{"name": "X", "kind": "float", "min": 0, "max": 1}]})
         rng = random.Random(0)
         smp = RandomSampler()
         vals = [float(smp.suggest(space, [], rng)["X"]) for _ in range(40)]
@@ -540,9 +527,7 @@ class TestStudy:
                 seen.append(dict(kwargs.get("inputs") or {}))
                 return {"events": []}
 
-        space = space_from_payload(
-            {"params": [{"name": "Fast", "kind": "int", "min": 3, "max": 4}]}
-        )
+        space = space_from_payload({"params": [{"name": "Fast", "kind": "int", "min": 3, "max": 4}]})
         run_study(
             SMA_STRAT,
             _bars(20),

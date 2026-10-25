@@ -444,9 +444,4 @@ plot(close)
         r = Runtime().run(src, _bars(30), mode="interpret")
         assert r.get("error"), f"{rel}: expected runtime error, got clean run"
         err = str(r["error"])
-        assert (
-            "RuntimeError" in err
-            or "runtime" in err.lower()
-            or "timeframe" in err.lower()
-            or "error" in err.lower()
-        )
+        assert "RuntimeError" in err or "runtime" in err.lower() or "timeframe" in err.lower() or "error" in err.lower()

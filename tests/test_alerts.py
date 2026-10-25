@@ -94,4 +94,3 @@ class TestAlerts:
         evaluator = NodeLiteralEvaluator(context={"bar_index": 1, "time": 10})
         evaluator.evaluate_script('alert("dup")\nalert("dup")')
         assert len(evaluator.get_triggered_alerts()) == 1
-

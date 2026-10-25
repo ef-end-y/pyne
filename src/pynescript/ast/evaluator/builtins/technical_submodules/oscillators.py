@@ -42,12 +42,7 @@ class OscillatorIndicators(TechnicalHelpers):
 
     def _builtin_ta_rsi(self, args: list[Any]) -> float | None:
         """Relative Strength Index."""
-        if (
-            self._pine_ta_inc_cached is True
-            and len(args) == BINARY
-            and type(args[1]) is int
-            and args[1] > 0
-        ):
+        if self._pine_ta_inc_cached is True and len(args) == BINARY and type(args[1]) is int and args[1] > 0:
             return self._rsi_inc_update(args[0], args[1])
         series, period = self._expect_series(args, length=BINARY, last_sample_ok=True)
         if self._use_incremental_ta():
@@ -339,9 +334,7 @@ class OscillatorIndicators(TechnicalHelpers):
             short_period = self._expect_int(args[0], msg)
             long_period = self._expect_int(args[1], msg)
             if self._use_incremental_ta():
-                return self._tsi_inc_update(
-                    self._context_source("close"), long_period, short_period
-                )
+                return self._tsi_inc_update(self._context_source("close"), long_period, short_period)
             series = self._context_series("close")
             return self._tsi(series, long_period, short_period)
         self._require_len(args, TERNARY, msg)
@@ -641,9 +634,7 @@ class OscillatorIndicators(TechnicalHelpers):
         length4 = self._expect_int(args[3], "length4 must be integer")
 
         if self._use_incremental_ta():
-            return self._kst_inc_update(
-                self._context_source("close"), length1, length2, length3, length4
-            )
+            return self._kst_inc_update(self._context_source("close"), length1, length2, length3, length4)
 
         closes = (getattr(self, "current_series", None) or {}).get("close", [])
         if not closes:

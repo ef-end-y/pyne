@@ -207,9 +207,7 @@ def render_ohlcv_chart(
     x = np.arange(n)
 
     fig = Figure(figsize=(width / 100, 3.5), dpi=100)
-    axes = fig.subplots(
-        2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True
-    )
+    axes = fig.subplots(2, 1, gridspec_kw={"height_ratios": [3, 1]}, sharex=True)
     assert axes is not None  # noqa: S101 - subplots always returns two axes
     ax1, ax2 = axes
     fig.patch.set_facecolor("#1E1E1E")

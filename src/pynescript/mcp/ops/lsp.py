@@ -151,8 +151,7 @@ def signature_source(
                 "documentation": getattr(getattr(sig, "documentation", None), "value", None)
                 or (sig.documentation if isinstance(sig.documentation, str) else None),
                 "parameters": [
-                    {"label": p.label if isinstance(p.label, str) else str(p.label)}
-                    for p in (sig.parameters or [])
+                    {"label": p.label if isinstance(p.label, str) else str(p.label)} for p in (sig.parameters or [])
                 ],
             }
         )

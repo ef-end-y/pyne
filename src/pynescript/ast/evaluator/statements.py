@@ -544,15 +544,7 @@ class StatementEvaluator:
             # Floats / ints from ta.* are the common assign. Skip the
             # PineSeries hasattr probes those values can never satisfy.
             vt = type(value)
-            if (
-                value is None
-                or vt is float
-                or vt is int
-                or vt is bool
-                or vt is str
-                or vt is tuple
-                or vt is list
-            ):
+            if value is None or vt is float or vt is int or vt is bool or vt is str or vt is tuple or vt is list:
                 self.context[name] = value
                 return value
             # Snapshot host/user series (``EP := high``). Storing the handle

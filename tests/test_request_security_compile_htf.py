@@ -725,9 +725,7 @@ plot(ta.stoch(3), title="cstoch")
         cstoch_day5 = sc["series"]["cstoch"][5 * 24 : 6 * 24]
         hstoch_day5 = sc["series"]["stoch"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hstoch_day5[i]) - float(cstoch_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cstoch_day5[i])
+            abs(float(hstoch_day5[i]) - float(cstoch_day5[i])) > 1e-6 for i in range(24) if not _is_na(cstoch_day5[i])
         )
 
     def test_htf_pivot_hourly_to_daily_match_interpret(self) -> None:
@@ -758,9 +756,7 @@ plot(ta.pivothigh(2, 2), title="cph")
         cph_day7 = sc["series"]["cph"][7 * 24 :]
         hph_day7 = sc["series"]["ph"][7 * 24 :]
         assert any(
-            abs(float(hph_day7[i]) - float(cph_day7[i])) > 1e-6
-            for i in range(len(hph_day7))
-            if not _is_na(cph_day7[i])
+            abs(float(hph_day7[i]) - float(cph_day7[i])) > 1e-6 for i in range(len(hph_day7)) if not _is_na(cph_day7[i])
         ) or all(_is_na(x) for x in cph_day7)
 
     def test_htf_percentile_hourly_to_daily_match_interpret(self) -> None:
@@ -787,11 +783,7 @@ plot(ta.percentile_nearest_rank(close, 3, 50), title="cpnr")
             assert abs(float(v) - float(sc["series"]["pli"][5 * 24])) < 1e-9
         cpnr_day5 = sc["series"]["cpnr"][5 * 24 : 6 * 24]
         hpnr_day5 = sc["series"]["pnr"][5 * 24 : 6 * 24]
-        assert any(
-            abs(float(hpnr_day5[i]) - float(cpnr_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cpnr_day5[i])
-        )
+        assert any(abs(float(hpnr_day5[i]) - float(cpnr_day5[i])) > 1e-6 for i in range(24) if not _is_na(cpnr_day5[i]))
 
     def test_htf_dpo_crossover_hourly_to_daily_match_interpret(self) -> None:
         """Hourly→daily last-completed 1-arg dpo / OHLCV cross: compile matches interpret."""
@@ -821,9 +813,7 @@ plot(ta.dpo(3), title="cdpo")
         cdpo_day5 = sc["series"]["cdpo"][5 * 24 : 6 * 24]
         hdpo_day5 = sc["series"]["dpo"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hdpo_day5[i]) - float(cdpo_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cdpo_day5[i])
+            abs(float(hdpo_day5[i]) - float(cdpo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cdpo_day5[i])
         ) or all(_is_na(x) for x in cdpo_day5)
 
     def test_htf_correlation_hourly_to_daily_match_interpret(self) -> None:
@@ -847,9 +837,7 @@ plot(ta.correlation(close, volume, 3), title="ccorr")
         ccorr_day5 = sc["series"]["ccorr"][5 * 24 : 6 * 24]
         hcorr_day5 = sc["series"]["corr"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hcorr_day5[i]) - float(ccorr_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(ccorr_day5[i])
+            abs(float(hcorr_day5[i]) - float(ccorr_day5[i])) > 1e-6 for i in range(24) if not _is_na(ccorr_day5[i])
         ) or all(_is_na(x) for x in ccorr_day5)
 
     def test_htf_dpo2_cross_hourly_to_daily_match_interpret(self) -> None:
@@ -880,9 +868,7 @@ plot(ta.dpo(3), title="cdpo")
         cdpo_day5 = sc["series"]["cdpo"][5 * 24 : 6 * 24]
         hdpo_day5 = sc["series"]["dpo"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hdpo_day5[i]) - float(cdpo_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cdpo_day5[i])
+            abs(float(hdpo_day5[i]) - float(cdpo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cdpo_day5[i])
         ) or all(_is_na(x) for x in cdpo_day5)
 
     def test_htf_vpt_wvad_hourly_to_daily_match_interpret(self) -> None:
@@ -916,7 +902,9 @@ plot(ta.wvad(3), title="cwvad")
         hvpt_day5 = sc["series"]["vpt"][5 * 24 : 6 * 24]
         hwvad_day5 = sc["series"]["wvad"][5 * 24 : 6 * 24]
         assert any(abs(float(hvpt_day5[i]) - float(cvpt_day5[i])) > 1e-6 for i in range(24) if not _is_na(cvpt_day5[i]))
-        assert any(abs(float(hwvad_day5[i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i]))
+        assert any(
+            abs(float(hwvad_day5[i]) - float(cwvad_day5[i])) > 1e-6 for i in range(24) if not _is_na(cwvad_day5[i])
+        )
 
     def test_htf_uo_apo_hourly_to_daily_match_interpret(self) -> None:
         """Hourly→daily last-completed 3-arg ta.uo / 3-arg ta.apo: compile matches interpret."""
@@ -947,9 +935,7 @@ plot(ta.apo(close, 2, 3), title="capo")
         hapo_day5 = sc["series"]["apo"][5 * 24 : 6 * 24]
         assert any(abs(float(huo_day5[i]) - float(cuo_day5[i])) > 1e-6 for i in range(24) if not _is_na(cuo_day5[i]))
         assert any(
-            abs(float(hapo_day5[i]) - float(capo_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(capo_day5[i])
+            abs(float(hapo_day5[i]) - float(capo_day5[i])) > 1e-6 for i in range(24) if not _is_na(capo_day5[i])
         ) or all(_is_na(x) for x in capo_day5)
 
     def test_htf_emv_hourly_to_daily_match_interpret(self) -> None:
@@ -973,9 +959,7 @@ plot(ta.emv(3), title="cemv")
         cemv_day5 = sc["series"]["cemv"][5 * 24 : 6 * 24]
         hemv_day5 = sc["series"]["emv"][5 * 24 : 6 * 24]
         assert any(
-            abs(float(hemv_day5[i]) - float(cemv_day5[i])) > 1e-6
-            for i in range(24)
-            if not _is_na(cemv_day5[i])
+            abs(float(hemv_day5[i]) - float(cemv_day5[i])) > 1e-6 for i in range(24) if not _is_na(cemv_day5[i])
         ) or all(_is_na(x) for x in cemv_day5)
 
 

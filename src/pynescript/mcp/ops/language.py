@@ -56,6 +56,8 @@ def _fail_parse(exc: BaseException, label: str) -> dict[str, Any]:
         column=fields.get("column"),
         file=label,
     )
+
+
 _SYMBOL_CALLS = frozenset(
     {
         "plot",

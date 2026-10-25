@@ -430,7 +430,6 @@ class Matrix(Generic[T]):
         """String representation."""
         return f"matrix({self.rows_count}x{self.cols_count})"
 
-
     # ========== OFFICIAL reference v6 SURFACE ==========
 
     def row(self, index: int) -> list[Any]:
@@ -604,8 +603,10 @@ class Matrix(Generic[T]):
             non_na.sort(key=key_fn, reverse=reverse)
         except TypeError:
             non_na.sort(
-                key=lambda r: (str(type(self._cell_sort_value(r[column], sort_field))),
-                               str(self._cell_sort_value(r[column], sort_field))),
+                key=lambda r: (
+                    str(type(self._cell_sort_value(r[column], sort_field))),
+                    str(self._cell_sort_value(r[column], sort_field)),
+                ),
                 reverse=reverse,
             )
         self.data = non_na + na_rows

@@ -1660,4 +1660,3 @@ indicator(title="{{ title }}", overlay={{ "true" if overlay else "false" }})
     assert "{{" not in cleaned
     assert 'indicator("x")' in cleaned
     _roundtrip(cleaned)
-

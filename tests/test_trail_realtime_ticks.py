@@ -223,9 +223,7 @@ def test_historical_ticks_one_keeps_bar_open_trail() -> None:
     """``realtime_ticks=1`` does not poll; trail stays on historical last-bar high."""
     bars = _hist_bars()
     feed = MockDataFeed(scripted=_rising_highs())
-    interp = Runtime(symbol="RTTRAIL").run(
-        _SRC, bars, mode="interpret", realtime_ticks=1, data_feed=feed
-    )
+    interp = Runtime(symbol="RTTRAIL").run(_SRC, bars, mode="interpret", realtime_ticks=1, data_feed=feed)
     compiled = Runtime(symbol="RTTRAIL").run(
         _SRC,
         bars,

@@ -45,6 +45,7 @@ def evaluator():
 # Group A: Market Condition Indicators (4 tests each)
 # ============================================================================
 
+
 class TestMarketCondition:
     """Tests for ta.market_condition indicator."""
 
@@ -157,6 +158,7 @@ class TestRiskRewardRatio:
 # Group B: Pattern Recognition Indicators (3 tests each)
 # ============================================================================
 
+
 class TestDoubleTopBottom:
     """Tests for ta.double_top_bottom pattern detector."""
 
@@ -236,6 +238,7 @@ class TestInsideBarPattern:
 # ============================================================================
 # Group C: Money Management & Risk Indicators (3 tests each)
 # ============================================================================
+
 
 class TestPositionSizing:
     """Tests for ta.position_sizing calculator."""
@@ -323,6 +326,7 @@ class TestProfitLockLevel:
 # Group D: Multi-Indicator Integration (3 tests each)
 # ============================================================================
 
+
 class TestSignalConfluence:
     """Tests for ta.signal_confluence detector."""
 
@@ -400,6 +404,7 @@ class TestStrategyScore:
 # Group E: Volatility & Probability (2-3 tests each)
 # ============================================================================
 
+
 class TestProbabilityOfMovement:
     """Tests for ta.probability_of_movement calculator."""
 
@@ -443,6 +448,7 @@ class TestGammaLevels:
 # ============================================================================
 # Integration Tests
 # ============================================================================
+
 
 class TestTier5Integration:
     """Integration tests combining multiple Tier 5 indicators."""

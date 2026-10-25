@@ -601,15 +601,9 @@ class VolumeIndicators(TechnicalHelpers):
                     20,
                 )
             if len(args) < QUATERNARY:
-                self._error(
-                    "ta.wvad() requires 0, 1, or 4+ arguments: [high, low, close, volume,] period"
-                )
+                self._error("ta.wvad() requires 0, 1, or 4+ arguments: [high, low, close, volume,] period")
                 return None
-            period = (
-                self._expect_int(args[QUATERNARY], "period must be integer")
-                if len(args) > QUATERNARY
-                else 20
-            )
+            period = self._expect_int(args[QUATERNARY], "period must be integer") if len(args) > QUATERNARY else 20
             return self._wvad_inc_update(
                 self._as_series_or_raw(args[0], last_sample_ok=True),
                 self._as_series_or_raw(args[1], last_sample_ok=True),
@@ -666,9 +660,7 @@ class VolumeIndicators(TechnicalHelpers):
                     period,
                 )
             if len(args) < QUINARY:
-                self._error(
-                    "ta.cmf() requires 1 argument (period) or 5: close, high, low, volume, period"
-                )
+                self._error("ta.cmf() requires 1 argument (period) or 5: close, high, low, volume, period")
                 return None
             period = self._expect_int(args[4], "ta.cmf period must be integer")
             return self._cmf_inc_update(
@@ -686,9 +678,7 @@ class VolumeIndicators(TechnicalHelpers):
             volume_series = self._context_series("volume") or [0.0] * len(close_series)
             return self._cmf(close_series, high_series, low_series, volume_series, period)
         if len(args) < QUINARY:
-            self._error(
-                "ta.cmf() requires 1 argument (period) or 5: close, high, low, volume, period"
-            )
+            self._error("ta.cmf() requires 1 argument (period) or 5: close, high, low, volume, period")
             return []
 
         close_series = self._as_series(args[0])
@@ -928,11 +918,7 @@ class VolumeIndicators(TechnicalHelpers):
                 close_change = 0
             vol = volume_series[i] if isinstance(volume_series[i], (int, float)) else 0
 
-            prev_vol = (
-                volume_series[i - 1]
-                if i > 0 and isinstance(volume_series[i - 1], (int, float))
-                else 0
-            )
+            prev_vol = volume_series[i - 1] if i > 0 and isinstance(volume_series[i - 1], (int, float)) else 0
             if vol < prev_vol:
                 nvi = nvi * (1 + close_change)
 
@@ -986,11 +972,7 @@ class VolumeIndicators(TechnicalHelpers):
             else:
                 close_change = 0
             vol = volume_series[i] if isinstance(volume_series[i], (int, float)) else 0
-            prev_vol = (
-                volume_series[i - 1]
-                if i > 0 and isinstance(volume_series[i - 1], (int, float))
-                else 0
-            )
+            prev_vol = volume_series[i - 1] if i > 0 and isinstance(volume_series[i - 1], (int, float)) else 0
 
             if vol > prev_vol:
                 pvi = pvi * (1 + close_change)
@@ -1123,9 +1105,7 @@ class VolumeIndicators(TechnicalHelpers):
 
         def _tp(k: int) -> float | None:
             h, lo, c = highs[k], lows[k], closes[k]
-            if not isinstance(h, (int, float)) or not isinstance(lo, (int, float)) or not isinstance(
-                c, (int, float)
-            ):
+            if not isinstance(h, (int, float)) or not isinstance(lo, (int, float)) or not isinstance(c, (int, float)):
                 return None
             return (float(h) + float(lo) + float(c)) / 3.0
 
@@ -1226,11 +1206,7 @@ class VolumeIndicators(TechnicalHelpers):
         wvad_values = []
         for i in range(len(wad_values)):
             start_idx = max(0, i - period + 1)
-            volume_sum = sum(
-                v
-                for v in volume_series[start_idx : i + 1]
-                if isinstance(v, (int, float))
-            )
+            volume_sum = sum(v for v in volume_series[start_idx : i + 1] if isinstance(v, (int, float)))
 
             if volume_sum > 0:
                 wvad = wad_values[i] / volume_sum if wad_values[i] is not None else 0.0
@@ -1386,19 +1362,13 @@ class VolumeIndicators(TechnicalHelpers):
                 emv_vals.append(None)
                 continue
 
-            distance_moved = ((highs[i] + lows[i]) / 2.0) - (
-                (highs[i - 1] + lows[i - 1]) / 2.0
-            )
+            distance_moved = ((highs[i] + lows[i]) / 2.0) - ((highs[i - 1] + lows[i - 1]) / 2.0)
             box_height = highs[i] - lows[i]
 
             if box_height == 0:
                 emv_vals.append(None)
             else:
-                emv = (
-                    (distance_moved / box_height) * (highs[i] - lows[i]) / volumes[i]
-                    if volumes[i] != 0
-                    else 0
-                )
+                emv = (distance_moved / box_height) * (highs[i] - lows[i]) / volumes[i] if volumes[i] != 0 else 0
                 emv_vals.append(emv)
 
         valid_emv = [v for v in emv_vals if v is not None]

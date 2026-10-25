@@ -32,7 +32,6 @@ import pyasdl
 
 
 class PythonGenerator(pyasdl.ASDLVisitor):
-
     def __init__(self, *, defaults: str = "all"):
         self._defaults = defaults
         self._base = ast.Name("AST", ast.Load())

@@ -90,9 +90,7 @@ def frame_from_spec(raw: dict) -> dict:
         hdr_flags=int(raw.get("hdr_flags") or 0),
     )
     rest = {
-        k: v
-        for k, v in raw.items()
-        if k not in ("opcode", "seq", "sub_id_hash", "session_hash", "ts_ms", "hdr_flags")
+        k: v for k, v in raw.items() if k not in ("opcode", "seq", "sub_id_hash", "session_hash", "ts_ms", "hdr_flags")
     }
     opcode = str(raw["opcode"])
     if opcode in ("HEARTBEAT", "UNCHANGED"):
@@ -315,9 +313,7 @@ def _frame(mtype: str, payload: dict, *, req_id=SUB_ID, seq: int = 1, session_id
 
 
 def test_map_status_live_becomes_binary():
-    out = map_live_frame(
-        _frame("status", {"code": "live", "message": "live/1 ok", "have": 5000, "need": 5000}, seq=3)
-    )
+    out = map_live_frame(_frame("status", {"code": "live", "message": "live/1 ok", "have": 5000, "need": 5000}, seq=3))
     assert isinstance(out, bytes)
     assert out[:4] == b"AXB1"
     assert out[5] == int(axb1.Axb1Opcode.STATUS)

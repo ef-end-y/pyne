@@ -134,9 +134,7 @@ class GridSampler(BaseSampler):
         # A single interpolated axis is at most 16 pts; allow that even when
         # it exceeds max_cells. Multi-axis products stay capped.
         if size < 1 or (size > self.max_cells and len(space.params) > 1):
-            raise ValueError(
-                f"grid has {size} cells (cap {self.max_cells}); use random or TPE"
-            )
+            raise ValueError(f"grid has {size} cells (cap {self.max_cells}); use random or TPE")
         points: list[dict[str, ParamValue]] = [{}]
         for spec, vals in zip(space.params, axes, strict=True):
             nxt: list[dict[str, ParamValue]] = []

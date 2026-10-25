@@ -54,6 +54,7 @@ QUINARY = 5
 
 MIN_SERIES_LENGTH = 2
 
+
 class TechnicalHelpers:
     """Base utilities for ``ta.*`` handlers (series expect, SMA helpers, state).
 
@@ -135,9 +136,7 @@ class TechnicalHelpers:
             self._ta_inc_state = state  # type: ignore[attr-defined]
         return state
 
-    def _ta_key1(
-        self, kind: str, period: int
-    ) -> tuple[dict[tuple[Any, ...], dict[str, Any]], tuple[Any, ...]]:
+    def _ta_key1(self, kind: str, period: int) -> tuple[dict[tuple[Any, ...], dict[str, Any]], tuple[Any, ...]]:
         """Advance the call-site slot and return ``(bucket, key)``.
 
         ``key`` is ``(kind, slot, period)``. The tuple is reused across bars
@@ -169,13 +168,7 @@ class TechnicalHelpers:
             cache = []
             self._ta_key_cache = cache  # type: ignore[attr-defined]
         key: tuple[Any, ...] | None = cache[i] if i < len(cache) else None
-        if (
-            key is not None
-            and key[0] == kind
-            and key[1] == i
-            and len(key) == 3
-            and key[2] == period
-        ):
+        if key is not None and key[0] == kind and key[1] == i and len(key) == 3 and key[2] == period:
             return bucket, key
         key = (kind, i, period)
         ncache = len(cache)
@@ -795,9 +788,7 @@ class TechnicalHelpers:
         return x
 
     @staticmethod
-    def _wma_recompute_window(
-        window: deque[Any] | list[Any], period: int
-    ) -> tuple[float, float] | None:
+    def _wma_recompute_window(window: deque[Any] | list[Any], period: int) -> tuple[float, float] | None:
         """``(sum, weighted_sum)`` for a full finite window; None if any na."""
         if period <= 0 or len(window) < period:
             return None
@@ -843,12 +834,7 @@ class TechnicalHelpers:
             st["dirty"] = True
             st["value"] = None
             return None
-        reseed = (
-            bool(st["dirty"])
-            or not popped
-            or old is None
-            or (int(st["steps"]) % period == 0)
-        )
+        reseed = bool(st["dirty"]) or not popped or old is None or (int(st["steps"]) % period == 0)
         if reseed:
             recomputed = TechnicalHelpers._wma_recompute_window(window, period)
             if recomputed is None:
@@ -1144,11 +1130,7 @@ class TechnicalHelpers:
         hw.append(h)
         lw.append(l)
         stoch: float | None = None
-        if (
-            c is not None
-            and not any(v is None for v in hw)
-            and not any(v is None for v in lw)
-        ):
+        if c is not None and not any(v is None for v in hw) and not any(v is None for v in lw):
             hh = max(hw)
             ll = min(lw)
             if hh == ll:
@@ -1282,13 +1264,7 @@ class TechnicalHelpers:
         st["count"] = int(st["count"]) + 1
         prev_o = st["prev_o"]
         prev_c = st["prev_c"]
-        if (
-            int(st["count"]) < 2
-            or prev_o is None
-            or prev_c is None
-            or o is None
-            or c is None
-        ):
+        if int(st["count"]) < 2 or prev_o is None or prev_c is None or o is None or c is None:
             st["prev_o"] = o
             st["prev_c"] = c
             st["value"] = off
@@ -1406,19 +1382,14 @@ class TechnicalHelpers:
             return off
         peaks = [recent_high[0]]
         for i in range(1, len(recent_high) - 1):
-            if (
-                recent_high[i] > recent_high[i - 1]
-                and recent_high[i] > recent_high[i + 1]
-            ):
+            if recent_high[i] > recent_high[i - 1] and recent_high[i] > recent_high[i + 1]:
                 peaks.append(recent_high[i])
         if len(peaks) < 2:
             st["value"] = off
             return off
         peak_diff = abs(peaks[-1] - peaks[-2])
         avg_peak = (peaks[-1] + peaks[-2]) / 2.0
-        strength = (
-            1.0 - min(1.0, peak_diff / avg_peak) if avg_peak > 0 else 0.0
-        )
+        strength = 1.0 - min(1.0, peak_diff / avg_peak) if avg_peak > 0 else 0.0
         breakout_level = min(recent_low) - (avg_peak * 0.1)
         val = {
             "pattern_type": "double_top",
@@ -1631,9 +1602,7 @@ class TechnicalHelpers:
         pair = [w[0], w[1]]
         recent_high = max(pair)
         recent_low = min(pair)
-        percent_change = (
-            (recent_high - recent_low) / recent_low * 100 if recent_low else 0
-        )
+        percent_change = (recent_high - recent_low) / recent_low * 100 if recent_low else 0
         direction = 1 if recent_high == pair[-1] else -1
         val = (
             recent_high,
@@ -1725,9 +1694,7 @@ class TechnicalHelpers:
             return 0.0
         vol_sum = sum(v for v in wv if isinstance(v, (int, float)))
         mom_data = [
-            (m, v)
-            for m, v in zip(wm, wv, strict=True)
-            if isinstance(m, (int, float)) and isinstance(v, (int, float))
+            (m, v) for m, v in zip(wm, wv, strict=True) if isinstance(m, (int, float)) and isinstance(v, (int, float))
         ]
         if not mom_data or vol_sum == 0:
             st["value"] = 0.0
@@ -1865,9 +1832,7 @@ class TechnicalHelpers:
         current_close = c_last if isinstance(c_last, (int, float)) else 0
         current_atr = a_last if isinstance(a_last, (int, float)) else 1.0
         sma_list = self._sma(close_window, sma_n)
-        current_sma = (
-            sma_list[-1] if sma_list and sma_list[-1] is not None else current_close
-        )
+        current_sma = sma_list[-1] if sma_list and sma_list[-1] is not None else current_close
         stdev_val = self._stdev(close_window, stdev_n)
         if stdev_val and stdev_val > (current_atr * 1.5):
             val = "volatile"
@@ -1988,9 +1953,7 @@ class TechnicalHelpers:
             st["v"] = v_last
             st["n_v"] = n_v + 1
         n_vs = int(st["n_vs"])
-        if not (type(vol_sma) is list and not vol_sma) and not (
-            vol_sma is None and n_vs == 0
-        ):
+        if not (type(vol_sma) is list and not vol_sma) and not (vol_sma is None and n_vs == 0):
             st["vs"] = vs_last
             st["n_vs"] = n_vs + 1
         if int(st["n_c"]) < 1 or int(st["n_v"]) < 1 or int(st["n_vs"]) < 1:
@@ -2210,13 +2173,7 @@ class TechnicalHelpers:
         strength_score = min(100.0, s * 50.0)
         rsi_score = min(100.0, abs(r - 50.0) * 2.0) if abs(r - 50.0) > 10.0 else 40.0
         alignment_bonus = 20.0 if abs(a) > 0.5 else 0.0
-        total = (
-            momentum_score * 0.25
-            + trend_score * 0.3
-            + strength_score * 0.25
-            + rsi_score * 0.15
-            + alignment_bonus
-        )
+        total = momentum_score * 0.25 + trend_score * 0.3 + strength_score * 0.25 + rsi_score * 0.15 + alignment_bonus
         val = max(0.0, min(100.0, total))
         st["value"] = val
         return val
@@ -2892,9 +2849,7 @@ class TechnicalHelpers:
             self._wma_state_step(st["outer"], None, sqrt_n)
             st["value"] = None
             return None
-        st["value"] = self._wma_state_step(
-            st["outer"], 2.0 * float(wh) - float(wf), sqrt_n
-        )
+        st["value"] = self._wma_state_step(st["outer"], 2.0 * float(wh) - float(wf), sqrt_n)
         return st.get("value")
 
     def _rising_inc_update(self, series: list[Any], period: int) -> bool:
@@ -3283,11 +3238,7 @@ class TechnicalHelpers:
         if stdev_mult is None:
             st["value"] = vwap
             return vwap
-        m_raw = (
-            self._series_last(stdev_mult)
-            if not isinstance(stdev_mult, (bool, int, float))
-            else stdev_mult
-        )
+        m_raw = self._series_last(stdev_mult) if not isinstance(stdev_mult, (bool, int, float)) else stdev_mult
         try:
             m = float(m_raw) if m_raw is not None else 0.0
         except (TypeError, ValueError):
@@ -3364,9 +3315,7 @@ class TechnicalHelpers:
         xs = list(range(n))
         mean_x = sum(xs) / n
         mean_y = sum(valid_values) / n
-        numerator = sum(
-            (xi - mean_x) * (yi - mean_y) for xi, yi in zip(xs, valid_values, strict=True)
-        )
+        numerator = sum((xi - mean_x) * (yi - mean_y) for xi, yi in zip(xs, valid_values, strict=True))
         denominator = sum((xi - mean_x) ** 2 for xi in xs)
         if denominator == 0:
             return mean_y
@@ -3434,12 +3383,7 @@ class TechnicalHelpers:
             st["value"] = self._linreg_from_valid(window, off)
             return float(st["value"])
         n = float(length)
-        reseed = (
-            bool(st["dirty"])
-            or not popped
-            or old is None
-            or (int(st["steps"]) % length == 0)
-        )
+        reseed = bool(st["dirty"]) or not popped or old is None or (int(st["steps"]) % length == 0)
         if reseed:
             sy = 0.0
             sxy = 0.0
@@ -3455,9 +3399,7 @@ class TechnicalHelpers:
             yn = float(y)
             st["sum_xy"] = float(st["sum_xy"]) - float(st["sum_y"]) + y0 + yn * (n - 1.0)
             st["sum_y"] = float(st["sum_y"]) - y0 + yn
-        st["value"] = self._linreg_endpoint(
-            float(st["sum_y"]), float(st["sum_xy"]), length, off
-        )
+        st["value"] = self._linreg_endpoint(float(st["sum_y"]), float(st["sum_xy"]), length, off)
         return float(st["value"])
 
     # ------------------------------------------------------------------
@@ -4002,11 +3944,7 @@ class TechnicalHelpers:
 
         tps: deque[Any] = st["tps"]
         mfs: deque[Any] = st["mfs"]
-        if (
-            not isinstance(h, (int, float))
-            or not isinstance(l, (int, float))
-            or not isinstance(c, (int, float))
-        ):
+        if not isinstance(h, (int, float)) or not isinstance(l, (int, float)) or not isinstance(c, (int, float)):
             tps.append(None)
             mfs.append(None)
             st["value"] = math.nan
@@ -4166,9 +4104,7 @@ class TechnicalHelpers:
             if s == 0.0:
                 weights = [1.0] * length
             else:
-                weights = [
-                    math.exp(-((i - m) ** 2) / (2.0 * s * s)) for i in range(length)
-                ]
+                weights = [math.exp(-((i - m) ** 2) / (2.0 * s * s)) for i in range(length)]
             wsum = sum(weights)
             st = {
                 "window": deque(maxlen=length),
@@ -4251,11 +4187,7 @@ class TechnicalHelpers:
             st["value"] = None
             return None
 
-        pairs = [
-            (float(x), float(y))
-            for x, y in zip(wa, wb, strict=False)
-            if x is not None and y is not None
-        ]
+        pairs = [(float(x), float(y)) for x, y in zip(wa, wb, strict=False) if x is not None and y is not None]
         if len(pairs) < 2:
             st["value"] = None
             return None
@@ -5037,11 +4969,11 @@ class TechnicalHelpers:
             return None
         mean = sum(vals) / n
         variance = sum((v - mean) ** 2 for v in vals) / n
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
         if std_dev == 0.0:
             st["value"] = 0.0
             return 0.0
-        skewness_val = sum((v - mean) ** 3 for v in vals) / (n * (std_dev ** 3))
+        skewness_val = sum((v - mean) ** 3 for v in vals) / (n * (std_dev**3))
         st["value"] = skewness_val
         return skewness_val
 
@@ -5070,12 +5002,12 @@ class TechnicalHelpers:
             return None
         mean = sum(vals) / n
         variance = sum((v - mean) ** 2 for v in vals) / n
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
         if std_dev == 0.0:
             st["value"] = 0.0
             return 0.0
         fourth_moment = sum((v - mean) ** 4 for v in vals) / n
-        kurtosis_val = (fourth_moment / (std_dev ** 4)) - 3.0
+        kurtosis_val = (fourth_moment / (std_dev**4)) - 3.0
         st["value"] = kurtosis_val
         return kurtosis_val
 
@@ -5180,7 +5112,7 @@ class TechnicalHelpers:
             st["value"] = 0.0
             return 0.0
         correlation = covariance / ((var1 * var2) ** 0.5)
-        r_squared = correlation ** 2
+        r_squared = correlation**2
         r_sq_clipped = max(0.0, min(1.0, r_squared))
         st["value"] = r_sq_clipped
         return r_sq_clipped
@@ -5229,9 +5161,7 @@ class TechnicalHelpers:
         if n <= 1:
             st["value"] = 0.0
             return 0.0
-        same_direction = sum(
-            1 for i in range(1, n) if (s1[i] - s1[i - 1]) * (s2[i] - s2[i - 1]) > 0
-        )
+        same_direction = sum(1 for i in range(1, n) if (s1[i] - s1[i - 1]) * (s2[i] - s2[i - 1]) > 0)
         como_val = (same_direction / (n - 1)) * 100.0
         st["value"] = como_val
         return como_val
@@ -5479,13 +5409,7 @@ class TechnicalHelpers:
                     self._pine_as_series_cache = cache  # type: ignore[attr-defined]
                 key = id(value)
                 ent = cache.get(key)
-                if (
-                    ent is not None
-                    and ent[0] == n
-                    and ent[1] is head
-                    and ent[2] is head2
-                    and ent[3] == take
-                ):
+                if ent is not None and ent[0] == n and ent[1] is head and ent[2] is head2 and ent[3] == take:
                     return ent[4]
                 # Newest-first → take first `take` then reverse to chronological.
                 # Avoid list(reversed(full_history)) when n >> SERIES_MAX.
@@ -5930,7 +5854,11 @@ class TechnicalHelpers:
             return []
         result: list[float | None] = [None]
         for idx in range(1, len(closes)):
-            h, l, c_prev = highs[idx] if idx < len(highs) else None, lows[idx] if idx < len(lows) else None, closes[idx - 1]
+            h, l, c_prev = (
+                highs[idx] if idx < len(highs) else None,
+                lows[idx] if idx < len(lows) else None,
+                closes[idx - 1],
+            )
             if h is None or l is None or c_prev is None:
                 result.append(None)
                 continue
@@ -6040,13 +5968,7 @@ class TechnicalHelpers:
         state: dict[int, tuple[Any, Any]] = getattr(self, "_cross_state", None) or {}
         prev = state.get(i)
         result = False
-        if (
-            prev is not None
-            and prev[0] is not None
-            and prev[1] is not None
-            and a_f is not None
-            and b_f is not None
-        ):
+        if prev is not None and prev[0] is not None and prev[1] is not None and a_f is not None and b_f is not None:
             try:
                 pa, pb = float(prev[0]), float(prev[1])
                 # Match list-path: prev <= / >= , curr strict

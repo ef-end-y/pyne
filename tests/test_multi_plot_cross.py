@@ -133,11 +133,7 @@ hline(50)
     assert all(v == 0 for v in rc["series"]["hline"] if v is not None)
     assert all(v == 50 for v in rc["series"]["hline_2"] if v is not None)
     # hline lives in series on both hosts; Runtime compile drawings are geometry-only
-    kinds = {
-        str(d.get("type") or d.get("kind") or "")
-        for d in (rc.get("drawings") or [])
-        if isinstance(d, dict)
-    }
+    kinds = {str(d.get("type") or d.get("kind") or "") for d in (rc.get("drawings") or []) if isinstance(d, dict)}
     assert "hline" not in kinds
 
 
@@ -165,11 +161,7 @@ fill(p1, p2, title="Background", color=color.rgb(33, 150, 243, 95))
     # Interpret fill column is all-null after JSON packaging; compile uses nan→null
     assert all(v is None for v in ri["series"]["Background"])
     assert all(v is None for v in rc["series"]["Background"])
-    kinds = {
-        str(d.get("type") or d.get("kind") or "")
-        for d in (rc.get("drawings") or [])
-        if isinstance(d, dict)
-    }
+    kinds = {str(d.get("type") or d.get("kind") or "") for d in (rc.get("drawings") or []) if isinstance(d, dict)}
     assert "fill" not in kinds
 
 

@@ -43,6 +43,7 @@ def evaluator():
 # Test Group 1: Signal Aggregation (4 tests)
 # ============================================================================
 
+
 class TestSignalAggregation:
     """Tests for signal aggregation logic."""
 
@@ -99,6 +100,7 @@ class TestSignalAggregation:
 # ============================================================================
 # Test Group 2: Market Context Analysis (4 tests)
 # ============================================================================
+
 
 class TestMarketContextAnalysis:
     """Tests for market context analysis."""
@@ -157,6 +159,7 @@ class TestMarketContextAnalysis:
 # Test Group 3: Risk Profile Adaptation (4 tests)
 # ============================================================================
 
+
 class TestRiskProfileAdaptation:
     """Tests for risk profile adaptation."""
 
@@ -213,6 +216,7 @@ class TestRiskProfileAdaptation:
 # Test Group 4: Confidence Scoring (4 tests)
 # ============================================================================
 
+
 class TestConfidenceScoring:
     """Tests for confidence scoring logic."""
 
@@ -265,14 +269,13 @@ class TestConfidenceScoring:
 # Test Group 5: Edge Cases (4 tests)
 # ============================================================================
 
+
 class TestEdgeCases:
     """Tests for edge cases and boundary conditions."""
 
     def test_empty_indicator_lists(self, evaluator):
         """Test handling of empty indicator lists."""
-        result = evaluator._builtin_ta_intelligent_strategy_synthesizer(
-            [[], [], [], [], "ranging", "balanced"]
-        )
+        result = evaluator._builtin_ta_intelligent_strategy_synthesizer([[], [], [], [], "ranging", "balanced"])
         assert isinstance(result, dict)
         assert "composite_signal" in result
 
@@ -287,8 +290,7 @@ class TestEdgeCases:
     def test_extreme_values_zero(self, evaluator):
         """Test with all zero values."""
         result = evaluator._builtin_ta_intelligent_strategy_synthesizer(
-            [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0],
-             [0.0, 0.0, 0.0], "ranging", "balanced"]
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], "ranging", "balanced"]
         )
         assert result["composite_signal"] == 0.0
         assert result["strategy_recommendation"] == "hold"
@@ -296,9 +298,7 @@ class TestEdgeCases:
     def test_extreme_values_boundaries(self, evaluator):
         """Test with boundary values (-1, 0, 1)."""
         result = evaluator._builtin_ta_intelligent_strategy_synthesizer(
-            [[1.0, 0.0, -1.0], [1.0, 0.0, -1.0],
-             [1.0, 0.0, -1.0], [1.0, 0.0, -1.0],
-             "volatile", "conservative"]
+            [[1.0, 0.0, -1.0], [1.0, 0.0, -1.0], [1.0, 0.0, -1.0], [1.0, 0.0, -1.0], "volatile", "conservative"]
         )
         assert -1.0 <= result["composite_signal"] <= 1.0
         assert isinstance(result["strategy_recommendation"], str)
@@ -307,6 +307,7 @@ class TestEdgeCases:
 # ============================================================================
 # Test Group 6: Integration (4 tests)
 # ============================================================================
+
 
 class TestIntegration:
     """Integration tests for complete workflows."""
@@ -370,7 +371,8 @@ class TestIntegration:
 
         assert isinstance(result, dict)
         assert all(
-            key in result for key in [
+            key in result
+            for key in [
                 "composite_signal",
                 "confidence_level",
                 "strategy_recommendation",
@@ -387,6 +389,7 @@ class TestIntegration:
 # ============================================================================
 # Comprehensive Validation
 # ============================================================================
+
 
 class TestOutputFormat:
     """Validate output format and all required fields."""

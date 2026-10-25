@@ -235,7 +235,6 @@ class NodeUnparser(NodeVisitor):
         ``type`` → ``visit_*`` callable (avoids string-based dispatch).
     """
 
-
     def __init__(self) -> None:
         """Create an empty unparser (empty buffer, zero indent, cold type cache)."""
         super().__init__()  # Initialize visitor cache

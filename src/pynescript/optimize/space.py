@@ -30,9 +30,7 @@ from pynescript.optimize.types import SearchSpace
 
 
 SEARCHABLE_KINDS = frozenset({"int", "float", "price", "bool", "enum"})
-SKIP_TYPES = frozenset(
-    {"source", "timeframe", "symbol", "session", "color", "text", "unknown"}
-)
+SKIP_TYPES = frozenset({"source", "timeframe", "symbol", "session", "color", "text", "unknown"})
 
 
 def _as_float(v: Any) -> float | None:
@@ -51,9 +49,7 @@ def _as_choices(raw: Any) -> tuple[ParamValue, ...] | None:
         return None
     out: list[ParamValue] = []
     for item in raw:
-        if isinstance(item, (int, float, bool, str)) and not (
-            isinstance(item, float) and item != item
-        ):
+        if isinstance(item, (int, float, bool, str)) and not (isinstance(item, float) and item != item):
             out.append(item)
         else:
             out.append(str(item))

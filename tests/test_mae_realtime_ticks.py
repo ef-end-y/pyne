@@ -229,9 +229,7 @@ def test_historical_ticks_one_keeps_bar_open_mae() -> None:
     """``realtime_ticks=1`` does not poll; MAE/MFE stay on historical last-bar OHLC."""
     bars = _hist_bars()
     feed = MockDataFeed(scripted=_forming_extremes())
-    interp = Runtime(symbol="RTMAE").run(
-        _SRC, bars, mode="interpret", realtime_ticks=1, data_feed=feed
-    )
+    interp = Runtime(symbol="RTMAE").run(_SRC, bars, mode="interpret", realtime_ticks=1, data_feed=feed)
     compiled = Runtime(symbol="RTMAE").run(
         _SRC,
         bars,

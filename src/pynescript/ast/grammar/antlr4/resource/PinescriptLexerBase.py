@@ -42,7 +42,6 @@ _STRING_STRIP_WRAP_INDENT = re.compile(r"(\r?\n)(\s)+")
 
 
 class PinescriptLexerBase(Lexer):
-
     """
     - ignore possible leading newlines
     - ignore excessive trailing newlines except a single newline

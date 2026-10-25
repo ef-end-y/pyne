@@ -37,7 +37,6 @@ from pynescript.ast.error import SyntaxErrorDetails
 
 
 class PinescriptErrorListener(ErrorListener):
-
     INSTANCE: PinescriptErrorListener | None = None
 
     def _getFilenameFrom(self, recognizer: Recognizer) -> str:

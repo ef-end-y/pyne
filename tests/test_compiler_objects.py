@@ -90,11 +90,21 @@ plot(s.sl_value, title="sl")
         out = compiled.run(o, h, l, c, v)
         assert np.allclose(out["be"], 0.0)
         assert np.allclose(out["sl"], 500.0)
-        ri = Runtime().run(src, [
-            {"open": float(o[i]), "high": float(h[i]), "low": float(l[i]),
-             "close": float(c[i]), "volume": 1.0, "time": i * 60_000}
-            for i in range(8)
-        ], mode="interpret")
+        ri = Runtime().run(
+            src,
+            [
+                {
+                    "open": float(o[i]),
+                    "high": float(h[i]),
+                    "low": float(l[i]),
+                    "close": float(c[i]),
+                    "volume": 1.0,
+                    "time": i * 60_000,
+                }
+                for i in range(8)
+            ],
+            mode="interpret",
+        )
         assert "error" not in ri, ri.get("error")
         assert ri["series"]["be"] == [0] * 8 or all(float(x) == 0.0 for x in ri["series"]["be"])
 
@@ -129,8 +139,7 @@ plot(x.a, title="a")
 plot(x.b, title="b")
 """
         bars = [
-            {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0, "time": i * 60_000}
-            for i in range(5)
+            {"open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5, "volume": 1.0, "time": i * 60_000} for i in range(5)
         ]
         ri = Runtime().run(src, bars, mode="interpret")
         rc = Runtime().run(src, bars, mode="compile")
@@ -255,9 +264,7 @@ fill(p1, p2, color=color.red, title="Background")
         bg = np.asarray(out["Background"], dtype=np.float64)
         assert bg.shape == (10,)
         assert np.all(np.isnan(bg))
-        fill_events = [
-            d for d in (out.get("__drawings") or []) if isinstance(d, dict) and d.get("kind") == "fill"
-        ]
+        fill_events = [d for d in (out.get("__drawings") or []) if isinstance(d, dict) and d.get("kind") == "fill"]
         assert len(fill_events) >= 10
         titles = {d.get("title") for d in fill_events}
         assert "Background" in titles or "Background_2" in titles
@@ -703,4 +710,3 @@ plot(array.get(a, 3), title="v")
         out = compiled.run(o, h, l, c, v)
         assert np.allclose(out["sz"], 4.0)
         assert np.allclose(out["v"], 99.0)
-

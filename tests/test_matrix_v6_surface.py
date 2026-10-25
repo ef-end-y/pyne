@@ -70,9 +70,7 @@ def test_matrix_predicates_and_sort():
 
 def test_matrix_eval_dispatch_det_and_avg():
     e = NodeLiteralEvaluator()
-    src = (
-        "matrix.det(matrix.new(2, 2, 0.0))"  # zero matrix det = 0
-    )
+    src = "matrix.det(matrix.new(2, 2, 0.0))"  # zero matrix det = 0
     # Build via Python and dispatch
     m = Matrix(2, 2, 0.0)
     m.set(0, 0, 2.0)

@@ -312,9 +312,7 @@ def _ohlc(n: int = 120) -> tuple[list[float], list[float], list[float]]:
     return highs, lows, closes
 
 
-def _bar_walk_full_macd(
-    src: list[float], fast: int, slow: int, signal: int
-) -> list[tuple[float, float, float]]:
+def _bar_walk_full_macd(src: list[float], fast: int, slow: int, signal: int) -> list[tuple[float, float, float]]:
     ev = _FullTA()
     out: list[tuple[float, float, float]] = []
     for i in range(len(src)):
@@ -322,9 +320,7 @@ def _bar_walk_full_macd(
     return out
 
 
-def _bar_walk_inc_macd(
-    src: list[float], fast: int, slow: int, signal: int
-) -> list[tuple[float, float, float]]:
+def _bar_walk_inc_macd(src: list[float], fast: int, slow: int, signal: int) -> list[tuple[float, float, float]]:
     ev = _IncTA()
     out: list[tuple[float, float, float]] = []
     for i in range(len(src)):
@@ -333,9 +329,7 @@ def _bar_walk_inc_macd(
     return out
 
 
-def _bar_walk_full_atr(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float | None]:
+def _bar_walk_full_atr(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(closes)):
@@ -348,9 +342,7 @@ def _bar_walk_full_atr(
     return out
 
 
-def _bar_walk_inc_atr(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float | None]:
+def _bar_walk_inc_atr(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(closes)):
@@ -513,9 +505,7 @@ def _bar_walk_inc_wma(src: list[float], period: int) -> list[float | None]:
     return out
 
 
-def _bar_walk_full_tr(
-    highs: list[float], lows: list[float], closes: list[float]
-) -> list[float | None]:
+def _bar_walk_full_tr(highs: list[float], lows: list[float], closes: list[float]) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(closes)):
@@ -524,9 +514,7 @@ def _bar_walk_full_tr(
     return out
 
 
-def _bar_walk_inc_tr(
-    highs: list[float], lows: list[float], closes: list[float]
-) -> list[float | None]:
+def _bar_walk_inc_tr(highs: list[float], lows: list[float], closes: list[float]) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(closes)):
@@ -635,9 +623,7 @@ plot(ta.tr)
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
 
 
-def _bar_walk_full_stoch(
-    source: list[float], highs: list[float], lows: list[float], length: int
-) -> list[float | None]:
+def _bar_walk_full_stoch(source: list[float], highs: list[float], lows: list[float], length: int) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(source)):
@@ -645,9 +631,7 @@ def _bar_walk_full_stoch(
     return out
 
 
-def _bar_walk_inc_stoch(
-    source: list[float], highs: list[float], lows: list[float], length: int
-) -> list[float | None]:
+def _bar_walk_inc_stoch(source: list[float], highs: list[float], lows: list[float], length: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(source)):
@@ -731,16 +715,12 @@ def test_incremental_cum_matches_full() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _bar_walk_full_cci(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float]:
+def _bar_walk_full_cci(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
     ev = _FullTA()
     return [ev._cci(highs[: i + 1], lows[: i + 1], closes[: i + 1], period) for i in range(len(closes))]
 
 
-def _bar_walk_inc_cci(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float]:
+def _bar_walk_inc_cci(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
     ev = _IncTA()
     out: list[float] = []
     for i in range(len(closes)):
@@ -781,16 +761,12 @@ def _bar_walk_inc_roc(src: list[float], period: int) -> list[float]:
     return out
 
 
-def _bar_walk_full_wpr(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float]:
+def _bar_walk_full_wpr(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
     ev = _FullTA()
     return [ev._wpr(highs[: i + 1], lows[: i + 1], closes[: i + 1], period) for i in range(len(closes))]
 
 
-def _bar_walk_inc_wpr(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float]:
+def _bar_walk_inc_wpr(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
     ev = _IncTA()
     out: list[float] = []
     for i in range(len(closes)):
@@ -1840,8 +1816,7 @@ def test_dema_tema_last_sample_skips_as_series() -> None:
         ema1 = fev._ema(prefix, 10)
         ema2 = fev._ema(ema1, 10)
         dema_series = [
-            (2 * a - b) if a is not None and b is not None else None
-            for a, b in zip(ema1, ema2, strict=True)
+            (2 * a - b) if a is not None and b is not None else None for a, b in zip(ema1, ema2, strict=True)
         ]
         full_d.append(dema_series[-1] if dema_series else None)
         ema3 = fev._ema(ema2, 10)
@@ -2053,16 +2028,12 @@ def _bar_walk_inc_tema(src: list[float], period: int) -> list[float | None]:
     return out
 
 
-def _bar_walk_full_valuewhen(
-    cond: list[bool], src: list[float], occurrence: int
-) -> list[Any]:
+def _bar_walk_full_valuewhen(cond: list[bool], src: list[float], occurrence: int) -> list[Any]:
     ev = _FullTA()
     return [ev._valuewhen(cond[: i + 1], src[: i + 1], occurrence) for i in range(len(cond))]
 
 
-def _bar_walk_inc_valuewhen(
-    cond: list[bool], src: list[float], occurrence: int
-) -> list[Any]:
+def _bar_walk_inc_valuewhen(cond: list[bool], src: list[float], occurrence: int) -> list[Any]:
     ev = _IncTA()
     out: list[Any] = []
     for i in range(len(cond)):
@@ -2105,19 +2076,12 @@ def _bar_walk_inc_pivotlow(src: list[float], left: int, right: int) -> list[floa
     return out
 
 
-def _bar_walk_full_adx(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float]:
+def _bar_walk_full_adx(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
     ev = _FullTA()
-    return [
-        float(ev._adx(highs[: i + 1], lows[: i + 1], closes[: i + 1], period))
-        for i in range(len(closes))
-    ]
+    return [float(ev._adx(highs[: i + 1], lows[: i + 1], closes[: i + 1], period)) for i in range(len(closes))]
 
 
-def _bar_walk_inc_adx(
-    highs: list[float], lows: list[float], closes: list[float], period: int
-) -> list[float]:
+def _bar_walk_inc_adx(highs: list[float], lows: list[float], closes: list[float], period: int) -> list[float]:
     ev = _IncTA()
     out: list[float] = []
     for i in range(len(closes)):
@@ -2149,9 +2113,7 @@ def _bar_walk_inc_dmi(
     out: list[tuple[float, float, float]] = []
     for i in range(len(closes)):
         ev._ta_call_i = 0
-        out.append(
-            ev._dmi_inc_update(highs[: i + 1], lows[: i + 1], closes[: i + 1], di_len, adx_smooth)
-        )
+        out.append(ev._dmi_inc_update(highs[: i + 1], lows[: i + 1], closes[: i + 1], di_len, adx_smooth))
     return out
 
 
@@ -2190,11 +2152,7 @@ def _bar_walk_inc_supertrend(
             "low": lows[: i + 1],
             "close": closes[: i + 1],
         }
-        out.append(
-            ev._supertrend_inc_update(
-                highs[: i + 1], lows[: i + 1], closes[: i + 1], factor, atr_period
-            )
-        )
+        out.append(ev._supertrend_inc_update(highs[: i + 1], lows[: i + 1], closes[: i + 1], factor, atr_period))
     return out
 
 
@@ -2209,9 +2167,7 @@ def _simplified_supertrend_expected(
     ev = _FullTA()
     out: list[tuple[float, int]] = []
     for i in range(len(closes)):
-        atr_val = ev._builtin_ta_atr(
-            [highs[: i + 1], lows[: i + 1], closes[: i + 1], atr_period]
-        )
+        atr_val = ev._builtin_ta_atr([highs[: i + 1], lows[: i + 1], closes[: i + 1], atr_period])
         if isinstance(atr_val, list):
             atr_val = atr_val[-1] if atr_val else 0.0
         out.append(ev._supertrend(highs[i], lows[i], closes[i], factor, atr_val))
@@ -2377,10 +2333,7 @@ def _bar_walk_full_mfi(
     highs: list[float], lows: list[float], closes: list[float], vols: list[float], period: int
 ) -> list[float]:
     ev = _FullTA()
-    return [
-        ev._mfi(highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], period)
-        for i in range(len(closes))
-    ]
+    return [ev._mfi(highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], period) for i in range(len(closes))]
 
 
 def _bar_walk_inc_mfi(
@@ -2390,11 +2343,7 @@ def _bar_walk_inc_mfi(
     out: list[float] = []
     for i in range(len(closes)):
         ev._ta_call_i = 0
-        out.append(
-            ev._mfi_inc_update(
-                highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], period
-            )
-        )
+        out.append(ev._mfi_inc_update(highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], period))
     return out
 
 
@@ -2420,16 +2369,12 @@ def _bar_walk_inc_sar(
     return out
 
 
-def _bar_walk_full_alma(
-    src: list[float], length: int, offset: float = 0.85, sigma: float = 6.0
-) -> list[float | None]:
+def _bar_walk_full_alma(src: list[float], length: int, offset: float = 0.85, sigma: float = 6.0) -> list[float | None]:
     ev = _FullTA()
     return [ev._builtin_ta_alma([src[: i + 1], length, offset, sigma]) for i in range(len(src))]
 
 
-def _bar_walk_inc_alma(
-    src: list[float], length: int, offset: float = 0.85, sigma: float = 6.0
-) -> list[float | None]:
+def _bar_walk_inc_alma(src: list[float], length: int, offset: float = 0.85, sigma: float = 6.0) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(src)):
@@ -2440,9 +2385,7 @@ def _bar_walk_inc_alma(
 
 def _bar_walk_full_correlation(s1: list[float], s2: list[float], length: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_correlation([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))
-    ]
+    return [ev._builtin_ta_correlation([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))]
 
 
 def _bar_walk_inc_correlation(s1: list[float], s2: list[float], length: int) -> list[float | None]:
@@ -2459,8 +2402,7 @@ def _bar_walk_full_kc(
 ) -> list[tuple[float, float, float]]:
     ev = _FullTA()
     return [
-        ev._builtin_ta_kc([highs[: i + 1], lows[: i + 1], closes[: i + 1], length, mult])
-        for i in range(len(closes))
+        ev._builtin_ta_kc([highs[: i + 1], lows[: i + 1], closes[: i + 1], length, mult]) for i in range(len(closes))
     ]
 
 
@@ -2477,10 +2419,7 @@ def _bar_walk_inc_kc(
 
 def _bar_walk_full_pct_lin(src: list[float], period: int, pct: float) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_percentile_linear_interpolation([src[: i + 1], period, pct])
-        for i in range(len(src))
-    ]
+    return [ev._builtin_ta_percentile_linear_interpolation([src[: i + 1], period, pct]) for i in range(len(src))]
 
 
 def _bar_walk_inc_pct_lin(src: list[float], period: int, pct: float) -> list[float | None]:
@@ -2494,10 +2433,7 @@ def _bar_walk_inc_pct_lin(src: list[float], period: int, pct: float) -> list[flo
 
 def _bar_walk_full_pct_nr(src: list[float], period: int, pct: float) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_percentile_nearest_rank([src[: i + 1], period, pct])
-        for i in range(len(src))
-    ]
+    return [ev._builtin_ta_percentile_nearest_rank([src[: i + 1], period, pct]) for i in range(len(src))]
 
 
 def _bar_walk_inc_pct_nr(src: list[float], period: int, pct: float) -> list[float | None]:
@@ -2572,9 +2508,7 @@ def test_incremental_kcw_matches_full() -> None:
         full = evf._builtin_ta_kcw(args)
         evi._ta_call_i = 0
         _mid, up, lo = evi._kc_inc_update(*args[:3], length, mult)
-        if (isinstance(up, float) and math.isnan(up)) or (
-            isinstance(lo, float) and math.isnan(lo)
-        ):
+        if (isinstance(up, float) and math.isnan(up)) or (isinstance(lo, float) and math.isnan(lo)):
             inc = float("nan")
         else:
             inc = float(up) - float(lo)
@@ -2680,9 +2614,7 @@ plot(ta.percentile_linear_interpolation(close, 14, 50))
 # ---------------------------------------------------------------------------
 
 
-def _bar_walk_full_kama(
-    src: list[float], length: int, fast: int = 2, slow: int = 30
-) -> list[float | None]:
+def _bar_walk_full_kama(src: list[float], length: int, fast: int = 2, slow: int = 30) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(src)):
@@ -2695,9 +2627,7 @@ def _bar_walk_full_kama(
     return out
 
 
-def _bar_walk_inc_kama(
-    src: list[float], length: int, fast: int = 2, slow: int = 30
-) -> list[float | None]:
+def _bar_walk_inc_kama(src: list[float], length: int, fast: int = 2, slow: int = 30) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(src)):
@@ -2834,9 +2764,7 @@ def test_incremental_stochrsi_matches_full() -> None:
                 if e[j] is None:
                     assert g[j] is None, f"stochrsi bar {i} c{j}: expected None got {g[j]}"
                 else:
-                    assert g[j] == pytest.approx(e[j], rel=1e-9, abs=1e-9), (
-                        f"stochrsi bar {i} c{j}: {g[j]} != {e[j]}"
-                    )
+                    assert g[j] == pytest.approx(e[j], rel=1e-9, abs=1e-9), f"stochrsi bar {i} c{j}: {g[j]} != {e[j]}"
 
 
 def test_two_kama_call_sites_independent() -> None:
@@ -2859,6 +2787,7 @@ def test_runtime_round7_t2_incremental_vs_disabled(monkeypatch: pytest.MonkeyPat
     try:
         from pynescript.ast.helper import clear_parse_cache
     except ImportError:  # pragma: no cover
+
         def clear_parse_cache() -> None:
             return None
 
@@ -3258,11 +3187,7 @@ def _bar_walk_inc_wvad(
     out: list[float | None] = []
     for i in range(len(closes)):
         ev._ta_call_i = 0
-        out.append(
-            ev._wvad_inc_update(
-                highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], period
-            )
-        )
+        out.append(ev._wvad_inc_update(highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], period))
     return out
 
 
@@ -3292,17 +3217,11 @@ def _bar_walk_inc_cmf(
     out: list[float | None] = []
     for i in range(len(closes)):
         ev._ta_call_i = 0
-        out.append(
-            ev._cmf_inc_update(
-                closes[: i + 1], highs[: i + 1], lows[: i + 1], vols[: i + 1], period
-            )
-        )
+        out.append(ev._cmf_inc_update(closes[: i + 1], highs[: i + 1], lows[: i + 1], vols[: i + 1], period))
     return out
 
 
-def _bar_walk_full_klinger(
-    closes: list[float], vols: list[float], fast: int, slow: int
-) -> list[float | None]:
+def _bar_walk_full_klinger(closes: list[float], vols: list[float], fast: int, slow: int) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(closes)):
@@ -3311,9 +3230,7 @@ def _bar_walk_full_klinger(
     return out
 
 
-def _bar_walk_inc_klinger(
-    closes: list[float], vols: list[float], fast: int, slow: int
-) -> list[float | None]:
+def _bar_walk_inc_klinger(closes: list[float], vols: list[float], fast: int, slow: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(closes)):
@@ -3552,9 +3469,7 @@ plot(ta.pvi, "pvi")
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
 
 
-def _bar_walk_full_aroon(
-    highs: list[float], lows: list[float], length: int
-) -> list[tuple[float, float] | None]:
+def _bar_walk_full_aroon(highs: list[float], lows: list[float], length: int) -> list[tuple[float, float] | None]:
     ev = _FullTA()
     out: list[tuple[float, float] | None] = []
     for i in range(len(highs)):
@@ -3563,9 +3478,7 @@ def _bar_walk_full_aroon(
     return out
 
 
-def _bar_walk_inc_aroon(
-    highs: list[float], lows: list[float], length: int
-) -> list[tuple[float, float] | None]:
+def _bar_walk_inc_aroon(highs: list[float], lows: list[float], length: int) -> list[tuple[float, float] | None]:
     ev = _IncTA()
     out: list[tuple[float, float] | None] = []
     for i in range(len(highs)):
@@ -3630,9 +3543,7 @@ def test_incremental_dpo_keeps_na_bar_alignment() -> None:
     assert values[na_i + length] is not None
 
 
-def _bar_walk_full_donchian(
-    highs: list[float], lows: list[float], length: int
-) -> list[dict[str, float | None]]:
+def _bar_walk_full_donchian(highs: list[float], lows: list[float], length: int) -> list[dict[str, float | None]]:
     ev = _FullTA()
     out: list[dict[str, float | None]] = []
     for i in range(len(highs)):
@@ -3641,9 +3552,7 @@ def _bar_walk_full_donchian(
     return out
 
 
-def _bar_walk_inc_donchian(
-    highs: list[float], lows: list[float], length: int
-) -> list[dict[str, float | None]]:
+def _bar_walk_inc_donchian(highs: list[float], lows: list[float], length: int) -> list[dict[str, float | None]]:
     ev = _IncTA()
     out: list[dict[str, float | None]] = []
     for i in range(len(highs)):
@@ -3969,9 +3878,7 @@ def test_incremental_apo_slot_count_stable() -> None:
         assert ev._ta_call_i == 2, f"bar {i}: expected 2 EMA slots, got {ev._ta_call_i}"
 
 
-def _bar_walk_full_emv(
-    highs: list[float], lows: list[float], vols: list[float], length: int
-) -> list[float | None]:
+def _bar_walk_full_emv(highs: list[float], lows: list[float], vols: list[float], length: int) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(highs)):
@@ -3984,9 +3891,7 @@ def _bar_walk_full_emv(
     return out
 
 
-def _bar_walk_inc_emv(
-    highs: list[float], lows: list[float], vols: list[float], length: int
-) -> list[float | None]:
+def _bar_walk_inc_emv(highs: list[float], lows: list[float], vols: list[float], length: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(highs)):
@@ -4105,9 +4010,7 @@ def _bar_walk_inc_kurtosis(src: list[Any], period: int) -> list[float | None]:
 
 def _bar_walk_full_beta(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_beta([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))
-    ]
+    return [ev._builtin_ta_beta([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))]
 
 
 def _bar_walk_inc_beta(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
@@ -4274,19 +4177,12 @@ plot(ta.beta(close, high, 20), "beta")
 # ---------------------------------------------------------------------------
 
 
-def _bar_walk_full_r_squared(
-    s1: list[Any], s2: list[Any], length: int
-) -> list[float | None]:
+def _bar_walk_full_r_squared(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_r_squared([s1[: i + 1], s2[: i + 1], length])
-        for i in range(len(s1))
-    ]
+    return [ev._builtin_ta_r_squared([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))]
 
 
-def _bar_walk_inc_r_squared(
-    s1: list[Any], s2: list[Any], length: int
-) -> list[float | None]:
+def _bar_walk_inc_r_squared(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(s1)):
@@ -4295,19 +4191,12 @@ def _bar_walk_inc_r_squared(
     return out
 
 
-def _bar_walk_full_comovement(
-    s1: list[Any], s2: list[Any], length: int
-) -> list[float | None]:
+def _bar_walk_full_comovement(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_comovement([s1[: i + 1], s2[: i + 1], length])
-        for i in range(len(s1))
-    ]
+    return [ev._builtin_ta_comovement([s1[: i + 1], s2[: i + 1], length]) for i in range(len(s1))]
 
 
-def _bar_walk_inc_comovement(
-    s1: list[Any], s2: list[Any], length: int
-) -> list[float | None]:
+def _bar_walk_inc_comovement(s1: list[Any], s2: list[Any], length: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(s1)):
@@ -4489,28 +4378,17 @@ plot(ta.comovement(close, high, 20), "como")
 # ---------------------------------------------------------------------------
 
 
-def _bar_walk_full_vwm(
-    src: list[Any], vol: list[Any], length: int
-) -> list[float | None]:
+def _bar_walk_full_vwm(src: list[Any], vol: list[Any], length: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_volume_weighted_momentum([src[: i + 1], vol[: i + 1], length])
-        for i in range(len(src))
-    ]
+    return [ev._builtin_ta_volume_weighted_momentum([src[: i + 1], vol[: i + 1], length]) for i in range(len(src))]
 
 
-def _bar_walk_inc_vwm(
-    src: list[Any], vol: list[Any], length: int
-) -> list[float | None]:
+def _bar_walk_inc_vwm(src: list[Any], vol: list[Any], length: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(src)):
         ev._ta_call_i = 0
-        out.append(
-            ev._volume_weighted_momentum_inc_update(
-                src[: i + 1], vol[: i + 1], length
-            )
-        )
+        out.append(ev._volume_weighted_momentum_inc_update(src[: i + 1], vol[: i + 1], length))
     return out
 
 
@@ -4649,15 +4527,10 @@ def _bar_walk_full_vol_rci(src: list[Any], length: int) -> list[float | None]:
     from pynescript.ast.evaluator.builtins.technical_submodules.volatility import VolatilityIndicators
 
     ev = _FullTA()
-    return [
-        VolatilityIndicators._builtin_ta_rci(ev, [src[: i + 1], length])
-        for i in range(len(src))
-    ]
+    return [VolatilityIndicators._builtin_ta_rci(ev, [src[: i + 1], length]) for i in range(len(src))]
 
 
-def _bar_walk_full_bb_pct(
-    src: list[Any], length: int, std_dev: float
-) -> list[float | None]:
+def _bar_walk_full_bb_pct(src: list[Any], length: int, std_dev: float) -> list[float | None]:
     ev = _FullTA()
     out: list[float | None] = []
     for i in range(len(src)):
@@ -4666,9 +4539,7 @@ def _bar_walk_full_bb_pct(
     return out
 
 
-def _bar_walk_inc_bb_pct(
-    src: list[Any], length: int, std_dev: float
-) -> list[float | None]:
+def _bar_walk_inc_bb_pct(src: list[Any], length: int, std_dev: float) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(src)):
@@ -4682,9 +4553,7 @@ def _bar_walk_full_atr_normalized(
 ) -> list[float | None]:
     ev = _FullTA()
     return [
-        ev._builtin_ta_atr_normalized(
-            [highs[: i + 1], lows[: i + 1], closes[: i + 1], period]
-        )
+        ev._builtin_ta_atr_normalized([highs[: i + 1], lows[: i + 1], closes[: i + 1], period])
         for i in range(len(closes))
     ]
 
@@ -4696,11 +4565,7 @@ def _bar_walk_inc_atr_normalized(
     out: list[float | None] = []
     for i in range(len(closes)):
         ev._ta_call_i = 0
-        out.append(
-            ev._atr_normalized_inc_update(
-                highs[: i + 1], lows[: i + 1], closes[: i + 1], period
-            )
-        )
+        out.append(ev._atr_normalized_inc_update(highs[: i + 1], lows[: i + 1], closes[: i + 1], period))
     return out
 
 
@@ -4940,12 +4805,8 @@ def test_incremental_atr_normalized_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(closes_na)):
         ev._ta_call_i = 0
-        ev._atr_normalized_inc_update(
-            highs[: i + 1], lows[: i + 1], closes_na[: i + 1], 10
-        )
-        assert ev._ta_call_i == 1, (
-            f"atr_normalized bar {i}: expected 1 slot, got {ev._ta_call_i}"
-        )
+        ev._atr_normalized_inc_update(highs[: i + 1], lows[: i + 1], closes_na[: i + 1], 10)
+        assert ev._ta_call_i == 1, f"atr_normalized bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
 def test_incremental_atr_normalized_zero_close() -> None:
@@ -4954,9 +4815,7 @@ def test_incremental_atr_normalized_zero_close() -> None:
     closes = list(closes)
     closes[20] = 0.0
     got = _bar_walk_inc_atr_normalized(highs, lows, closes, 10)
-    _assert_series_close(
-        got, _bar_walk_full_atr_normalized(highs, lows, closes, 10)
-    )
+    _assert_series_close(got, _bar_walk_full_atr_normalized(highs, lows, closes, 10))
     assert got[20] is None
 
 
@@ -4966,9 +4825,7 @@ def test_incremental_atr_normalized_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(closes)):
         ev._ta_call_i = 0
-        ev._builtin_ta_atr_normalized(
-            [highs[: i + 1], lows[: i + 1], closes[: i + 1], 10]
-        )
+        ev._builtin_ta_atr_normalized([highs[: i + 1], lows[: i + 1], closes[: i + 1], 10])
         assert ev._ta_call_i == 1, f"atr_normalized builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -5019,71 +4876,48 @@ plot(ta.atr_normalized(high, low, close, 14), "atrn")
 # ---------------------------------------------------------------------------
 
 
-def _bar_walk_full_cumulative_delta(
-    close: list[Any], vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_full_cumulative_delta(close: list[Any], vol: list[Any], period: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_cumulative_delta([close[: i + 1], vol[: i + 1], period])
-        for i in range(len(close))
-    ]
+    return [ev._builtin_ta_cumulative_delta([close[: i + 1], vol[: i + 1], period]) for i in range(len(close))]
 
 
-def _bar_walk_inc_cumulative_delta(
-    close: list[Any], vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_inc_cumulative_delta(close: list[Any], vol: list[Any], period: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            ev._cumulative_delta_inc_update(close[: i + 1], vol[: i + 1], period)
-        )
+        out.append(ev._cumulative_delta_inc_update(close[: i + 1], vol[: i + 1], period))
     return out
 
 
-def _bar_walk_full_econ_cumulative_delta(
-    close: list[Any], vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_full_econ_cumulative_delta(close: list[Any], vol: list[Any], period: int) -> list[float | None]:
     """Full-recompute via the economics mixin copy (not the MRO winner)."""
     from pynescript.ast.evaluator.builtins.technical_submodules.economics import EconomicsIndicators
 
     ev = _FullTA()
     return [
-        EconomicsIndicators._builtin_ta_cumulative_delta(
-            ev, [close[: i + 1], vol[: i + 1], period]
-        )
+        EconomicsIndicators._builtin_ta_cumulative_delta(ev, [close[: i + 1], vol[: i + 1], period])
         for i in range(len(close))
     ]
 
 
-def _bar_walk_full_adv_cumulative_delta(
-    close: list[Any], vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_full_adv_cumulative_delta(close: list[Any], vol: list[Any], period: int) -> list[float | None]:
     """Full-recompute via the advanced mixin copy (MRO winner)."""
     from pynescript.ast.evaluator.builtins.technical_submodules.advanced import AdvancedIndicators
 
     ev = _FullTA()
     return [
-        AdvancedIndicators._builtin_ta_cumulative_delta(
-            ev, [close[: i + 1], vol[: i + 1], period]
-        )
+        AdvancedIndicators._builtin_ta_cumulative_delta(ev, [close[: i + 1], vol[: i + 1], period])
         for i in range(len(close))
     ]
 
 
-def _bar_walk_full_volume_momentum(
-    vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_full_volume_momentum(vol: list[Any], period: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        ev._builtin_ta_volume_momentum([vol[: i + 1], period]) for i in range(len(vol))
-    ]
+    return [ev._builtin_ta_volume_momentum([vol[: i + 1], period]) for i in range(len(vol))]
 
 
-def _bar_walk_inc_volume_momentum(
-    vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_inc_volume_momentum(vol: list[Any], period: int) -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(vol)):
@@ -5092,28 +4926,18 @@ def _bar_walk_inc_volume_momentum(
     return out
 
 
-def _bar_walk_full_econ_volume_momentum(
-    vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_full_econ_volume_momentum(vol: list[Any], period: int) -> list[float | None]:
     from pynescript.ast.evaluator.builtins.technical_submodules.economics import EconomicsIndicators
 
     ev = _FullTA()
-    return [
-        EconomicsIndicators._builtin_ta_volume_momentum(ev, [vol[: i + 1], period])
-        for i in range(len(vol))
-    ]
+    return [EconomicsIndicators._builtin_ta_volume_momentum(ev, [vol[: i + 1], period]) for i in range(len(vol))]
 
 
-def _bar_walk_full_adv_volume_momentum(
-    vol: list[Any], period: int
-) -> list[float | None]:
+def _bar_walk_full_adv_volume_momentum(vol: list[Any], period: int) -> list[float | None]:
     from pynescript.ast.evaluator.builtins.technical_submodules.advanced import AdvancedIndicators
 
     ev = _FullTA()
-    return [
-        AdvancedIndicators._builtin_ta_volume_momentum(ev, [vol[: i + 1], period])
-        for i in range(len(vol))
-    ]
+    return [AdvancedIndicators._builtin_ta_volume_momentum(ev, [vol[: i + 1], period]) for i in range(len(vol))]
 
 
 def test_incremental_cumulative_delta_matches_full() -> None:
@@ -5330,19 +5154,13 @@ plot(ta.volume_momentum(volume, 20), "vm")
 # ---------------------------------------------------------------------------
 
 
-def _bar_walk_full_sma_weighted(
-    src: list[Any], period: int, weight_type: str = "linear"
-) -> list[float | None]:
+def _bar_walk_full_sma_weighted(src: list[Any], period: int, weight_type: str = "linear") -> list[float | None]:
     ev = _FullTA()
     args_tail: list[Any] = [period] if weight_type == "linear" else [period, weight_type]
-    return [
-        ev._builtin_ta_sma_weighted([src[: i + 1], *args_tail]) for i in range(len(src))
-    ]
+    return [ev._builtin_ta_sma_weighted([src[: i + 1], *args_tail]) for i in range(len(src))]
 
 
-def _bar_walk_inc_sma_weighted(
-    src: list[Any], period: int, weight_type: str = "linear"
-) -> list[float | None]:
+def _bar_walk_inc_sma_weighted(src: list[Any], period: int, weight_type: str = "linear") -> list[float | None]:
     ev = _IncTA()
     out: list[float | None] = []
     for i in range(len(src)):
@@ -5721,6 +5539,7 @@ plot(ta.min(close), "mn1")
             assert not b_na, f"{key} bar {i}: disabled na, incremental={a}"
             assert a == pytest.approx(b, rel=1e-9, abs=1e-9), f"{key} bar {i}: {a} != {b}"
 
+
 # ---------------------------------------------------------------------------
 # T2: stoch_smooth incremental last-sample ≡ full recompute
 # ---------------------------------------------------------------------------
@@ -5751,9 +5570,7 @@ def _bar_walk_full_stoch_smooth(
     ev = _FullTA()
     return [
         _stoch_smooth_last(
-            ev._builtin_ta_stoch_smooth(
-                [highs[: i + 1], lows[: i + 1], closes[: i + 1], period, smooth_k, smooth_d]
-            )
+            ev._builtin_ta_stoch_smooth([highs[: i + 1], lows[: i + 1], closes[: i + 1], period, smooth_k, smooth_d])
         )
         for i in range(len(closes))
     ]
@@ -5926,10 +5743,7 @@ def _rsi_divergence_last(full: Any) -> float | None:
 
 def _bar_walk_full_rsi_divergence(src: list[Any], period: int) -> list[float | None]:
     ev = _FullTA()
-    return [
-        _rsi_divergence_last(ev._builtin_ta_rsi_divergence([src[: i + 1], period]))
-        for i in range(len(src))
-    ]
+    return [_rsi_divergence_last(ev._builtin_ta_rsi_divergence([src[: i + 1], period])) for i in range(len(src))]
 
 
 def _bar_walk_inc_rsi_divergence(src: list[Any], period: int) -> list[float | None]:
@@ -6268,9 +6082,7 @@ plot(g.is_low_fractal ? 1 : 0, "lo5")
 _ENGULFING_OFF = {"is_bullish": False, "is_bearish": False, "pattern_strength": 0.0}
 
 
-def _ohlc4(
-    n: int = 120, seed: float = 100.0
-) -> tuple[list[float], list[float], list[float], list[float]]:
+def _ohlc4(n: int = 120, seed: float = 100.0) -> tuple[list[float], list[float], list[float], list[float]]:
     highs, lows, closes = _ohlc(n, seed)
     opens = [closes[0]] + [closes[i] for i in range(n - 1)]
     return opens, highs, lows, closes
@@ -6289,9 +6101,7 @@ def _assert_pattern_close(
                 if isinstance(ev, bool) or isinstance(gv, bool):
                     assert gv is ev, f"bar {i} {k}: {gv} != {ev}"
                 else:
-                    assert gv == pytest.approx(ev, rel=1e-9, abs=1e-9), (
-                        f"bar {i} {k}: {gv} != {ev}"
-                    )
+                    assert gv == pytest.approx(ev, rel=1e-9, abs=1e-9), f"bar {i} {k}: {gv} != {ev}"
             else:
                 assert gv == ev, f"bar {i} {k}: {gv} != {ev}"
 
@@ -6305,11 +6115,7 @@ def _bar_walk_full_engulfing(
     ev = _FullTA()
     out: list[dict[str, Any]] = []
     for i in range(len(opens)):
-        out.append(
-            ev._builtin_ta_engulfing(
-                [opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]
-            )
-        )
+        out.append(ev._builtin_ta_engulfing([opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]))
     return out
 
 
@@ -6323,9 +6129,7 @@ def _bar_walk_inc_engulfing(
     out: list[dict[str, Any]] = []
     for i in range(len(opens)):
         ev._ta_call_i = 0
-        out.append(
-            ev._engulfing_inc_update(opens[: i + 1], closes[: i + 1])
-        )
+        out.append(ev._engulfing_inc_update(opens[: i + 1], closes[: i + 1]))
     return out
 
 
@@ -6338,11 +6142,7 @@ def _bar_walk_full_hammer(
     ev = _FullTA()
     out: list[dict[str, Any]] = []
     for i in range(len(opens)):
-        out.append(
-            ev._builtin_ta_hammer(
-                [opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]
-            )
-        )
+        out.append(ev._builtin_ta_hammer([opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]]))
     return out
 
 
@@ -6356,11 +6156,7 @@ def _bar_walk_inc_hammer(
     out: list[dict[str, Any]] = []
     for i in range(len(opens)):
         ev._ta_call_i = 0
-        out.append(
-            ev._hammer_inc_update(
-                opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]
-            )
-        )
+        out.append(ev._hammer_inc_update(opens[: i + 1], highs[: i + 1], lows[: i + 1], closes[: i + 1]))
     return out
 
 
@@ -6495,16 +6291,8 @@ def test_incremental_engulfing_hammer_two_call_sites_independent() -> None:
         ev._ta_call_i = 0
         e_a.append(ev._engulfing_inc_update(a_o[: i + 1], a_c[: i + 1]))
         e_b.append(ev._engulfing_inc_update(b_o[: i + 1], b_c[: i + 1]))
-        h_a.append(
-            ev._hammer_inc_update(
-                a_o[: i + 1], a_h[: i + 1], a_l[: i + 1], a_c[: i + 1]
-            )
-        )
-        h_b.append(
-            ev._hammer_inc_update(
-                b_o[: i + 1], b_h[: i + 1], b_l[: i + 1], b_c[: i + 1]
-            )
-        )
+        h_a.append(ev._hammer_inc_update(a_o[: i + 1], a_h[: i + 1], a_l[: i + 1], a_c[: i + 1]))
+        h_b.append(ev._hammer_inc_update(b_o[: i + 1], b_h[: i + 1], b_l[: i + 1], b_c[: i + 1]))
     _assert_pattern_close(e_a, _bar_walk_full_engulfing(a_o, a_h, a_l, a_c))
     _assert_pattern_close(e_b, _bar_walk_full_engulfing(b_o, b_h, b_l, b_c))
     _assert_pattern_close(h_a, _bar_walk_full_hammer(a_o, a_h, a_l, a_c))
@@ -6625,11 +6413,7 @@ def _bar_walk_full_dtb(
     ev = _FullTA()
     out: list[dict[str, Any]] = []
     for i in range(len(highs)):
-        out.append(
-            ev._builtin_ta_double_top_bottom(
-                [highs[: i + 1], lows[: i + 1], period]
-            )
-        )
+        out.append(ev._builtin_ta_double_top_bottom([highs[: i + 1], lows[: i + 1], period]))
     return out
 
 
@@ -6642,11 +6426,7 @@ def _bar_walk_inc_dtb(
     out: list[dict[str, Any]] = []
     for i in range(len(highs)):
         ev._ta_call_i = 0
-        out.append(
-            ev._double_top_bottom_inc_update(
-                highs[: i + 1], lows[: i + 1], period
-            )
-        )
+        out.append(ev._double_top_bottom_inc_update(highs[: i + 1], lows[: i + 1], period))
     return out
 
 
@@ -6725,9 +6505,7 @@ def test_incremental_double_top_bottom_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(highs)):
         ev._ta_call_i = 0
-        ev._builtin_ta_double_top_bottom(
-            [highs[: i + 1], lows[: i + 1], 5]
-        )
+        ev._builtin_ta_double_top_bottom([highs[: i + 1], lows[: i + 1], 5])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -6833,11 +6611,7 @@ def _bar_walk_full_gap(
     ev = _FullTA()
     out: list[dict[str, Any]] = []
     for i in range(len(highs)):
-        out.append(
-            ev._builtin_ta_gap_detector(
-                [highs[: i + 1], lows[: i + 1], prev_closes[i]]
-            )
-        )
+        out.append(ev._builtin_ta_gap_detector([highs[: i + 1], lows[: i + 1], prev_closes[i]]))
     return out
 
 
@@ -6850,11 +6624,7 @@ def _bar_walk_inc_gap(
     out: list[dict[str, Any]] = []
     for i in range(len(highs)):
         ev._ta_call_i = 0
-        out.append(
-            ev._gap_detector_inc_update(
-                highs[: i + 1], lows[: i + 1], prev_closes[i]
-            )
-        )
+        out.append(ev._gap_detector_inc_update(highs[: i + 1], lows[: i + 1], prev_closes[i]))
     return out
 
 
@@ -6946,9 +6716,7 @@ def test_incremental_gap_detector_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(highs)):
         ev._ta_call_i = 0
-        ev._builtin_ta_gap_detector(
-            [highs[: i + 1], lows[: i + 1], prev[i]]
-        )
+        ev._builtin_ta_gap_detector([highs[: i + 1], lows[: i + 1], prev[i]])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -7079,9 +6847,7 @@ def _bar_walk_full_inside_bar(
     ev = _FullTA()
     out: list[bool] = []
     for i in range(len(highs)):
-        out.append(
-            bool(ev._builtin_ta_inside_bar_pattern([highs[: i + 1], lows[: i + 1]]))
-        )
+        out.append(bool(ev._builtin_ta_inside_bar_pattern([highs[: i + 1], lows[: i + 1]])))
     return out
 
 
@@ -7099,9 +6865,7 @@ def _bar_walk_inc_inside_bar(
 
 def test_incremental_inside_bar_pattern_matches_full() -> None:
     highs, lows = _inside_hl(120)
-    assert _bar_walk_inc_inside_bar(highs, lows) == _bar_walk_full_inside_bar(
-        highs, lows
-    )
+    assert _bar_walk_inc_inside_bar(highs, lows) == _bar_walk_full_inside_bar(highs, lows)
 
 
 def test_incremental_inside_bar_pattern_warmup() -> None:
@@ -7280,11 +7044,7 @@ def _bar_walk_full_ema_cross(
     ev = _FullTA()
     out: list[dict[str, Any]] = []
     for i in range(len(fast)):
-        out.append(
-            ev._builtin_ta_ema_cross_signal(
-                [fast[: i + 1], slow[: i + 1], threshold]
-            )
-        )
+        out.append(ev._builtin_ta_ema_cross_signal([fast[: i + 1], slow[: i + 1], threshold]))
     return out
 
 
@@ -7297,11 +7057,7 @@ def _bar_walk_inc_ema_cross(
     out: list[dict[str, Any]] = []
     for i in range(len(fast)):
         ev._ta_call_i = 0
-        out.append(
-            ev._ema_cross_signal_inc_update(
-                fast[: i + 1], slow[: i + 1], threshold
-            )
-        )
+        out.append(ev._ema_cross_signal_inc_update(fast[: i + 1], slow[: i + 1], threshold))
     return out
 
 
@@ -7414,9 +7170,7 @@ def test_incremental_ema_cross_signal_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(fast)):
         ev._ta_call_i = 0
-        ev._builtin_ta_ema_cross_signal(
-            [fast[: i + 1], slow[: i + 1], 0.25]
-        )
+        ev._builtin_ta_ema_cross_signal([fast[: i + 1], slow[: i + 1], 0.25])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -7430,16 +7184,8 @@ def test_incremental_ema_cross_signal_two_call_sites_independent() -> None:
     b_out: list[dict[str, Any]] = []
     for i in range(len(a_fast)):
         ev._ta_call_i = 0
-        a_out.append(
-            ev._ema_cross_signal_inc_update(
-                a_fast[: i + 1], a_slow[: i + 1], 0.25
-            )
-        )
-        b_out.append(
-            ev._ema_cross_signal_inc_update(
-                b_fast[: i + 1], b_slow[: i + 1], 0.1
-            )
-        )
+        a_out.append(ev._ema_cross_signal_inc_update(a_fast[: i + 1], a_slow[: i + 1], 0.25))
+        b_out.append(ev._ema_cross_signal_inc_update(b_fast[: i + 1], b_slow[: i + 1], 0.1))
     _assert_pattern_close(a_out, _bar_walk_full_ema_cross(a_fast, a_slow, 0.25))
     _assert_pattern_close(b_out, _bar_walk_full_ema_cross(b_fast, b_slow, 0.1))
 
@@ -7537,11 +7283,7 @@ def _bar_walk_full_rsi_obos(
     ev = _FullTA()
     out: list[dict[str, Any]] = []
     for i in range(len(src)):
-        out.append(
-            ev._builtin_ta_rsi_oversold_overbought(
-                [src[: i + 1], oversold, overbought]
-            )
-        )
+        out.append(ev._builtin_ta_rsi_oversold_overbought([src[: i + 1], oversold, overbought]))
     return out
 
 
@@ -7554,11 +7296,7 @@ def _bar_walk_inc_rsi_obos(
     out: list[dict[str, Any]] = []
     for i in range(len(src)):
         ev._ta_call_i = 0
-        out.append(
-            ev._rsi_oversold_overbought_inc_update(
-                src[: i + 1], oversold, overbought
-            )
-        )
+        out.append(ev._rsi_oversold_overbought_inc_update(src[: i + 1], oversold, overbought))
     return out
 
 
@@ -7572,9 +7310,7 @@ def _bar_walk_inc_rsi_obos_last_sample(
     out: list[dict[str, Any]] = []
     for i in range(len(src)):
         ev._ta_call_i = 0
-        out.append(
-            ev._rsi_oversold_overbought_inc_update(src[i], oversold, overbought)
-        )
+        out.append(ev._rsi_oversold_overbought_inc_update(src[i], oversold, overbought))
     return out
 
 
@@ -7814,13 +7550,7 @@ def _bar_walk_inc_zigzag_last_sample(
 
 def _zigzag_off(val: tuple[Any, Any, Any]) -> bool:
     h, lo, d = val
-    return (
-        isinstance(h, float)
-        and math.isnan(h)
-        and isinstance(lo, float)
-        and math.isnan(lo)
-        and d == 0
-    )
+    return isinstance(h, float) and math.isnan(h) and isinstance(lo, float) and math.isnan(lo) and d == 0
 
 
 def test_incremental_zigzag_matches_full() -> None:
@@ -8276,9 +8006,7 @@ def _bar_walk_full_momentum_filter(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(mom)):
-        out.append(
-            ev._builtin_ta_momentum_filter([mom[: i + 1], vol[: i + 1], period])
-        )
+        out.append(ev._builtin_ta_momentum_filter([mom[: i + 1], vol[: i + 1], period]))
     return out
 
 
@@ -8291,9 +8019,7 @@ def _bar_walk_inc_momentum_filter(
     out: list[float] = []
     for i in range(len(mom)):
         ev._ta_call_i = 0
-        out.append(
-            ev._momentum_filter_inc_update(mom[: i + 1], vol[: i + 1], period)
-        )
+        out.append(ev._momentum_filter_inc_update(mom[: i + 1], vol[: i + 1], period))
     return out
 
 
@@ -8526,9 +8252,7 @@ def _bar_walk_inc_acceleration_factor(mom: list[Any], period: int) -> list[float
     return out
 
 
-def _bar_walk_inc_acceleration_factor_last_sample(
-    mom: list[Any], period: int
-) -> list[float]:
+def _bar_walk_inc_acceleration_factor_last_sample(mom: list[Any], period: int) -> list[float]:
     """Bar-mode last-sample walk (scalar current bar, not growing prefix)."""
     ev = _IncTA()
     out: list[float] = []
@@ -8755,11 +8479,7 @@ def _bar_walk_full_mean_reversion_score(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(close)):
-        out.append(
-            ev._builtin_ta_mean_reversion_score(
-                [close[: i + 1], sma[: i + 1], stdev[: i + 1], period]
-            )
-        )
+        out.append(ev._builtin_ta_mean_reversion_score([close[: i + 1], sma[: i + 1], stdev[: i + 1], period]))
     return out
 
 
@@ -8773,11 +8493,7 @@ def _bar_walk_inc_mean_reversion_score(
     out: list[float] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            ev._mean_reversion_score_inc_update(
-                close[: i + 1], sma[: i + 1], stdev[: i + 1], period
-            )
-        )
+        out.append(ev._mean_reversion_score_inc_update(close[: i + 1], sma[: i + 1], stdev[: i + 1], period))
     return out
 
 
@@ -8792,9 +8508,7 @@ def _bar_walk_inc_mean_reversion_score_last_sample(
     out: list[float] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            ev._mean_reversion_score_inc_update(close[i], sma[i], stdev[i], period)
-        )
+        out.append(ev._mean_reversion_score_inc_update(close[i], sma[i], stdev[i], period))
     return out
 
 
@@ -8807,8 +8521,7 @@ def test_incremental_mean_reversion_score_matches_full() -> None:
     last = _bar_walk_inc_mean_reversion_score_last_sample(close, sma, stdev, period)
     _assert_series_close(last, exp)
     oracle = [
-        _mean_reversion_score_last_n(close[: i + 1], sma[: i + 1], stdev[: i + 1], period)
-        for i in range(len(close))
+        _mean_reversion_score_last_n(close[: i + 1], sma[: i + 1], stdev[: i + 1], period) for i in range(len(close))
     ]
     _assert_series_close(got, oracle)
 
@@ -8898,9 +8611,7 @@ def test_incremental_mean_reversion_score_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(close_na)):
         ev._ta_call_i = 0
-        ev._mean_reversion_score_inc_update(
-            close_na[: i + 1], sma[: i + 1], stdev[: i + 1], 5
-        )
+        ev._mean_reversion_score_inc_update(close_na[: i + 1], sma[: i + 1], stdev[: i + 1], 5)
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -8910,9 +8621,7 @@ def test_incremental_mean_reversion_score_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(close)):
         ev._ta_call_i = 0
-        ev._builtin_ta_mean_reversion_score(
-            [close[: i + 1], sma[: i + 1], stdev[: i + 1], 5]
-        )
+        ev._builtin_ta_mean_reversion_score([close[: i + 1], sma[: i + 1], stdev[: i + 1], 5])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -8926,19 +8635,11 @@ def test_incremental_mean_reversion_score_two_call_sites_independent() -> None:
         prefix_s = sma[: i + 1]
         prefix_d = stdev[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._mean_reversion_score_inc_update(prefix_c, prefix_s, prefix_d, 3)
-        )
-        b_out.append(
-            ev._mean_reversion_score_inc_update(prefix_c, prefix_s, prefix_d, 5)
-        )
+        a_out.append(ev._mean_reversion_score_inc_update(prefix_c, prefix_s, prefix_d, 3))
+        b_out.append(ev._mean_reversion_score_inc_update(prefix_c, prefix_s, prefix_d, 5))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
-    _assert_series_close(
-        a_out, _bar_walk_full_mean_reversion_score(close, sma, stdev, 3)
-    )
-    _assert_series_close(
-        b_out, _bar_walk_full_mean_reversion_score(close, sma, stdev, 5)
-    )
+    _assert_series_close(a_out, _bar_walk_full_mean_reversion_score(close, sma, stdev, 3))
+    _assert_series_close(b_out, _bar_walk_full_mean_reversion_score(close, sma, stdev, 5))
     assert a_out != b_out
 
 
@@ -8984,14 +8685,10 @@ plot(g, "mrs5")
     opens = [b["open"] for b in bars]
     vols = [float(b["volume"]) for b in bars]
     for i, val in enumerate(r_on["series"]["mrs3"]):
-        exp = _mean_reversion_score_last_n(
-            closes[: i + 1], opens[: i + 1], vols[: i + 1], 3
-        )
+        exp = _mean_reversion_score_last_n(closes[: i + 1], opens[: i + 1], vols[: i + 1], 3)
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mrs3 bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["mrs5"]):
-        exp = _mean_reversion_score_last_n(
-            closes[: i + 1], opens[: i + 1], vols[: i + 1], 5
-        )
+        exp = _mean_reversion_score_last_n(closes[: i + 1], opens[: i + 1], vols[: i + 1], 5)
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mrs5 bar {i}: {val} != {exp}"
     assert r_on["series"]["mrs3"][0] == pytest.approx(50.0)
     assert r_off["series"]["mrs3"][0] == pytest.approx(50.0)
@@ -9048,11 +8745,7 @@ def _bar_walk_full_market_condition(
     ev = _FullTA()
     out: list[str] = []
     for i in range(len(close)):
-        out.append(
-            ev._builtin_ta_market_condition(
-                [close[: i + 1], atr[: i + 1], sma_period, stdev_period]
-            )
-        )
+        out.append(ev._builtin_ta_market_condition([close[: i + 1], atr[: i + 1], sma_period, stdev_period]))
     return out
 
 
@@ -9066,11 +8759,7 @@ def _bar_walk_inc_market_condition(
     out: list[str] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            ev._market_condition_inc_update(
-                close[: i + 1], atr[: i + 1], sma_period, stdev_period
-            )
-        )
+        out.append(ev._market_condition_inc_update(close[: i + 1], atr[: i + 1], sma_period, stdev_period))
     return out
 
 
@@ -9085,9 +8774,7 @@ def _bar_walk_inc_market_condition_last_sample(
     out: list[str] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            ev._market_condition_inc_update(close[i], atr[i], sma_period, stdev_period)
-        )
+        out.append(ev._market_condition_inc_update(close[i], atr[i], sma_period, stdev_period))
     return out
 
 
@@ -9100,8 +8787,7 @@ def test_incremental_market_condition_matches_full() -> None:
     last = _bar_walk_inc_market_condition_last_sample(close, atr, sma_period, stdev_period)
     assert last == exp
     oracle = [
-        _market_condition_last_n(close[: i + 1], atr[: i + 1], sma_period, stdev_period)
-        for i in range(len(close))
+        _market_condition_last_n(close[: i + 1], atr[: i + 1], sma_period, stdev_period) for i in range(len(close))
     ]
     assert got == oracle
 
@@ -9183,9 +8869,7 @@ def test_incremental_market_condition_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(close_na)):
         ev._ta_call_i = 0
-        ev._market_condition_inc_update(
-            close_na[: i + 1], atr[: i + 1], 5, 3
-        )
+        ev._market_condition_inc_update(close_na[: i + 1], atr[: i + 1], 5, 3)
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -9195,9 +8879,7 @@ def test_incremental_market_condition_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(close)):
         ev._ta_call_i = 0
-        ev._builtin_ta_market_condition(
-            [close[: i + 1], atr[: i + 1], 5, 3]
-        )
+        ev._builtin_ta_market_condition([close[: i + 1], atr[: i + 1], 5, 3])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -9210,12 +8892,8 @@ def test_incremental_market_condition_two_call_sites_independent() -> None:
         prefix_c = close[: i + 1]
         prefix_a = atr[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._market_condition_inc_update(prefix_c, prefix_a, 3, 2)
-        )
-        b_out.append(
-            ev._market_condition_inc_update(prefix_c, prefix_a, 5, 8)
-        )
+        a_out.append(ev._market_condition_inc_update(prefix_c, prefix_a, 3, 2))
+        b_out.append(ev._market_condition_inc_update(prefix_c, prefix_a, 5, 8))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
     assert a_out == _bar_walk_full_market_condition(close, atr, 3, 2)
     assert b_out == _bar_walk_full_market_condition(close, atr, 5, 8)
@@ -9358,9 +9036,7 @@ def _bar_walk_full_order_flow_imbalance(
     out: list[float] = []
     for i in range(len(high)):
         out.append(
-            ev._builtin_ta_order_flow_imbalance(
-                [high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period]
-            )
+            ev._builtin_ta_order_flow_imbalance([high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period])
         )
     return out
 
@@ -9377,9 +9053,7 @@ def _bar_walk_inc_order_flow_imbalance(
     for i in range(len(high)):
         ev._ta_call_i = 0
         out.append(
-            ev._order_flow_imbalance_inc_update(
-                high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period
-            )
+            ev._order_flow_imbalance_inc_update(high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period)
         )
     return out
 
@@ -9396,11 +9070,7 @@ def _bar_walk_inc_order_flow_imbalance_last_sample(
     out: list[float] = []
     for i in range(len(high)):
         ev._ta_call_i = 0
-        out.append(
-            ev._order_flow_imbalance_inc_update(
-                high[i], low[i], close[i], volume[i], period
-            )
-        )
+        out.append(ev._order_flow_imbalance_inc_update(high[i], low[i], close[i], volume[i], period))
     return out
 
 
@@ -9410,14 +9080,10 @@ def test_incremental_order_flow_imbalance_matches_full() -> None:
     got = _bar_walk_inc_order_flow_imbalance(high, low, close, volume, period)
     exp = _bar_walk_full_order_flow_imbalance(high, low, close, volume, period)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_order_flow_imbalance_last_sample(
-        high, low, close, volume, period
-    )
+    last = _bar_walk_inc_order_flow_imbalance_last_sample(high, low, close, volume, period)
     _assert_series_close(last, exp)
     oracle = [
-        _order_flow_imbalance_last_n(
-            high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period
-        )
+        _order_flow_imbalance_last_n(high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], period)
         for i in range(len(high))
     ]
     _assert_series_close(got, oracle)
@@ -9469,9 +9135,7 @@ def test_incremental_order_flow_imbalance_zero_range() -> None:
     exp = _bar_walk_full_order_flow_imbalance(high, low, close, volume, period)
     _assert_series_close(got, exp)
     assert got[-1] == 0.0
-    last = _bar_walk_inc_order_flow_imbalance_last_sample(
-        high, low, close, volume, period
-    )
+    last = _bar_walk_inc_order_flow_imbalance_last_sample(high, low, close, volume, period)
     _assert_series_close(last, exp)
 
     # Mixed: first bar zero-range (skipped), rest buy vs sell.
@@ -9504,9 +9168,7 @@ def test_incremental_order_flow_imbalance_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(high_na)):
         ev._ta_call_i = 0
-        ev._order_flow_imbalance_inc_update(
-            high_na[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], 5
-        )
+        ev._order_flow_imbalance_inc_update(high_na[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], 5)
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -9516,9 +9178,7 @@ def test_incremental_order_flow_imbalance_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(high)):
         ev._ta_call_i = 0
-        ev._builtin_ta_order_flow_imbalance(
-            [high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], 5]
-        )
+        ev._builtin_ta_order_flow_imbalance([high[: i + 1], low[: i + 1], close[: i + 1], volume[: i + 1], 5])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -9533,23 +9193,11 @@ def test_incremental_order_flow_imbalance_two_call_sites_independent() -> None:
         prefix_c = close[: i + 1]
         prefix_v = volume[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._order_flow_imbalance_inc_update(
-                prefix_h, prefix_l, prefix_c, prefix_v, 5
-            )
-        )
-        b_out.append(
-            ev._order_flow_imbalance_inc_update(
-                prefix_h, prefix_l, prefix_c, prefix_v, 14
-            )
-        )
+        a_out.append(ev._order_flow_imbalance_inc_update(prefix_h, prefix_l, prefix_c, prefix_v, 5))
+        b_out.append(ev._order_flow_imbalance_inc_update(prefix_h, prefix_l, prefix_c, prefix_v, 14))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
-    _assert_series_close(
-        a_out, _bar_walk_full_order_flow_imbalance(high, low, close, volume, 5)
-    )
-    _assert_series_close(
-        b_out, _bar_walk_full_order_flow_imbalance(high, low, close, volume, 14)
-    )
+    _assert_series_close(a_out, _bar_walk_full_order_flow_imbalance(high, low, close, volume, 5))
+    _assert_series_close(b_out, _bar_walk_full_order_flow_imbalance(high, low, close, volume, 14))
     assert a_out != b_out
 
 
@@ -9596,14 +9244,10 @@ plot(g, "ofi14")
     closes = [b["close"] for b in bars]
     vols = [float(b["volume"]) for b in bars]
     for i, val in enumerate(r_on["series"]["ofi5"]):
-        exp = _order_flow_imbalance_last_n(
-            highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], 5
-        )
+        exp = _order_flow_imbalance_last_n(highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], 5)
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"ofi5 bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["ofi14"]):
-        exp = _order_flow_imbalance_last_n(
-            highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], 14
-        )
+        exp = _order_flow_imbalance_last_n(highs[: i + 1], lows[: i + 1], closes[: i + 1], vols[: i + 1], 14)
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"ofi14 bar {i}: {val} != {exp}"
     assert r_on["series"]["ofi5"][0] == pytest.approx(0.0)
     assert r_off["series"]["ofi5"][0] == pytest.approx(0.0)
@@ -9682,13 +9326,7 @@ def _bar_walk_full_volume_thrust(
     ev = _FullTA()
     out: list[bool] = []
     for i in range(len(close)):
-        out.append(
-            bool(
-                ev._builtin_ta_volume_thrust(
-                    [close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity]
-                )
-            )
-        )
+        out.append(bool(ev._builtin_ta_volume_thrust([close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity])))
     return out
 
 
@@ -9702,13 +9340,7 @@ def _bar_walk_inc_volume_thrust(
     out: list[bool] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            bool(
-                ev._volume_thrust_inc_update(
-                    close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity
-                )
-            )
-        )
+        out.append(bool(ev._volume_thrust_inc_update(close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity)))
     return out
 
 
@@ -9723,13 +9355,7 @@ def _bar_walk_inc_volume_thrust_last_sample(
     out: list[bool] = []
     for i in range(len(close)):
         ev._ta_call_i = 0
-        out.append(
-            bool(
-                ev._volume_thrust_inc_update(
-                    close[i], volume[i], vol_sma[i], sensitivity
-                )
-            )
-        )
+        out.append(bool(ev._volume_thrust_inc_update(close[i], volume[i], vol_sma[i], sensitivity)))
     return out
 
 
@@ -9742,10 +9368,7 @@ def test_incremental_volume_thrust_matches_full() -> None:
     last = _bar_walk_inc_volume_thrust_last_sample(close, volume, vol_sma, sensitivity)
     assert last == exp
     oracle = [
-        _volume_thrust_last_n(
-            close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity
-        )
-        for i in range(len(close))
+        _volume_thrust_last_n(close[: i + 1], volume[: i + 1], vol_sma[: i + 1], sensitivity) for i in range(len(close))
     ]
     assert got == oracle
     assert True in got
@@ -9831,9 +9454,7 @@ def test_incremental_volume_thrust_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(close_na)):
         ev._ta_call_i = 0
-        ev._volume_thrust_inc_update(
-            close_na[: i + 1], volume[: i + 1], vol_sma[: i + 1], 0.3
-        )
+        ev._volume_thrust_inc_update(close_na[: i + 1], volume[: i + 1], vol_sma[: i + 1], 0.3)
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -9843,9 +9464,7 @@ def test_incremental_volume_thrust_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(close)):
         ev._ta_call_i = 0
-        ev._builtin_ta_volume_thrust(
-            [close[: i + 1], volume[: i + 1], vol_sma[: i + 1], 0.3]
-        )
+        ev._builtin_ta_volume_thrust([close[: i + 1], volume[: i + 1], vol_sma[: i + 1], 0.3])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -9859,12 +9478,8 @@ def test_incremental_volume_thrust_two_call_sites_independent() -> None:
         prefix_v = volume[: i + 1]
         prefix_s = vol_sma[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            bool(ev._volume_thrust_inc_update(prefix_c, prefix_v, prefix_s, 0.1))
-        )
-        b_out.append(
-            bool(ev._volume_thrust_inc_update(prefix_c, prefix_v, prefix_s, 0.3))
-        )
+        a_out.append(bool(ev._volume_thrust_inc_update(prefix_c, prefix_v, prefix_s, 0.1)))
+        b_out.append(bool(ev._volume_thrust_inc_update(prefix_c, prefix_v, prefix_s, 0.3)))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
     assert a_out == _bar_walk_full_volume_thrust(close, volume, vol_sma, 0.1)
     assert b_out == _bar_walk_full_volume_thrust(close, volume, vol_sma, 0.3)
@@ -9913,19 +9528,11 @@ plot(g ? 1 : 0, "vt08")
     vols = [float(b["volume"]) for b in bars]
     smas = [float(b["open"]) for b in bars]
     for i, val in enumerate(r_on["series"]["vt03"]):
-        exp = _volume_thrust_last_n(
-            closes[: i + 1], vols[: i + 1], smas[: i + 1], 0.3
-        )
-        assert val == pytest.approx(
-            1.0 if exp else 0.0, rel=1e-9, abs=1e-9
-        ), f"vt03 bar {i}: {val} != {exp}"
+        exp = _volume_thrust_last_n(closes[: i + 1], vols[: i + 1], smas[: i + 1], 0.3)
+        assert val == pytest.approx(1.0 if exp else 0.0, rel=1e-9, abs=1e-9), f"vt03 bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["vt08"]):
-        exp = _volume_thrust_last_n(
-            closes[: i + 1], vols[: i + 1], smas[: i + 1], 0.8
-        )
-        assert val == pytest.approx(
-            1.0 if exp else 0.0, rel=1e-9, abs=1e-9
-        ), f"vt08 bar {i}: {val} != {exp}"
+        exp = _volume_thrust_last_n(closes[: i + 1], vols[: i + 1], smas[: i + 1], 0.8)
+        assert val == pytest.approx(1.0 if exp else 0.0, rel=1e-9, abs=1e-9), f"vt08 bar {i}: {val} != {exp}"
     assert r_on["series"]["vt03"][0] == pytest.approx(0.0)
     assert r_off["series"]["vt03"][0] == pytest.approx(0.0)
     assert r_on["series"]["vt03"][4] != pytest.approx(0.0)
@@ -9943,27 +9550,14 @@ def _liquidity_score_last_n(
     period: int,
 ) -> float:
     """Oracle formula on a chronological prefix (same as full ``_expect_list`` lists)."""
-    if (
-        len(volume) < period
-        or len(volatility) < period
-        or len(spread) < period
-        or period <= 0
-    ):
+    if len(volume) < period or len(volatility) < period or len(spread) < period or period <= 0:
         return 50.0
-    vol_avg = (
-        sum(v for v in volume[-period:] if isinstance(v, (int, float))) / period
-        if volume
-        else 1000.0
-    )
+    vol_avg = sum(v for v in volume[-period:] if isinstance(v, (int, float))) / period if volume else 1000.0
     vol_score = min(100.0, vol_avg / 100.0)
     valid_volatility = [v for v in volatility[-period:] if isinstance(v, (int, float))]
     vol_avg_volatility = sum(valid_volatility) / period if volatility else 1.0
     volatility_score = max(0.0, 100.0 - vol_avg_volatility * 50.0)
-    spread_avg = (
-        sum(s for s in spread[-period:] if isinstance(s, (int, float))) / period
-        if spread
-        else 0.1
-    )
+    spread_avg = sum(s for s in spread[-period:] if isinstance(s, (int, float))) / period if spread else 0.1
     spread_score = max(0.0, 100.0 - spread_avg * 100.0)
     liquidity = vol_score * 0.4 + volatility_score * 0.3 + spread_score * 0.3
     return max(0.0, min(100.0, liquidity))
@@ -10005,11 +9599,7 @@ def _bar_walk_full_liquidity_score(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(volume)):
-        out.append(
-            ev._builtin_ta_liquidity_score(
-                [volume[: i + 1], volatility[: i + 1], spread[: i + 1], period]
-            )
-        )
+        out.append(ev._builtin_ta_liquidity_score([volume[: i + 1], volatility[: i + 1], spread[: i + 1], period]))
     return out
 
 
@@ -10023,11 +9613,7 @@ def _bar_walk_inc_liquidity_score(
     out: list[float] = []
     for i in range(len(volume)):
         ev._ta_call_i = 0
-        out.append(
-            ev._liquidity_score_inc_update(
-                volume[: i + 1], volatility[: i + 1], spread[: i + 1], period
-            )
-        )
+        out.append(ev._liquidity_score_inc_update(volume[: i + 1], volatility[: i + 1], spread[: i + 1], period))
     return out
 
 
@@ -10042,11 +9628,7 @@ def _bar_walk_inc_liquidity_score_last_sample(
     out: list[float] = []
     for i in range(len(volume)):
         ev._ta_call_i = 0
-        out.append(
-            ev._liquidity_score_inc_update(
-                volume[i], volatility[i], spread[i], period
-            )
-        )
+        out.append(ev._liquidity_score_inc_update(volume[i], volatility[i], spread[i], period))
     return out
 
 
@@ -10056,14 +9638,10 @@ def test_incremental_liquidity_score_matches_full() -> None:
     got = _bar_walk_inc_liquidity_score(volume, volatility, spread, period)
     exp = _bar_walk_full_liquidity_score(volume, volatility, spread, period)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_liquidity_score_last_sample(
-        volume, volatility, spread, period
-    )
+    last = _bar_walk_inc_liquidity_score_last_sample(volume, volatility, spread, period)
     _assert_series_close(last, exp)
     oracle = [
-        _liquidity_score_last_n(
-            volume[: i + 1], volatility[: i + 1], spread[: i + 1], period
-        )
+        _liquidity_score_last_n(volume[: i + 1], volatility[: i + 1], spread[: i + 1], period)
         for i in range(len(volume))
     ]
     _assert_series_close(got, oracle)
@@ -10112,14 +9690,10 @@ def test_incremental_liquidity_score_non_numeric() -> None:
     got = _bar_walk_inc_liquidity_score(volume, volatility, spread, period)
     exp = _bar_walk_full_liquidity_score(volume, volatility, spread, period)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_liquidity_score_last_sample(
-        volume, volatility, spread, period
-    )
+    last = _bar_walk_inc_liquidity_score_last_sample(volume, volatility, spread, period)
     _assert_series_close(last, exp)
     oracle = [
-        _liquidity_score_last_n(
-            volume[: i + 1], volatility[: i + 1], spread[: i + 1], period
-        )
+        _liquidity_score_last_n(volume[: i + 1], volatility[: i + 1], spread[: i + 1], period)
         for i in range(len(volume))
     ]
     _assert_series_close(got, oracle)
@@ -10133,9 +9707,7 @@ def test_incremental_liquidity_score_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(volume_na)):
         ev._ta_call_i = 0
-        ev._liquidity_score_inc_update(
-            volume_na[: i + 1], volatility[: i + 1], spread[: i + 1], 5
-        )
+        ev._liquidity_score_inc_update(volume_na[: i + 1], volatility[: i + 1], spread[: i + 1], 5)
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -10145,9 +9717,7 @@ def test_incremental_liquidity_score_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(volume)):
         ev._ta_call_i = 0
-        ev._builtin_ta_liquidity_score(
-            [volume[: i + 1], volatility[: i + 1], spread[: i + 1], 5]
-        )
+        ev._builtin_ta_liquidity_score([volume[: i + 1], volatility[: i + 1], spread[: i + 1], 5])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -10161,19 +9731,11 @@ def test_incremental_liquidity_score_two_call_sites_independent() -> None:
         prefix_vola = volatility[: i + 1]
         prefix_s = spread[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._liquidity_score_inc_update(prefix_v, prefix_vola, prefix_s, 5)
-        )
-        b_out.append(
-            ev._liquidity_score_inc_update(prefix_v, prefix_vola, prefix_s, 14)
-        )
+        a_out.append(ev._liquidity_score_inc_update(prefix_v, prefix_vola, prefix_s, 5))
+        b_out.append(ev._liquidity_score_inc_update(prefix_v, prefix_vola, prefix_s, 14))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
-    _assert_series_close(
-        a_out, _bar_walk_full_liquidity_score(volume, volatility, spread, 5)
-    )
-    _assert_series_close(
-        b_out, _bar_walk_full_liquidity_score(volume, volatility, spread, 14)
-    )
+    _assert_series_close(a_out, _bar_walk_full_liquidity_score(volume, volatility, spread, 5))
+    _assert_series_close(b_out, _bar_walk_full_liquidity_score(volume, volatility, spread, 14))
     assert a_out != b_out
 
 
@@ -10219,14 +9781,10 @@ plot(g, "liq14")
     volas = [float(b["open"]) for b in bars]
     spreads = [float(b["close"]) for b in bars]
     for i, val in enumerate(r_on["series"]["liq5"]):
-        exp = _liquidity_score_last_n(
-            vols[: i + 1], volas[: i + 1], spreads[: i + 1], 5
-        )
+        exp = _liquidity_score_last_n(vols[: i + 1], volas[: i + 1], spreads[: i + 1], 5)
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"liq5 bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["liq14"]):
-        exp = _liquidity_score_last_n(
-            vols[: i + 1], volas[: i + 1], spreads[: i + 1], 14
-        )
+        exp = _liquidity_score_last_n(vols[: i + 1], volas[: i + 1], spreads[: i + 1], 14)
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"liq14 bar {i}: {val} != {exp}"
     assert r_on["series"]["liq5"][0] == pytest.approx(50.0)
     assert r_off["series"]["liq5"][0] == pytest.approx(50.0)
@@ -10296,11 +9854,7 @@ def _bar_walk_full_fear_greed_index(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(rsi)):
-        out.append(
-            ev._builtin_ta_fear_greed_index(
-                [rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]]
-            )
-        )
+        out.append(ev._builtin_ta_fear_greed_index([rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]]))
     return out
 
 
@@ -10314,11 +9868,7 @@ def _bar_walk_inc_fear_greed_index(
     out: list[float] = []
     for i in range(len(rsi)):
         ev._ta_call_i = 0
-        out.append(
-            ev._fear_greed_index_inc_update(
-                rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]
-            )
-        )
+        out.append(ev._fear_greed_index_inc_update(rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]))
     return out
 
 
@@ -10333,9 +9883,7 @@ def _bar_walk_inc_fear_greed_index_last_sample(
     out: list[float] = []
     for i in range(len(rsi)):
         ev._ta_call_i = 0
-        out.append(
-            ev._fear_greed_index_inc_update(rsi[i], vix[i], put_call[i], breadth[i])
-        )
+        out.append(ev._fear_greed_index_inc_update(rsi[i], vix[i], put_call[i], breadth[i]))
     return out
 
 
@@ -10347,9 +9895,7 @@ def test_incremental_fear_greed_index_matches_full() -> None:
     last = _bar_walk_inc_fear_greed_index_last_sample(rsi, vix, put_call, breadth)
     _assert_series_close(last, exp)
     oracle = [
-        _fear_greed_index_last_n(
-            rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]
-        )
+        _fear_greed_index_last_n(rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1])
         for i in range(len(rsi))
     ]
     _assert_series_close(got, oracle)
@@ -10428,9 +9974,7 @@ def test_incremental_fear_greed_index_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(rsi_na)):
         ev._ta_call_i = 0
-        ev._fear_greed_index_inc_update(
-            rsi_na[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]
-        )
+        ev._fear_greed_index_inc_update(rsi_na[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1])
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -10440,9 +9984,7 @@ def test_incremental_fear_greed_index_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(rsi)):
         ev._ta_call_i = 0
-        ev._builtin_ta_fear_greed_index(
-            [rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]]
-        )
+        ev._builtin_ta_fear_greed_index([rsi[: i + 1], vix[: i + 1], put_call[: i + 1], breadth[: i + 1]])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -10459,19 +10001,11 @@ def test_incremental_fear_greed_index_two_call_sites_independent() -> None:
         prefix_b = breadth[: i + 1]
         prefix_rb = rsi_b[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._fear_greed_index_inc_update(prefix_r, prefix_v, prefix_p, prefix_b)
-        )
-        b_out.append(
-            ev._fear_greed_index_inc_update(prefix_rb, prefix_v, prefix_p, prefix_b)
-        )
+        a_out.append(ev._fear_greed_index_inc_update(prefix_r, prefix_v, prefix_p, prefix_b))
+        b_out.append(ev._fear_greed_index_inc_update(prefix_rb, prefix_v, prefix_p, prefix_b))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
-    _assert_series_close(
-        a_out, _bar_walk_full_fear_greed_index(rsi, vix, put_call, breadth)
-    )
-    _assert_series_close(
-        b_out, _bar_walk_full_fear_greed_index(rsi_b, vix, put_call, breadth)
-    )
+    _assert_series_close(a_out, _bar_walk_full_fear_greed_index(rsi, vix, put_call, breadth))
+    _assert_series_close(b_out, _bar_walk_full_fear_greed_index(rsi_b, vix, put_call, breadth))
     assert a_out != b_out
 
 
@@ -10519,17 +10053,11 @@ plot(g, "fg2")
     lows = [float(b["low"]) for b in bars]
     vols = [float(b["volume"]) for b in bars]
     for i, val in enumerate(r_on["series"]["fg"]):
-        exp = _fear_greed_index_last_n(
-            closes[: i + 1], opens[: i + 1], highs[: i + 1], lows[: i + 1]
-        )
+        exp = _fear_greed_index_last_n(closes[: i + 1], opens[: i + 1], highs[: i + 1], lows[: i + 1])
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"fg bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["fg2"]):
-        exp = _fear_greed_index_last_n(
-            vols[: i + 1], closes[: i + 1], opens[: i + 1], highs[: i + 1]
-        )
-        assert val == pytest.approx(
-            exp, rel=1e-9, abs=1e-9
-        ), f"fg2 bar {i}: {val} != {exp}"
+        exp = _fear_greed_index_last_n(vols[: i + 1], closes[: i + 1], opens[: i + 1], highs[: i + 1])
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"fg2 bar {i}: {val} != {exp}"
     assert r_on["series"]["fg"][0] == pytest.approx(0.0)
     assert r_off["series"]["fg"][0] == pytest.approx(0.0)
     assert r_on["series"]["fg"][4] != pytest.approx(0.0)
@@ -10589,9 +10117,7 @@ def _bar_walk_full_crowd_sentiment(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(price_agr)):
-        out.append(
-            ev._builtin_ta_crowd_sentiment([price_agr[i], vol_agr[i], time_agr[i]])
-        )
+        out.append(ev._builtin_ta_crowd_sentiment([price_agr[i], vol_agr[i], time_agr[i]]))
     return out
 
 
@@ -10604,11 +10130,7 @@ def _bar_walk_inc_crowd_sentiment(
     out: list[float] = []
     for i in range(len(price_agr)):
         ev._ta_call_i = 0
-        out.append(
-            ev._crowd_sentiment_inc_update(
-                price_agr[: i + 1], vol_agr[: i + 1], time_agr[: i + 1]
-            )
-        )
+        out.append(ev._crowd_sentiment_inc_update(price_agr[: i + 1], vol_agr[: i + 1], time_agr[: i + 1]))
     return out
 
 
@@ -10622,9 +10144,7 @@ def _bar_walk_inc_crowd_sentiment_last_sample(
     out: list[float] = []
     for i in range(len(price_agr)):
         ev._ta_call_i = 0
-        out.append(
-            ev._crowd_sentiment_inc_update(price_agr[i], vol_agr[i], time_agr[i])
-        )
+        out.append(ev._crowd_sentiment_inc_update(price_agr[i], vol_agr[i], time_agr[i]))
     return out
 
 
@@ -10635,10 +10155,7 @@ def test_incremental_crowd_sentiment_matches_full() -> None:
     _assert_series_close(got, exp)
     last = _bar_walk_inc_crowd_sentiment_last_sample(price, vol, time_a)
     _assert_series_close(last, exp)
-    oracle = [
-        _crowd_sentiment_last_n(price[: i + 1], vol[: i + 1], time_a[: i + 1])
-        for i in range(len(price))
-    ]
+    oracle = [_crowd_sentiment_last_n(price[: i + 1], vol[: i + 1], time_a[: i + 1]) for i in range(len(price))]
     _assert_series_close(got, oracle)
 
 
@@ -10711,9 +10228,7 @@ def test_incremental_crowd_sentiment_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(price_na)):
         ev._ta_call_i = 0
-        ev._crowd_sentiment_inc_update(
-            price_na[: i + 1], vol[: i + 1], time_a[: i + 1]
-        )
+        ev._crowd_sentiment_inc_update(price_na[: i + 1], vol[: i + 1], time_a[: i + 1])
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -10723,9 +10238,7 @@ def test_incremental_crowd_sentiment_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(price)):
         ev._ta_call_i = 0
-        ev._builtin_ta_crowd_sentiment(
-            [price[: i + 1], vol[: i + 1], time_a[: i + 1]]
-        )
+        ev._builtin_ta_crowd_sentiment([price[: i + 1], vol[: i + 1], time_a[: i + 1]])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -10792,17 +10305,11 @@ plot(g, "cs2")
     highs = [float(b["high"]) for b in bars]
     vols = [float(b["volume"]) for b in bars]
     for i, val in enumerate(r_on["series"]["cs"]):
-        exp = _crowd_sentiment_last_n(
-            closes[: i + 1], opens[: i + 1], highs[: i + 1]
-        )
+        exp = _crowd_sentiment_last_n(closes[: i + 1], opens[: i + 1], highs[: i + 1])
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"cs bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["cs2"]):
-        exp = _crowd_sentiment_last_n(
-            vols[: i + 1], closes[: i + 1], opens[: i + 1]
-        )
-        assert val == pytest.approx(
-            exp, rel=1e-9, abs=1e-9
-        ), f"cs2 bar {i}: {val} != {exp}"
+        exp = _crowd_sentiment_last_n(vols[: i + 1], closes[: i + 1], opens[: i + 1])
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"cs2 bar {i}: {val} != {exp}"
     assert r_on["series"]["cs"][0] == pytest.approx(50.0)
     assert r_off["series"]["cs"][0] == pytest.approx(50.0)
     assert r_on["series"]["cs"][4] != pytest.approx(50.0)
@@ -10874,11 +10381,7 @@ def _bar_walk_full_smart_money_flow(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(price_change)):
-        out.append(
-            ev._builtin_ta_smart_money_flow(
-                [price_change[i], volume[i], time_high[i], time_low[i]]
-            )
-        )
+        out.append(ev._builtin_ta_smart_money_flow([price_change[i], volume[i], time_high[i], time_low[i]]))
     return out
 
 
@@ -10914,11 +10417,7 @@ def _bar_walk_inc_smart_money_flow_last_sample(
     out: list[float] = []
     for i in range(len(price_change)):
         ev._ta_call_i = 0
-        out.append(
-            ev._smart_money_flow_inc_update(
-                price_change[i], volume[i], time_high[i], time_low[i]
-            )
-        )
+        out.append(ev._smart_money_flow_inc_update(price_change[i], volume[i], time_high[i], time_low[i]))
     return out
 
 
@@ -10930,9 +10429,7 @@ def test_incremental_smart_money_flow_matches_full() -> None:
     last = _bar_walk_inc_smart_money_flow_last_sample(price, vol, time_h, time_l)
     _assert_series_close(last, exp)
     oracle = [
-        _smart_money_flow_last_n(
-            price[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]
-        )
+        _smart_money_flow_last_n(price[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1])
         for i in range(len(price))
     ]
     _assert_series_close(got, oracle)
@@ -11026,9 +10523,7 @@ def test_incremental_smart_money_flow_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(price_na)):
         ev._ta_call_i = 0
-        ev._smart_money_flow_inc_update(
-            price_na[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]
-        )
+        ev._smart_money_flow_inc_update(price_na[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1])
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -11038,9 +10533,7 @@ def test_incremental_smart_money_flow_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(price)):
         ev._ta_call_i = 0
-        ev._builtin_ta_smart_money_flow(
-            [price[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]]
-        )
+        ev._builtin_ta_smart_money_flow([price[: i + 1], vol[: i + 1], time_h[: i + 1], time_l[: i + 1]])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -11057,17 +10550,11 @@ def test_incremental_smart_money_flow_two_call_sites_independent() -> None:
         prefix_l = time_l[: i + 1]
         prefix_pb = price_b[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._smart_money_flow_inc_update(prefix_p, prefix_v, prefix_h, prefix_l)
-        )
-        b_out.append(
-            ev._smart_money_flow_inc_update(prefix_pb, prefix_v, prefix_h, prefix_l)
-        )
+        a_out.append(ev._smart_money_flow_inc_update(prefix_p, prefix_v, prefix_h, prefix_l))
+        b_out.append(ev._smart_money_flow_inc_update(prefix_pb, prefix_v, prefix_h, prefix_l))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
     _assert_series_close(a_out, _bar_walk_full_smart_money_flow(price, vol, time_h, time_l))
-    _assert_series_close(
-        b_out, _bar_walk_full_smart_money_flow(price_b, vol, time_h, time_l)
-    )
+    _assert_series_close(b_out, _bar_walk_full_smart_money_flow(price_b, vol, time_h, time_l))
     assert a_out != b_out
 
 
@@ -11115,17 +10602,11 @@ plot(g, "smf2")
     lows = [float(b["low"]) for b in bars]
     vols = [float(b["volume"]) for b in bars]
     for i, val in enumerate(r_on["series"]["smf"]):
-        exp = _smart_money_flow_last_n(
-            closes[: i + 1], vols[: i + 1], highs[: i + 1], lows[: i + 1]
-        )
+        exp = _smart_money_flow_last_n(closes[: i + 1], vols[: i + 1], highs[: i + 1], lows[: i + 1])
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"smf bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["smf2"]):
-        exp = _smart_money_flow_last_n(
-            opens[: i + 1], vols[: i + 1], lows[: i + 1], highs[: i + 1]
-        )
-        assert val == pytest.approx(
-            exp, rel=1e-9, abs=1e-9
-        ), f"smf2 bar {i}: {val} != {exp}"
+        exp = _smart_money_flow_last_n(opens[: i + 1], vols[: i + 1], lows[: i + 1], highs[: i + 1])
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"smf2 bar {i}: {val} != {exp}"
     assert r_on["series"]["smf"][0] == pytest.approx(0.0)
     assert r_off["series"]["smf"][0] == pytest.approx(0.0)
     assert any(v != pytest.approx(0.0) for v in r_on["series"]["smf"][1:])
@@ -11145,30 +10626,16 @@ def _trend_confirmation_score_last_n(
 ) -> float:
     """Oracle formula on a chronological prefix (last sample, defaults 0/0/1/50/0)."""
     m = momentum[-1] if momentum and isinstance(momentum[-1], (int, float)) else 0.0
-    t = (
-        trend_alignment[-1]
-        if trend_alignment and isinstance(trend_alignment[-1], (int, float))
-        else 0.0
-    )
+    t = trend_alignment[-1] if trend_alignment and isinstance(trend_alignment[-1], (int, float)) else 0.0
     s = strength[-1] if strength and isinstance(strength[-1], (int, float)) else 1.0
     r = rsi[-1] if rsi and isinstance(rsi[-1], (int, float)) else 50.0
-    a = (
-        rsi_alignment[-1]
-        if rsi_alignment and isinstance(rsi_alignment[-1], (int, float))
-        else 0.0
-    )
+    a = rsi_alignment[-1] if rsi_alignment and isinstance(rsi_alignment[-1], (int, float)) else 0.0
     momentum_score = min(100.0, abs(m) * 20.0)
     trend_score = max(0.0, (t + 1.0) / 2.0 * 100.0)
     strength_score = min(100.0, s * 50.0)
     rsi_score = min(100.0, abs(r - 50.0) * 2.0) if abs(r - 50.0) > 10.0 else 40.0
     alignment_bonus = 20.0 if abs(a) > 0.5 else 0.0
-    total = (
-        momentum_score * 0.25
-        + trend_score * 0.3
-        + strength_score * 0.25
-        + rsi_score * 0.15
-        + alignment_bonus
-    )
+    total = momentum_score * 0.25 + trend_score * 0.3 + strength_score * 0.25 + rsi_score * 0.15 + alignment_bonus
     return max(0.0, min(100.0, total))
 
 
@@ -11218,9 +10685,7 @@ def _bar_walk_full_trend_confirmation_score(
     out: list[float] = []
     for i in range(len(momentum)):
         out.append(
-            ev._builtin_ta_trend_confirmation_score(
-                [momentum[i], trend[i], strength[i], rsi[i], rsi_align[i], 0.0]
-            )
+            ev._builtin_ta_trend_confirmation_score([momentum[i], trend[i], strength[i], rsi[i], rsi_align[i], 0.0])
         )
     return out
 
@@ -11260,11 +10725,7 @@ def _bar_walk_inc_trend_confirmation_score_last_sample(
     out: list[float] = []
     for i in range(len(momentum)):
         ev._ta_call_i = 0
-        out.append(
-            ev._trend_confirmation_score_inc_update(
-                momentum[i], trend[i], strength[i], rsi[i], rsi_align[i]
-            )
-        )
+        out.append(ev._trend_confirmation_score_inc_update(momentum[i], trend[i], strength[i], rsi[i], rsi_align[i]))
     return out
 
 
@@ -11273,9 +10734,7 @@ def test_incremental_trend_confirmation_score_matches_full() -> None:
     got = _bar_walk_inc_trend_confirmation_score(mom, trend, strength, rsi, align)
     exp = _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_trend_confirmation_score_last_sample(
-        mom, trend, strength, rsi, align
-    )
+    last = _bar_walk_inc_trend_confirmation_score_last_sample(mom, trend, strength, rsi, align)
     _assert_series_close(last, exp)
     oracle = [
         _trend_confirmation_score_last_n(
@@ -11295,23 +10754,15 @@ def test_incremental_trend_confirmation_score_empty() -> None:
     """Empty / missing last sample → defaults (0/0/1/50/0) → 33.5, no throw."""
     ev = _IncTA()
     ev._ta_call_i = 0
-    assert ev._trend_confirmation_score_inc_update([], [], [], [], []) == pytest.approx(
-        33.5
-    )
+    assert ev._trend_confirmation_score_inc_update([], [], [], [], []) == pytest.approx(33.5)
     assert ev._ta_call_i == 1
 
     ev._ta_call_i = 0
-    assert ev._trend_confirmation_score_inc_update(
-        None, None, None, None, None
-    ) == pytest.approx(33.5)
+    assert ev._trend_confirmation_score_inc_update(None, None, None, None, None) == pytest.approx(33.5)
     assert ev._ta_call_i == 1
 
-    got_na = _bar_walk_inc_trend_confirmation_score(
-        [None], [None], [None], [None], [None]
-    )
-    oracle_na = [
-        _trend_confirmation_score_last_n([None], [None], [None], [None], [None])
-    ]
+    got_na = _bar_walk_inc_trend_confirmation_score([None], [None], [None], [None], [None])
+    oracle_na = [_trend_confirmation_score_last_n([None], [None], [None], [None], [None])]
     _assert_series_close(got_na, oracle_na)
     assert got_na[0] == pytest.approx(33.5)
 
@@ -11342,9 +10793,7 @@ def test_incremental_trend_confirmation_score_non_numeric_last() -> None:
     got = _bar_walk_inc_trend_confirmation_score(mom, trend, strength, rsi, align)
     exp = _bar_walk_full_trend_confirmation_score(mom, trend, strength, rsi, align)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_trend_confirmation_score_last_sample(
-        mom, trend, strength, rsi, align
-    )
+    last = _bar_walk_inc_trend_confirmation_score_last_sample(mom, trend, strength, rsi, align)
     _assert_series_close(last, exp)
     # defaults 0/0/1/50/0 → 33.5
     assert got[-1] == pytest.approx(33.5)
@@ -11358,12 +10807,8 @@ def test_incremental_trend_confirmation_score_clamp() -> None:
     strength_hi = [1.0, 10.0]
     rsi_hi = [50.0, 0.0]
     align_hi = [0.0, 1.0]
-    got_hi = _bar_walk_inc_trend_confirmation_score(
-        mom_hi, trend_hi, strength_hi, rsi_hi, align_hi
-    )
-    exp_hi = _bar_walk_full_trend_confirmation_score(
-        mom_hi, trend_hi, strength_hi, rsi_hi, align_hi
-    )
+    got_hi = _bar_walk_inc_trend_confirmation_score(mom_hi, trend_hi, strength_hi, rsi_hi, align_hi)
+    exp_hi = _bar_walk_full_trend_confirmation_score(mom_hi, trend_hi, strength_hi, rsi_hi, align_hi)
     _assert_series_close(got_hi, exp_hi)
     assert got_hi[-1] == pytest.approx(100.0)
 
@@ -11373,12 +10818,8 @@ def test_incremental_trend_confirmation_score_clamp() -> None:
     strength_lo = [1.0, -10.0]
     rsi_lo = [50.0, 50.0]
     align_lo = [0.0, 0.0]
-    got_lo = _bar_walk_inc_trend_confirmation_score(
-        mom_lo, trend_lo, strength_lo, rsi_lo, align_lo
-    )
-    exp_lo = _bar_walk_full_trend_confirmation_score(
-        mom_lo, trend_lo, strength_lo, rsi_lo, align_lo
-    )
+    got_lo = _bar_walk_inc_trend_confirmation_score(mom_lo, trend_lo, strength_lo, rsi_lo, align_lo)
+    exp_lo = _bar_walk_full_trend_confirmation_score(mom_lo, trend_lo, strength_lo, rsi_lo, align_lo)
     _assert_series_close(got_lo, exp_lo)
     assert got_lo[-1] == pytest.approx(0.0)
 
@@ -11435,16 +10876,8 @@ def test_incremental_trend_confirmation_score_two_call_sites_independent() -> No
         prefix_a = align[: i + 1]
         prefix_tb = trend_b[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._trend_confirmation_score_inc_update(
-                prefix_m, prefix_t, prefix_s, prefix_r, prefix_a
-            )
-        )
-        b_out.append(
-            ev._trend_confirmation_score_inc_update(
-                prefix_m, prefix_tb, prefix_s, prefix_r, prefix_a
-            )
-        )
+        a_out.append(ev._trend_confirmation_score_inc_update(prefix_m, prefix_t, prefix_s, prefix_r, prefix_a))
+        b_out.append(ev._trend_confirmation_score_inc_update(prefix_m, prefix_tb, prefix_s, prefix_r, prefix_a))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
     _assert_series_close(
         a_out,
@@ -11517,9 +10950,7 @@ plot(g, "tcs2")
             highs[: i + 1],
             lows[: i + 1],
         )
-        assert val == pytest.approx(
-            exp, rel=1e-9, abs=1e-9
-        ), f"tcs2 bar {i}: {val} != {exp}"
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"tcs2 bar {i}: {val} != {exp}"
     assert r_on["series"]["tcs"][0] == pytest.approx(33.5)
     assert r_off["series"]["tcs"][0] == pytest.approx(33.5)
     assert any(v != pytest.approx(33.5) for v in r_on["series"]["tcs"][1:])
@@ -11775,24 +11206,16 @@ plot(g.short_stop, "ss2")
     lows = [float(b["low"]) for b in bars]
     for i, val in enumerate(r_on["series"]["ls"]):
         exp = _atr_stop_last_n(highs[: i + 1], closes[: i + 1], 2.0)
-        assert val == pytest.approx(
-            exp["long_stop"], rel=1e-9, abs=1e-9
-        ), f"ls bar {i}: {val} != {exp['long_stop']}"
+        assert val == pytest.approx(exp["long_stop"], rel=1e-9, abs=1e-9), f"ls bar {i}: {val} != {exp['long_stop']}"
     for i, val in enumerate(r_on["series"]["ss"]):
         exp = _atr_stop_last_n(highs[: i + 1], closes[: i + 1], 2.0)
-        assert val == pytest.approx(
-            exp["short_stop"], rel=1e-9, abs=1e-9
-        ), f"ss bar {i}: {val} != {exp['short_stop']}"
+        assert val == pytest.approx(exp["short_stop"], rel=1e-9, abs=1e-9), f"ss bar {i}: {val} != {exp['short_stop']}"
     for i, val in enumerate(r_on["series"]["ls2"]):
         exp = _atr_stop_last_n(lows[: i + 1], closes[: i + 1], 3.0)
-        assert val == pytest.approx(
-            exp["long_stop"], rel=1e-9, abs=1e-9
-        ), f"ls2 bar {i}: {val} != {exp['long_stop']}"
+        assert val == pytest.approx(exp["long_stop"], rel=1e-9, abs=1e-9), f"ls2 bar {i}: {val} != {exp['long_stop']}"
     for i, val in enumerate(r_on["series"]["ss2"]):
         exp = _atr_stop_last_n(lows[: i + 1], closes[: i + 1], 3.0)
-        assert val == pytest.approx(
-            exp["short_stop"], rel=1e-9, abs=1e-9
-        ), f"ss2 bar {i}: {val} != {exp['short_stop']}"
+        assert val == pytest.approx(exp["short_stop"], rel=1e-9, abs=1e-9), f"ss2 bar {i}: {val} != {exp['short_stop']}"
     assert any(v is not None for v in r_on["series"]["ls"])
 
 
@@ -11809,11 +11232,7 @@ def _max_loss_level_last_n(
     """Oracle formula on a chronological prefix (last sample, defaults 100/10000/1.0)."""
     e = entry[-1] if entry and isinstance(entry[-1], (int, float)) else 100.0
     a = account[-1] if account and isinstance(account[-1], (int, float)) else 10000.0
-    p = (
-        max_loss_pct[-1]
-        if max_loss_pct and isinstance(max_loss_pct[-1], (int, float))
-        else 1.0
-    )
+    p = max_loss_pct[-1] if max_loss_pct and isinstance(max_loss_pct[-1], (int, float)) else 1.0
     max_loss_amount = a * (p / 100.0)
     if e > 0:
         shares = a / e
@@ -11874,11 +11293,7 @@ def _bar_walk_inc_max_loss_level(
     out: list[float] = []
     for i in range(len(entry)):
         ev._ta_call_i = 0
-        out.append(
-            ev._max_loss_level_inc_update(
-                entry[: i + 1], account[: i + 1], max_loss_pct[: i + 1]
-            )
-        )
+        out.append(ev._max_loss_level_inc_update(entry[: i + 1], account[: i + 1], max_loss_pct[: i + 1]))
     return out
 
 
@@ -11903,10 +11318,7 @@ def test_incremental_max_loss_level_matches_full() -> None:
     _assert_series_close(got, exp)
     last = _bar_walk_inc_max_loss_level_last_sample(entry, account, pct)
     _assert_series_close(last, exp)
-    oracle = [
-        _max_loss_level_last_n(entry[: i + 1], account[: i + 1], pct[: i + 1])
-        for i in range(len(entry))
-    ]
+    oracle = [_max_loss_level_last_n(entry[: i + 1], account[: i + 1], pct[: i + 1]) for i in range(len(entry))]
     _assert_series_close(got, oracle)
     assert any(v != pytest.approx(99.0) for v in got)
 
@@ -11973,9 +11385,7 @@ def test_incremental_max_loss_level_slot_count_stable() -> None:
     ev = _IncTA()
     for i in range(len(entry_na)):
         ev._ta_call_i = 0
-        ev._max_loss_level_inc_update(
-            entry_na[: i + 1], account[: i + 1], pct[: i + 1]
-        )
+        ev._max_loss_level_inc_update(entry_na[: i + 1], account[: i + 1], pct[: i + 1])
         assert ev._ta_call_i == 1, f"kernel bar {i}: expected 1 slot, got {ev._ta_call_i}"
 
 
@@ -11985,9 +11395,7 @@ def test_incremental_max_loss_level_builtin_uses_inc_slot() -> None:
     ev = _IncTA()
     for i in range(len(entry)):
         ev._ta_call_i = 0
-        ev._builtin_ta_max_loss_level(
-            [entry[: i + 1], account[: i + 1], pct[: i + 1]]
-        )
+        ev._builtin_ta_max_loss_level([entry[: i + 1], account[: i + 1], pct[: i + 1]])
         assert ev._ta_call_i == 1, f"builtin bar {i}: {ev._ta_call_i}"
 
 
@@ -12059,12 +11467,8 @@ plot(g, "mll2")
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mll bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["mll2"]):
         exp = _max_loss_level_last_n(opens[: i + 1], vols[: i + 1], lows[: i + 1])
-        assert val == pytest.approx(
-            exp, rel=1e-9, abs=1e-9
-        ), f"mll2 bar {i}: {val} != {exp}"
-    assert r_on["series"]["mll"][0] == pytest.approx(
-        _max_loss_level_last_n(closes[:1], vols[:1], highs[:1])
-    )
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"mll2 bar {i}: {val} != {exp}"
+    assert r_on["series"]["mll"][0] == pytest.approx(_max_loss_level_last_n(closes[:1], vols[:1], highs[:1]))
     assert r_off["series"]["mll"][0] == pytest.approx(99.0)
     assert any(v != pytest.approx(99.0) for v in r_on["series"]["mll"][1:])
 
@@ -12083,16 +11487,8 @@ def _profit_lock_level_last_n(
     """Oracle formula on a chronological prefix (last sample, defaults 100/100/0.05/1.0)."""
     e = entry[-1] if entry and isinstance(entry[-1], (int, float)) else 100.0
     c = current[-1] if current and isinstance(current[-1], (int, float)) else 100.0
-    t = (
-        trail_pct[-1]
-        if trail_pct and isinstance(trail_pct[-1], (int, float))
-        else 0.05
-    )
-    d = (
-        direction[-1]
-        if direction and isinstance(direction[-1], (int, float))
-        else 1.0
-    )
+    t = trail_pct[-1] if trail_pct and isinstance(trail_pct[-1], (int, float)) else 0.05
+    d = direction[-1] if direction and isinstance(direction[-1], (int, float)) else 1.0
     t = max(0.0, min(1.0, t))
     if d > 0:
         stop = c - c * t
@@ -12143,11 +11539,7 @@ def _bar_walk_full_profit_lock_level(
     ev = _FullTA()
     out: list[float] = []
     for i in range(len(entry)):
-        out.append(
-            ev._builtin_ta_profit_lock_level(
-                [entry[i], current[i], trail_pct[i], direction[i]]
-            )
-        )
+        out.append(ev._builtin_ta_profit_lock_level([entry[i], current[i], trail_pct[i], direction[i]]))
     return out
 
 
@@ -12183,11 +11575,7 @@ def _bar_walk_inc_profit_lock_level_last_sample(
     out: list[float] = []
     for i in range(len(entry)):
         ev._ta_call_i = 0
-        out.append(
-            ev._profit_lock_level_inc_update(
-                entry[i], current[i], trail_pct[i], direction[i]
-            )
-        )
+        out.append(ev._profit_lock_level_inc_update(entry[i], current[i], trail_pct[i], direction[i]))
     return out
 
 
@@ -12196,9 +11584,7 @@ def test_incremental_profit_lock_level_matches_full() -> None:
     got = _bar_walk_inc_profit_lock_level(entry, current, trail, direction)
     exp = _bar_walk_full_profit_lock_level(entry, current, trail, direction)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_profit_lock_level_last_sample(
-        entry, current, trail, direction
-    )
+    last = _bar_walk_inc_profit_lock_level_last_sample(entry, current, trail, direction)
     _assert_series_close(last, exp)
     oracle = [
         _profit_lock_level_last_n(
@@ -12221,9 +11607,7 @@ def test_incremental_profit_lock_level_empty() -> None:
     assert ev._ta_call_i == 1
 
     ev._ta_call_i = 0
-    assert ev._profit_lock_level_inc_update(None, None, None, None) == pytest.approx(
-        95.0
-    )
+    assert ev._profit_lock_level_inc_update(None, None, None, None) == pytest.approx(95.0)
     assert ev._ta_call_i == 1
 
     got_na = _bar_walk_inc_profit_lock_level([None], [None], [None], [None])
@@ -12241,9 +11625,7 @@ def test_incremental_profit_lock_level_non_numeric_last() -> None:
     got = _bar_walk_inc_profit_lock_level(entry, current, trail, direction)
     exp = _bar_walk_full_profit_lock_level(entry, current, trail, direction)
     _assert_series_close(got, exp)
-    last = _bar_walk_inc_profit_lock_level_last_sample(
-        entry, current, trail, direction
-    )
+    last = _bar_walk_inc_profit_lock_level_last_sample(entry, current, trail, direction)
     _assert_series_close(last, exp)
     # defaults 100/100/0.05/1.0 → 95.0
     assert got[-1] == pytest.approx(95.0)
@@ -12314,23 +11696,11 @@ def test_incremental_profit_lock_level_two_call_sites_independent() -> None:
         prefix_c = current[: i + 1]
         prefix_t = trail[: i + 1]
         ev._ta_call_i = 0
-        a_out.append(
-            ev._profit_lock_level_inc_update(
-                prefix_e, prefix_c, prefix_t, dir_long[: i + 1]
-            )
-        )
-        b_out.append(
-            ev._profit_lock_level_inc_update(
-                prefix_e, prefix_c, prefix_t, dir_short[: i + 1]
-            )
-        )
+        a_out.append(ev._profit_lock_level_inc_update(prefix_e, prefix_c, prefix_t, dir_long[: i + 1]))
+        b_out.append(ev._profit_lock_level_inc_update(prefix_e, prefix_c, prefix_t, dir_short[: i + 1]))
         assert ev._ta_call_i == 2, f"two sites bar {i}: {ev._ta_call_i}"
-    _assert_series_close(
-        a_out, _bar_walk_full_profit_lock_level(entry, current, trail, dir_long)
-    )
-    _assert_series_close(
-        b_out, _bar_walk_full_profit_lock_level(entry, current, trail, dir_short)
-    )
+    _assert_series_close(a_out, _bar_walk_full_profit_lock_level(entry, current, trail, dir_long))
+    _assert_series_close(b_out, _bar_walk_full_profit_lock_level(entry, current, trail, dir_short))
     assert a_out != b_out
 
 
@@ -12381,17 +11751,11 @@ plot(g, "pll2")
     dir_long = [1.0] * len(bars)
     dir_short = [-1.0] * len(bars)
     for i, val in enumerate(r_on["series"]["pll"]):
-        exp = _profit_lock_level_last_n(
-            closes[: i + 1], highs[: i + 1], trail_long[: i + 1], dir_long[: i + 1]
-        )
+        exp = _profit_lock_level_last_n(closes[: i + 1], highs[: i + 1], trail_long[: i + 1], dir_long[: i + 1])
         assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"pll bar {i}: {val} != {exp}"
     for i, val in enumerate(r_on["series"]["pll2"]):
-        exp = _profit_lock_level_last_n(
-            opens[: i + 1], lows[: i + 1], trail_short[: i + 1], dir_short[: i + 1]
-        )
-        assert val == pytest.approx(
-            exp, rel=1e-9, abs=1e-9
-        ), f"pll2 bar {i}: {val} != {exp}"
+        exp = _profit_lock_level_last_n(opens[: i + 1], lows[: i + 1], trail_short[: i + 1], dir_short[: i + 1])
+        assert val == pytest.approx(exp, rel=1e-9, abs=1e-9), f"pll2 bar {i}: {val} != {exp}"
     assert r_on["series"]["pll"][0] == pytest.approx(
         _profit_lock_level_last_n(closes[:1], highs[:1], trail_long[:1], dir_long[:1])
     )
@@ -12400,5 +11764,3 @@ plot(g, "pll2")
     # disabled: series args default 100/100; trail 0.08 dir -1 → min(110, 108) = 108.0
     assert r_off["series"]["pll2"][0] == pytest.approx(108.0)
     assert any(v != pytest.approx(95.0) for v in r_on["series"]["pll"][1:])
-
-

@@ -243,11 +243,7 @@ def _is_color_new_func(func: Any) -> bool:
     if isinstance(func, ast.Name):
         return func.id == _COLOR_NS
     if isinstance(func, ast.Attribute):
-        return (
-            func.attr == _NEW_ATTR
-            and isinstance(func.value, ast.Name)
-            and func.value.id == _COLOR_NS
-        )
+        return func.attr == _NEW_ATTR and isinstance(func.value, ast.Name) and func.value.id == _COLOR_NS
     return False
 
 

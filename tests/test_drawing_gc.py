@@ -87,9 +87,7 @@ class TestDrawingGarbageCollection:
         assert DrawingRegistry.max_polylines_count == 100
 
     def test_gc_exported_drawings_list(self) -> None:
-        raw = [
-            {"kind": "label", "x": i, "y": 1.0, "text": f"t{i}"} for i in range(5)
-        ] + [
+        raw = [{"kind": "label", "x": i, "y": 1.0, "text": f"t{i}"} for i in range(5)] + [
             {"type": "bgcolor", "color": "red"},
             {"type": "line", "t1": 0, "p1": 1, "t2": 1, "p2": 2},
             {"type": "line", "t1": 1, "p1": 2, "t2": 2, "p2": 3},

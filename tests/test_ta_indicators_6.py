@@ -48,6 +48,7 @@ def evaluator():
 # Group A: Market Microstructure Tests (10 tests)
 # ============================================================================
 
+
 class TestOrderFlowImbalance:
     """Tests for ta.order_flow_imbalance indicator."""
 
@@ -165,6 +166,7 @@ class TestSpreadAnalysis:
 # Group B: Advanced Momentum Tests (10 tests)
 # ============================================================================
 
+
 class TestMomentumDivergence:
     """Tests for ta.momentum_divergence indicator."""
 
@@ -278,6 +280,7 @@ class TestMomentumFilter:
 # ============================================================================
 # Group C: Economic Integration Tests (8 tests)
 # ============================================================================
+
 
 class TestEconomicImpactScore:
     """Tests for ta.economic_impact_score indicator."""
@@ -405,6 +408,7 @@ class TestGDPGrowthProxy:
 # Group D: Behavioral Finance Tests (8 tests)
 # ============================================================================
 
+
 class TestFearGreedIndex:
     """Tests for ta.fear_greed_index indicator."""
 
@@ -501,6 +505,7 @@ class TestContrarySignal:
 # ============================================================================
 # Group E: Volume & Flow Analysis Tests (12 tests)
 # ============================================================================
+
 
 class TestCumulativeDelta:
     """Tests for ta.cumulative_delta indicator."""
@@ -617,6 +622,7 @@ class TestLiquidityScore:
 # Group F: Advanced Pattern Recognition Tests (4 tests)
 # ============================================================================
 
+
 class TestVolumeThrust:
     """Tests for ta.volume_thrust indicator."""
 
@@ -656,6 +662,7 @@ class TestVolumeThrust:
 # ============================================================================
 # Edge Case & Integration Tests (8 tests)
 # ============================================================================
+
 
 class TestEdgeCases:
     """Edge case tests for all Tier 6 indicators."""

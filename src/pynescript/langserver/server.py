@@ -587,9 +587,7 @@ class PynescriptLanguageServer(LanguageServer):
             doc = self.pine_workspace.get_document(uri)
             if not doc:
                 return semantic_tokens_feature.handle_semantic_tokens_range(params, None)
-            return semantic_tokens_feature.handle_semantic_tokens_range(
-                params, doc.source, tree=doc.ast
-            )
+            return semantic_tokens_feature.handle_semantic_tokens_range(params, doc.source, tree=doc.ast)
 
     def _schedule_diagnostics(self, uri: str, doc: Any) -> None:
         """Schedule (or re-schedule) a debounced parse+lint+publish for *uri*."""

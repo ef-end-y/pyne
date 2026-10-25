@@ -305,10 +305,7 @@ def test_import_stub_emits_warning() -> None:
     from pynescript.ast.evaluator.builtins.logging import get_logger
 
     get_logger().clear()
-    bars = [
-        {"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "time": i}
-        for i in range(3)
-    ]
+    bars = [{"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "time": i} for i in range(3)]
     src = """//@version=6
 indicator("imp")
 import TradingView/MissingLib/1 as mlib
@@ -344,8 +341,7 @@ def test_chart_is_pnf_and_visible_bar_times() -> None:
     from backend.runtime import Runtime
 
     bars = [
-        {"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "time": 1000 + i * 100}
-        for i in range(5)
+        {"open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "time": 1000 + i * 100} for i in range(5)
     ]
     src = """//@version=6
 indicator("chart p0")
@@ -368,10 +364,7 @@ def test_strategy_cash_default_qty() -> None:
     """strategy() default_qty_type=cash sizes entry from cash / price."""
     from backend.runtime import Runtime
 
-    bars = [
-        {"open": 50.0, "high": 50.0, "low": 50.0, "close": 50.0, "volume": 1.0, "time": i}
-        for i in range(3)
-    ]
+    bars = [{"open": 50.0, "high": 50.0, "low": 50.0, "close": 50.0, "volume": 1.0, "time": i} for i in range(3)]
     src = """//@version=6
 strategy("cash", overlay=true, initial_capital=100000, default_qty_type=strategy.cash, default_qty_value=5000)
 if bar_index == 0

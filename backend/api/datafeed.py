@@ -65,6 +65,7 @@ def _dbg(msg: str, *args: Any) -> None:
     if _debug_scope(__name__):
         logger.debug(msg, *args)
 
+
 datafeed_bp = Blueprint("datafeed", __name__, url_prefix="/datafeed")
 
 _ENV_KEYS: dict[str, dict[str, str]] = {

@@ -214,6 +214,7 @@ def pine_period_or_none(value: Any, message: str, error: Callable[[str], NoRetur
             return None
     return pine_expect_int(unwrapped, message, error)
 
+
 # reference Pine keyword parameter names for list-style ``ta.*`` handlers.
 # Used when the Python handler is ``(self, args)`` and has no real param names.
 # Keys are bare names (``ema``) — strip a leading ``ta.`` before lookup.

@@ -603,7 +603,4 @@ def _build_docs_link(name: str) -> str:
     namespace, _, member = label.partition(".")
     if not namespace or not member:
         return ""
-    return (
-        f"[Pine v6: {label}]"
-        f"(https://www.tradingview.com/pine-script-reference/v6/#fun_{label})\n"
-    )
+    return f"[Pine v6: {label}](https://www.tradingview.com/pine-script-reference/v6/#fun_{label})\n"
