@@ -1,3 +1,9 @@
+## [Unreleased]
+
+### Fixed
+
+- **Cloudflare Container setup.** The readiness probe is `localhost/health` (`http://${pingEndpoint}`; a bare `/health` never reached Flask). Gunicorn in the container matches the production entrypoint (`gthread`, 1 worker, 100 threads, 120s timeout, max-requests 5000). A Worker `ADMIN_TOKEN` secret is copied into the container when the instance starts. Wrangler in `cf/` is 4.152.0.
+
 ## [0.6.22] — 2026-10-25
 
 ### Added
